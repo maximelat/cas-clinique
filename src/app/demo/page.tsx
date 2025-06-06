@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight } from "lucide-react"
 import { toast } from "sonner"
+import { AIClientService } from "@/services/ai-client"
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -130,39 +131,92 @@ export default function DemoPage() {
   const [textContent, setTextContent] = useState("")
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showResults, setShowResults] = useState(false)
+  const [isDemoMode, setIsDemoMode] = useState(true)
+  const [analysisData, setAnalysisData] = useState<any>(null)
+  const [progressMessage, setProgressMessage] = useState("")
 
-  const handleAnalyze = () => {
+  // Vérifier si les clés API sont disponibles
+  const aiService = new AIClientService()
+  const hasApiKeys = aiService.hasApiKeys()
+
+  const handleAnalyze = async () => {
     if (!textContent.trim()) {
       toast.error("Veuillez entrer un cas clinique")
       return
     }
 
     setIsAnalyzing(true)
-    toast.info("Analyse en cours...")
+    setProgressMessage("")
+    const startTime = Date.now()
+    
+    if (isDemoMode) {
+      toast.info("Analyse en mode démonstration...")
+      // Mode démo - afficher les données prédéfinies après un délai
+      setTimeout(() => {
+        setIsAnalyzing(false)
+        setShowResults(true)
+        setAnalysisData({ isDemo: true })
+        toast.success("Analyse simulée terminée !")
+      }, 3000)
+    } else {
+      // Mode réel - utiliser le service AI
+      if (!hasApiKeys) {
+        toast.error("Les clés API ne sont pas configurées")
+        setIsAnalyzing(false)
+        return
+      }
 
-    // Simulate analysis
-    setTimeout(() => {
-      setIsAnalyzing(false)
-      setShowResults(true)
-      toast.success("Analyse terminée !")
-    }, 3000)
+      toast.info("Analyse en cours avec l'IA...")
+      
+      try {
+        const result = await aiService.analyzeClinicalCase(
+          textContent,
+          (message) => setProgressMessage(message)
+        )
+
+        setAnalysisData({
+          isDemo: false,
+          sections: result.sections,
+          references: result.references,
+          perplexityReport: result.perplexityReport
+        })
+        setShowResults(true)
+        
+        const duration = Date.now() - startTime
+        toast.success(`Analyse terminée en ${Math.round(duration / 1000)}s !`)
+      } catch (error: any) {
+        toast.error(error.message || "Erreur lors de l'analyse")
+        console.error("Erreur:", error)
+      } finally {
+        setIsAnalyzing(false)
+        setProgressMessage("")
+      }
+    }
   }
 
   const copyToClipboard = () => {
-    const fullText = Object.entries(demoSections).map(([key, content]) => 
-      `${sectionTitles[key as keyof typeof sectionTitles]}\n\n${content}`
-    ).join("\n\n---\n\n")
+    let fullText = ""
+    
+    if (analysisData?.isDemo) {
+      fullText = Object.entries(demoSections).map(([key, content]) => 
+        `${sectionTitles[key as keyof typeof sectionTitles]}\n\n${content}`
+      ).join("\n\n---\n\n")
+    } else if (analysisData?.sections) {
+      fullText = analysisData.sections.map((section: any) => 
+        `${sectionTitles[section.type as keyof typeof sectionTitles]}\n\n${section.content}`
+      ).join("\n\n---\n\n")
+    }
     
     navigator.clipboard.writeText(fullText)
     toast.success("Copié dans le presse-papier")
   }
 
-  const renderContentWithReferences = (content: string) => {
+  const renderContentWithReferences = (content: string, references: any[]) => {
     return content.split(/(\[\d+\])/).map((part, index) => {
       const match = part.match(/\[(\d+)\]/)
       if (match) {
         const refNum = match[1]
-        const reference = demoReferences.find(ref => ref.label === refNum)
+        const reference = references.find(ref => ref.label === refNum)
         if (reference) {
           return (
             <a
@@ -187,8 +241,10 @@ export default function DemoPage() {
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Mode Démonstration</h1>
-            <p className="text-gray-600 mt-1">Testez l'analyse de cas cliniques</p>
+            <h1 className="text-3xl font-bold text-gray-900">Analyse de Cas Cliniques</h1>
+            <p className="text-gray-600 mt-1">
+              {isDemoMode ? "Mode démonstration" : "Mode analyse réelle"}
+            </p>
           </div>
           <Link href="/">
             <Button variant="outline">
@@ -201,10 +257,32 @@ export default function DemoPage() {
         {!showResults ? (
           <Card>
             <CardHeader>
-              <CardTitle>Entrez votre cas clinique</CardTitle>
-              <CardDescription>
-                Collez ou tapez le cas clinique à analyser
-              </CardDescription>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Entrez votre cas clinique</CardTitle>
+                  <CardDescription>
+                    Collez ou tapez le cas clinique à analyser
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="demo-toggle" className="text-sm">
+                    Mode démo
+                  </Label>
+                  <Button
+                    id="demo-toggle"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsDemoMode(!isDemoMode)}
+                    className="p-1"
+                  >
+                    {isDemoMode ? (
+                      <ToggleLeft className="h-6 w-6 text-gray-500" />
+                    ) : (
+                      <ToggleRight className="h-6 w-6 text-blue-600" />
+                    )}
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
@@ -218,20 +296,40 @@ export default function DemoPage() {
                 />
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className={`border rounded-lg p-4 ${isDemoMode ? 'bg-blue-50 border-blue-200' : hasApiKeys ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <div className="flex">
-                  <AlertCircle className="w-5 h-5 text-blue-600 mr-2 flex-shrink-0" />
-                  <div className="text-sm text-blue-800">
-                    <p className="font-medium mb-1">Mode démonstration</p>
-                    <p>Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités.</p>
+                  <AlertCircle className={`w-5 h-5 mr-2 flex-shrink-0 ${isDemoMode ? 'text-blue-600' : hasApiKeys ? 'text-green-600' : 'text-red-600'}`} />
+                  <div className={`text-sm ${isDemoMode ? 'text-blue-800' : hasApiKeys ? 'text-green-800' : 'text-red-800'}`}>
+                    <p className="font-medium mb-1">
+                      {isDemoMode ? "Mode démonstration" : hasApiKeys ? "Mode analyse réelle" : "Clés API manquantes"}
+                    </p>
+                    <p>
+                      {isDemoMode 
+                        ? "Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités."
+                        : hasApiKeys
+                        ? "Analyse réelle utilisant Perplexity Academic et OpenAI GPT-4 pour une analyse médicale approfondie."
+                        : "Les clés API Perplexity et OpenAI doivent être configurées dans les secrets GitHub pour utiliser le mode réel."
+                      }
+                    </p>
+                    {!isDemoMode && hasApiKeys && (
+                      <p className="mt-1 text-xs">
+                        Note : Les appels API se font directement depuis le navigateur.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
 
+              {isAnalyzing && progressMessage && (
+                <div className="text-center text-sm text-gray-600">
+                  {progressMessage}
+                </div>
+              )}
+
               <div className="flex justify-end">
                 <Button
                   onClick={handleAnalyze}
-                  disabled={isAnalyzing || !textContent.trim()}
+                  disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys)}
                   className="min-w-[200px]"
                 >
                   {isAnalyzing ? (
@@ -252,7 +350,9 @@ export default function DemoPage() {
         ) : (
           <>
             <div className="mb-6 flex justify-between items-center">
-              <h2 className="text-2xl font-bold">Résultat de l'analyse</h2>
+              <h2 className="text-2xl font-bold">
+                Résultat de l'analyse {analysisData?.isDemo ? "(Démo)" : "(IA)"}
+              </h2>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -268,6 +368,7 @@ export default function DemoPage() {
                   onClick={() => {
                     setShowResults(false)
                     setTextContent("")
+                    setAnalysisData(null)
                   }}
                 >
                   Nouvelle analyse
@@ -276,22 +377,43 @@ export default function DemoPage() {
             </div>
 
             <Accordion type="single" collapsible className="w-full space-y-4">
-              {Object.entries(demoSections).map(([key, content]) => (
-                <AccordionItem key={key} value={key} className="border rounded-lg">
-                  <AccordionTrigger className="px-6 hover:no-underline">
-                    <span className="text-left font-medium">
-                      {sectionTitles[key as keyof typeof sectionTitles]}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pb-6">
-                    <div className="prose max-w-none">
-                      <div className="whitespace-pre-wrap">
-                        {renderContentWithReferences(content)}
+              {analysisData?.isDemo ? (
+                // Mode démo - afficher les sections prédéfinies
+                Object.entries(demoSections).map(([key, content]) => (
+                  <AccordionItem key={key} value={key} className="border rounded-lg">
+                    <AccordionTrigger className="px-6 hover:no-underline">
+                      <span className="text-left font-medium">
+                        {sectionTitles[key as keyof typeof sectionTitles]}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-6 pb-6">
+                      <div className="prose max-w-none">
+                        <div className="whitespace-pre-wrap">
+                          {renderContentWithReferences(content, demoReferences)}
+                        </div>
                       </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))
+              ) : (
+                // Mode réel - afficher les sections de l'API
+                analysisData?.sections?.map((section: any, index: number) => (
+                  <AccordionItem key={index} value={section.type} className="border rounded-lg">
+                    <AccordionTrigger className="px-6 hover:no-underline">
+                      <span className="text-left font-medium">
+                        {sectionTitles[section.type as keyof typeof sectionTitles]}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-6 pb-6">
+                      <div className="prose max-w-none">
+                        <div className="whitespace-pre-wrap">
+                          {renderContentWithReferences(section.content, analysisData.references || [])}
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))
+              )}
             </Accordion>
 
             <Card className="mt-8">
@@ -300,13 +422,19 @@ export default function DemoPage() {
               </CardHeader>
               <CardContent>
                 <ul className="space-y-3">
-                  {demoReferences.map((ref) => (
+                  {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
                     <li key={ref.label} className="flex items-start gap-2">
                       <span className="text-gray-500">[{ref.label}]</span>
                       <div className="flex-1">
                         <p className="font-medium">{ref.title}</p>
                         {ref.authors && (
                           <p className="text-sm text-gray-600">{ref.authors}</p>
+                        )}
+                        {(ref.doi || ref.pmid) && (
+                          <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                            {ref.doi && <span>DOI: {ref.doi}</span>}
+                            {ref.pmid && <span>PMID: {ref.pmid}</span>}
+                          </div>
                         )}
                         <a
                           href={ref.url}

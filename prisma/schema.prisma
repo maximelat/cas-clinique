@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  creditsLeft   Int       @default(3)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  cases         Case[]
+  logs          AuditLog[]
+}
+
+model Case {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  
+  title             String?
+  rawContent        String    @db.Text
+  extractedText     String?   @db.Text
+  perplexityReport  Json?
+  
+  status            CaseStatus @default(PENDING)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  
+  sections          Section[]
+  references        Reference[]
+  auditLogs         AuditLog[]
+}
+
+model Section {
+  id          String    @id @default(cuid())
+  caseId      String
+  case        Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  type        SectionType
+  content     String    @db.Text
+  order       Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Reference {
+  id          String    @id @default(cuid())
+  caseId      String
+  case        Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  label       String
+  title       String
+  authors     String?
+  doi         String?
+  pmid        String?
+  url         String
+  year        Int?
+  
+  createdAt   DateTime  @default(now())
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  caseId      String?
+  case        Case?     @relation(fields: [caseId], references: [id])
+  
+  action      String
+  prompt      String?   @db.Text
+  responseId  String?
+  timestamp   DateTime  @default(now())
+  metadata    Json?
+}
+
+enum CaseStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum SectionType {
+  CLINICAL_CONTEXT
+  KEY_DATA
+  DIAGNOSTIC_HYPOTHESES
+  COMPLEMENTARY_EXAMS
+  THERAPEUTIC_DECISIONS
+  PROGNOSIS_FOLLOWUP
+  PATIENT_EXPLANATIONS
+} 
