@@ -60,9 +60,32 @@ export class AIClientService {
         }
       );
 
+      console.log('Réponse Perplexity complète:', response.data);
+
       // Extraire la réponse et les citations
       const messageContent = response.data.choices[0].message.content;
-      const citations = response.data.citations || [];
+      
+      // Les citations peuvent être dans différents formats selon la réponse
+      let citations = [];
+      
+      // Vérifier d'abord si les citations sont directement dans la réponse
+      if (response.data.citations) {
+        citations = response.data.citations;
+      } 
+      // Sinon, vérifier dans le message
+      else if (response.data.choices[0].message.citations) {
+        citations = response.data.choices[0].message.citations;
+      }
+      // Sinon, essayer d'extraire les URLs du texte
+      else {
+        const urlRegex = /\[(\d+)\]\s*(https?:\/\/[^\s\)]+)/g;
+        const matches = [...messageContent.matchAll(urlRegex)];
+        citations = matches.map((match, index) => ({
+          number: match[1],
+          url: match[2],
+          title: `Source ${match[1]}`
+        }));
+      }
 
       return {
         answer: messageContent,
@@ -108,7 +131,8 @@ export class AIClientService {
               - Utilise les informations de la recherche académique pour enrichir ton analyse
               - Cite les sources pertinentes en utilisant [num] quand tu fais référence à des études ou guidelines
               - Sois précis, structuré et evidence-based
-              - Adapte le niveau de détail technique selon la section`
+              - Adapte le niveau de détail technique selon la section
+              - Utilise le formatage Markdown pour structurer ta réponse (titres, listes, gras, etc.)`
             },
             {
               role: 'user',
@@ -133,7 +157,11 @@ export class AIClientService {
     }
   }
 
-  async analyzeClinicalCase(caseText: string, onProgress?: (message: string) => void): Promise<{
+  async analyzeClinicalCase(
+    caseText: string, 
+    onProgress?: (message: string) => void,
+    onSectionComplete?: (section: SectionContent, index: number, total: number) => void
+  ): Promise<{
     perplexityReport: PerplexityResponse;
     sections: SectionContent[];
     references: any[];
@@ -174,7 +202,12 @@ export class AIClientService {
         perplexityReport.answer, 
         type
       );
-      sections.push({ type, content });
+      
+      const section = { type, content };
+      sections.push(section);
+      
+      // Appeler le callback pour afficher la section immédiatement
+      onSectionComplete?.(section, i, sectionTypes.length);
     }
 
     // 3. Extraire les références de Perplexity
@@ -193,14 +226,20 @@ export class AIClientService {
     // Parser les citations de Perplexity si elles sont disponibles
     if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
       perplexityReport.citations.forEach((citation: any, index: number) => {
+        // Gérer différents formats de citations
+        const label = citation.number || String(index + 1);
+        const title = citation.title || citation.name || citation.text || `Source ${label}`;
+        const url = citation.url || citation.link || '#';
+        
         references.push({
-          label: String(index + 1),
-          title: citation.title || citation.name || 'Source non titrée',
-          url: citation.url || '#',
-          authors: citation.authors?.join(', ') || '',
-          year: citation.year || citation.date ? new Date(citation.date).getFullYear() : new Date().getFullYear(),
+          label: label,
+          title: title,
+          url: url,
+          authors: citation.authors?.join?.(', ') || citation.author || '',
+          year: citation.year || citation.date ? new Date(citation.date).getFullYear() : null,
           doi: citation.doi || '',
-          pmid: citation.pmid || ''
+          pmid: citation.pmid || '',
+          journal: citation.journal || citation.source || ''
         });
       });
     }
@@ -208,18 +247,45 @@ export class AIClientService {
     // Si pas de citations structurées, essayer d'extraire du texte
     if (references.length === 0 && perplexityReport.answer) {
       // Rechercher des patterns de citations dans le texte
-      const urlRegex = /https?:\/\/[^\s]+/g;
-      const urls = perplexityReport.answer.match(urlRegex) || [];
+      // Pattern: [1] https://... ou [1]: https://...
+      const citationRegex = /\[(\d+)\][\s:]*([^\s\[]+(?:\s+[^\s\[]+)*?)(?=\s*(?:\[|$))/g;
+      const urlRegex = /https?:\/\/[^\s\)]+/;
       
-      urls.forEach((url, index) => {
-        references.push({
-          label: String(index + 1),
-          title: `Source ${index + 1}`,
-          url: url,
-          authors: '',
-          year: new Date().getFullYear()
-        });
+      const matches = [...perplexityReport.answer.matchAll(citationRegex)];
+      
+      matches.forEach((match) => {
+        const label = match[1];
+        const textAfter = match[2];
+        const urlMatch = textAfter.match(urlRegex);
+        
+        if (urlMatch) {
+          references.push({
+            label: label,
+            title: `Source ${label}`,
+            url: urlMatch[0],
+            authors: '',
+            year: null,
+            journal: ''
+          });
+        }
       });
+
+      // Si toujours rien, chercher juste les URLs
+      if (references.length === 0) {
+        const urlRegex = /https?:\/\/[^\s\)]+/g;
+        const urls = perplexityReport.answer.match(urlRegex) || [];
+        
+        urls.forEach((url, index) => {
+          references.push({
+            label: String(index + 1),
+            title: `Source ${index + 1}`,
+            url: url,
+            authors: '',
+            year: null,
+            journal: ''
+          });
+        });
+      }
     }
 
     return references;

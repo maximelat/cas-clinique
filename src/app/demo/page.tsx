@@ -6,9 +6,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -134,6 +138,7 @@ export default function DemoPage() {
   const [isDemoMode, setIsDemoMode] = useState(true)
   const [analysisData, setAnalysisData] = useState<any>(null)
   const [progressMessage, setProgressMessage] = useState("")
+  const [currentSections, setCurrentSections] = useState<any[]>([])
 
   // Vérifier si les clés API sont disponibles
   const aiService = new AIClientService()
@@ -147,6 +152,7 @@ export default function DemoPage() {
 
     setIsAnalyzing(true)
     setProgressMessage("")
+    setCurrentSections([])
     const startTime = Date.now()
     
     if (isDemoMode) {
@@ -171,7 +177,12 @@ export default function DemoPage() {
       try {
         const result = await aiService.analyzeClinicalCase(
           textContent,
-          (message) => setProgressMessage(message)
+          (message) => setProgressMessage(message),
+          (section, index, total) => {
+            // Afficher les sections au fur et à mesure
+            setCurrentSections(prev => [...prev, section])
+            if (!showResults) setShowResults(true)
+          }
         )
 
         setAnalysisData({
@@ -180,7 +191,6 @@ export default function DemoPage() {
           references: result.references,
           perplexityReport: result.perplexityReport
         })
-        setShowResults(true)
         
         const duration = Date.now() - startTime
         toast.success(`Analyse terminée en ${Math.round(duration / 1000)}s !`)
@@ -211,29 +221,92 @@ export default function DemoPage() {
     toast.success("Copié dans le presse-papier")
   }
 
-  const renderContentWithReferences = (content: string, references: any[]) => {
-    return content.split(/(\[\d+\])/).map((part, index) => {
-      const match = part.match(/\[(\d+)\]/)
-      if (match) {
-        const refNum = match[1]
-        const reference = references.find(ref => ref.label === refNum)
-        if (reference) {
-          return (
-            <a
-              key={index}
-              href={reference.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 hover:underline"
-              title={reference.title}
-            >
-              {part}
-            </a>
-          )
-        }
+  const downloadPerplexityReport = () => {
+    if (!analysisData?.perplexityReport) return
+
+    const content = `RAPPORT DE RECHERCHE ACADÉMIQUE\n\n${analysisData.perplexityReport.answer}\n\n` +
+      `RÉFÉRENCES:\n${analysisData.references.map((ref: any) => 
+        `[${ref.label}] ${ref.title}\n${ref.url}`
+      ).join('\n\n')}`
+
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'rapport-perplexity.txt'
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success("Rapport Perplexity téléchargé")
+  }
+
+  const exportAsPDF = async () => {
+    const element = document.getElementById('analysis-results')
+    if (!element) return
+
+    toast.info("Génération du PDF en cours...")
+    
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        logging: false,
+        useCORS: true
+      })
+      
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      const imgWidth = 210
+      const pageHeight = 297
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      let heightLeft = imgHeight
+      let position = 0
+
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
       }
-      return part
+
+      pdf.save('analyse-cas-clinique.pdf')
+      toast.success("PDF téléchargé")
+    } catch (error) {
+      toast.error("Erreur lors de la génération du PDF")
+      console.error(error)
+    }
+  }
+
+  const renderContentWithReferences = (content: string, references: any[]) => {
+    // Remplacer les [num] par des liens cliquables dans le Markdown
+    let processedContent = content
+
+    references.forEach(ref => {
+      const pattern = new RegExp(`\\[${ref.label}\\]`, 'g')
+      processedContent = processedContent.replace(pattern, `[${ref.label}](${ref.url})`)
     })
+
+    return (
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        className="prose prose-sm max-w-none dark:prose-invert"
+        components={{
+          a: ({ node, ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline" />
+          ),
+          p: ({ node, ...props }) => <p {...props} className="mb-2" />,
+          ul: ({ node, ...props }) => <ul {...props} className="list-disc pl-5 mb-2" />,
+          ol: ({ node, ...props }) => <ol {...props} className="list-decimal pl-5 mb-2" />,
+          h1: ({ node, ...props }) => <h1 {...props} className="text-xl font-bold mb-2 mt-4" />,
+          h2: ({ node, ...props }) => <h2 {...props} className="text-lg font-bold mb-2 mt-3" />,
+          h3: ({ node, ...props }) => <h3 {...props} className="text-base font-bold mb-1 mt-2" />,
+          strong: ({ node, ...props }) => <strong {...props} className="font-bold" />,
+        }}
+      >
+        {processedContent}
+      </ReactMarkdown>
+    )
   }
 
   return (
@@ -348,12 +421,30 @@ export default function DemoPage() {
             </CardContent>
           </Card>
         ) : (
-          <>
+          <div id="analysis-results">
             <div className="mb-6 flex justify-between items-center">
               <h2 className="text-2xl font-bold">
                 Résultat de l'analyse {analysisData?.isDemo ? "(Démo)" : "(IA)"}
               </h2>
               <div className="flex gap-2">
+                {!analysisData?.isDemo && analysisData?.perplexityReport && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadPerplexityReport}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Rapport Perplexity
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportAsPDF}
+                >
+                  <FileDown className="mr-2 h-4 w-4" />
+                  Export PDF
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -369,6 +460,7 @@ export default function DemoPage() {
                     setShowResults(false)
                     setTextContent("")
                     setAnalysisData(null)
+                    setCurrentSections([])
                   }}
                 >
                   Nouvelle analyse
@@ -376,81 +468,87 @@ export default function DemoPage() {
               </div>
             </div>
 
-            <Accordion type="single" collapsible className="w-full space-y-4">
+            <Accordion type="single" collapsible className="w-full space-y-4" defaultValue="0">
               {analysisData?.isDemo ? (
                 // Mode démo - afficher les sections prédéfinies
-                Object.entries(demoSections).map(([key, content]) => (
-                  <AccordionItem key={key} value={key} className="border rounded-lg">
+                Object.entries(demoSections).map(([key, content], index) => (
+                  <AccordionItem key={key} value={String(index)} className="border rounded-lg">
                     <AccordionTrigger className="px-6 hover:no-underline">
                       <span className="text-left font-medium">
                         {sectionTitles[key as keyof typeof sectionTitles]}
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-6">
-                      <div className="prose max-w-none">
-                        <div className="whitespace-pre-wrap">
-                          {renderContentWithReferences(content, demoReferences)}
-                        </div>
-                      </div>
+                      {renderContentWithReferences(content, demoReferences)}
                     </AccordionContent>
                   </AccordionItem>
                 ))
               ) : (
-                // Mode réel - afficher les sections de l'API
-                analysisData?.sections?.map((section: any, index: number) => (
-                  <AccordionItem key={index} value={section.type} className="border rounded-lg">
+                // Mode réel - afficher les sections au fur et à mesure
+                (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((section: any, index: number) => (
+                  <AccordionItem key={index} value={String(index)} className="border rounded-lg">
                     <AccordionTrigger className="px-6 hover:no-underline">
                       <span className="text-left font-medium">
                         {sectionTitles[section.type as keyof typeof sectionTitles]}
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-6">
-                      <div className="prose max-w-none">
-                        <div className="whitespace-pre-wrap">
-                          {renderContentWithReferences(section.content, analysisData.references || [])}
-                        </div>
-                      </div>
+                      {renderContentWithReferences(section.content, analysisData?.references || [])}
                     </AccordionContent>
                   </AccordionItem>
                 ))
               )}
             </Accordion>
 
-            <Card className="mt-8">
-              <CardHeader>
-                <CardTitle>Références bibliographiques</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
-                    <li key={ref.label} className="flex items-start gap-2">
-                      <span className="text-gray-500">[{ref.label}]</span>
-                      <div className="flex-1">
-                        <p className="font-medium">{ref.title}</p>
-                        {ref.authors && (
-                          <p className="text-sm text-gray-600">{ref.authors}</p>
-                        )}
-                        {(ref.doi || ref.pmid) && (
-                          <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                            {ref.doi && <span>DOI: {ref.doi}</span>}
-                            {ref.pmid && <span>PMID: {ref.pmid}</span>}
-                          </div>
-                        )}
-                        <a
-                          href={ref.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline"
-                        >
-                          Voir la source →
-                        </a>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </>
+            {isAnalyzing && progressMessage && (
+              <div className="mt-4 text-center text-sm text-gray-600 animate-pulse">
+                {progressMessage}
+              </div>
+            )}
+
+            {analysisData && (
+              <Card className="mt-8">
+                <CardHeader>
+                  <CardTitle>Références bibliographiques</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3">
+                    {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
+                      <li key={ref.label} className="flex items-start gap-2">
+                        <span className="text-gray-500">[{ref.label}]</span>
+                        <div className="flex-1">
+                          <p className="font-medium">{ref.title}</p>
+                          {ref.authors && (
+                            <p className="text-sm text-gray-600">{ref.authors}</p>
+                          )}
+                          {ref.journal && (
+                            <p className="text-sm text-gray-500 italic">{ref.journal}</p>
+                          )}
+                          {(ref.doi || ref.pmid) && (
+                            <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                              {ref.doi && <span>DOI: {ref.doi}</span>}
+                              {ref.pmid && <span>PMID: {ref.pmid}</span>}
+                            </div>
+                          )}
+                          {ref.year && (
+                            <span className="text-xs text-gray-500">({ref.year})</span>
+                          )}
+                          <a
+                            href={ref.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline block mt-1"
+                          >
+                            Voir la source →
+                          </a>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         )}
       </div>
     </div>
