@@ -1,0 +1,67 @@
+name: Deploy to OVH
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build Next.js application
+      env:
+        NEXT_PUBLIC_BASE_PATH: /projet/clinical-case-analyzer
+      run: npm run build
+
+    - name: Create .htaccess for SPA routing
+      run: |
+        cat > out/.htaccess << 'EOF'
+        <IfModule mod_rewrite.c>
+          RewriteEngine On
+          RewriteBase /projet/clinical-case-analyzer/
+          
+          # Handle client-side routing
+          RewriteCond %{REQUEST_FILENAME} !-f
+          RewriteCond %{REQUEST_FILENAME} !-d
+          RewriteRule . /projet/clinical-case-analyzer/index.html [L]
+        </IfModule>
+        
+        # Security headers
+        <IfModule mod_headers.c>
+          Header set X-Content-Type-Options "nosniff"
+          Header set X-Frame-Options "DENY"
+          Header set X-XSS-Protection "1; mode=block"
+          Header set Referrer-Policy "strict-origin-when-cross-origin"
+        </IfModule>
+        EOF
+
+    - name: Deploy to OVH via FTP
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      with:
+        server: ${{ secrets.SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        server-dir: /www/projet/clinical-case-analyzer/
+        local-dir: ./out/
+        dangerous-clean-slate: false
+        exclude: |
+          **/.git*
+          **/.git*/**
+          **/node_modules/**
+          .env*
+          *.db
+          *.db-journal 
