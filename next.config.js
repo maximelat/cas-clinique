@@ -6,11 +6,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  env: {
-    NEXTAUTH_URL: process.env.NODE_ENV === 'production' 
-      ? 'http://latry.consulting/projet/clinical-case-analyzer' 
-      : 'http://localhost:3000',
-  },
   trailingSlash: true,
 }
 
