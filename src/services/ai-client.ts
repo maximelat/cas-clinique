@@ -131,24 +131,38 @@ export class AIClientService {
 CAS CLINIQUE :
 ${clinicalCase}
 
-SYNTHÈSE DE LA RECHERCHE ACADÉMIQUE :
+DONNÉES COMPLÈTES FOURNIES :
 ${perplexityDataProcessed}
 
-Instructions :
-- Analyse le cas en 7 sections exactement
-- Cite les sources entre crochets [1], [2], etc.
-- Sois précis et exhaustif
-- Utilise les données de recherche pour appuyer ton analyse
-- Structure ta réponse en markdown avec les titres de sections
+INSTRUCTIONS IMPORTANTES :
+Tu DOIS structurer ta réponse EXACTEMENT selon le format suivant. Chaque section doit commencer par son titre exact en majuscules suivi de deux points et d'un saut de ligne.
 
-Les 7 sections obligatoires sont :
-1. CLINICAL_CONTEXT : Contexte clinique et résumé du cas
-2. KEY_DATA : Données cliniques importantes (antécédents, symptômes, signes vitaux)
-3. DIAGNOSTIC_HYPOTHESES : Hypothèses diagnostiques différentielles
-4. COMPLEMENTARY_EXAMS : Examens complémentaires recommandés
-5. THERAPEUTIC_DECISIONS : Décisions thérapeutiques et traitement
-6. PROGNOSIS_FOLLOWUP : Pronostic et suivi
-7. PATIENT_EXPLANATIONS : Explications pour le patient (langage simple)`;
+## CLINICAL_CONTEXT:
+[Écris ici le contexte clinique complet et le résumé du cas. Cite les sources pertinentes avec [1], [2], etc.]
+
+## KEY_DATA:
+[Écris ici toutes les données cliniques importantes : antécédents, symptômes actuels, signes vitaux, résultats d'examens déjà effectués. Sois exhaustif et cite les sources.]
+
+## DIAGNOSTIC_HYPOTHESES:
+[Liste et détaille toutes les hypothèses diagnostiques différentielles. Explique le raisonnement pour chaque hypothèse en citant les sources médicales.]
+
+## COMPLEMENTARY_EXAMS:
+[Liste tous les examens complémentaires recommandés avec leur justification. Explique ce que chaque examen pourrait révéler. Cite les recommandations des sources.]
+
+## THERAPEUTIC_DECISIONS:
+[Détaille les décisions thérapeutiques, les traitements recommandés, les posologies, la durée. Base-toi sur les guidelines citées dans les sources.]
+
+## PROGNOSIS_FOLLOWUP:
+[Explique le pronostic attendu et le plan de suivi recommandé. Inclus les signes d'alerte et les consultations de suivi nécessaires.]
+
+## PATIENT_EXPLANATIONS:
+[Rédige des explications claires et simples pour le patient, en langage non médical. Explique le diagnostic, le traitement et les précautions à prendre.]
+
+RAPPEL : 
+- Chaque section DOIT commencer par son titre exact en majuscules suivi de deux points
+- Cite TOUJOURS les sources entre crochets [1], [2], etc.
+- Sois exhaustif et précis dans chaque section
+- N'oublie AUCUNE section`;
 
     try {
       if (this.useFirebaseFunctions) {
@@ -298,57 +312,65 @@ Les 7 sections obligatoires sont :
 
     const sections: any[] = [];
     
-    // Rechercher chaque section dans le texte
+    // Nouvelle approche : chercher le pattern exact "## SECTION_NAME:"
     for (let i = 0; i < sectionTypes.length; i++) {
       const currentType = sectionTypes[i];
       const nextType = sectionTypes[i + 1];
       
-      // Patterns pour trouver les sections
-      const patterns = [
-        new RegExp(`#+ *${currentType}[\\s\\S]*?(?=#|$)`, 'i'),
-        new RegExp(`${currentType}[\\s:]*\\n([\\s\\S]*?)(?=${nextType || '$'})`, 'i'),
-        new RegExp(`\\d+\\.\\s*${currentType}[\\s:]*\\n([\\s\\S]*?)(?=\\d+\\.|$)`, 'i')
-      ];
+      // Pattern principal pour le nouveau format
+      const sectionPattern = new RegExp(
+        `##\\s*${currentType}\\s*:\\s*\\n([\\s\\S]*?)(?=##\\s*${nextType || '$'}|$)`, 
+        'i'
+      );
       
-      let content = '';
-      for (const pattern of patterns) {
-        const match = analysis.match(pattern);
-        if (match) {
-          content = match[1] || match[0];
-          // Nettoyer le contenu
-          content = content
-            .replace(new RegExp(`#*\\s*${currentType}\\s*:?`, 'i'), '')
-            .replace(/^\d+\.\s*/, '')
-            .trim();
-          break;
-        }
-      }
+      const match = analysis.match(sectionPattern);
       
-      if (content) {
+      if (match && match[1]) {
+        const content = match[1].trim();
+        console.log(`Section ${currentType} trouvée, longueur: ${content.length}`);
+        
         sections.push({
           type: currentType,
           content: content
         });
+      } else {
+        console.warn(`Section ${currentType} non trouvée avec le pattern principal`);
+        
+        // Patterns de fallback
+        const fallbackPatterns = [
+          new RegExp(`${currentType}\\s*:\\s*\\n([\\s\\S]*?)(?=${nextType || '$'}|##)`, 'i'),
+          new RegExp(`\\b${currentType}\\b[\\s:]*\\n([\\s\\S]*?)(?=\\b${nextType || '$'}\\b|##|$)`, 'i')
+        ];
+        
+        let found = false;
+        for (const pattern of fallbackPatterns) {
+          const fallbackMatch = analysis.match(pattern);
+          if (fallbackMatch && fallbackMatch[1]) {
+            const content = fallbackMatch[1].trim();
+            console.log(`Section ${currentType} trouvée avec pattern de fallback, longueur: ${content.length}`);
+            
+            sections.push({
+              type: currentType,
+              content: content
+            });
+            found = true;
+            break;
+          }
+        }
+        
+        if (!found) {
+          console.error(`Section ${currentType} introuvable dans l'analyse`);
+          // Ajouter une section vide pour maintenir la structure
+          sections.push({
+            type: currentType,
+            content: 'Section non disponible dans l\'analyse.'
+          });
+        }
       }
     }
     
-    // Si on n'a pas trouvé toutes les sections, essayer une approche plus simple
-    if (sections.length < 7) {
-      // Diviser le texte en paragraphes et assigner aux sections manquantes
-      const paragraphs = analysis.split(/\n\n+/);
-      const missingSections = sectionTypes.filter(type => 
-        !sections.find(s => s.type === type)
-      );
-      
-      missingSections.forEach((type, index) => {
-        if (paragraphs[sections.length + index]) {
-          sections.push({
-            type: type,
-            content: paragraphs[sections.length + index].trim()
-          });
-        }
-      });
-    }
+    console.log(`Nombre total de sections parsées: ${sections.length}`);
+    console.log('Sections avec contenu:', sections.filter(s => s.content && s.content.length > 50).length);
     
     return sections;
   }
@@ -367,20 +389,34 @@ Les 7 sections obligatoires sont :
       }
       
       // Préparer le prompt pour GPT-4o
-      const prompt = `Analyse ces références et liens issus d'une recherche médicale. Pour chaque référence, extrais et structure les informations importantes (titre, auteurs, journal, année, points clés).
+      const prompt = `Analyse ces références et liens issus d'une recherche médicale. Pour chaque référence, structure EXACTEMENT selon ce format :
 
 RAPPORT DE RECHERCHE:
 ${perplexityReport.answer}
 
-RÉFÉRENCES EXTRAITES:
+RÉFÉRENCES À ANALYSER:
 ${rawReferences.map((ref, i) => `[${ref.label}] ${ref.url}`).join('\n')}
 
-Instructions:
-- Identifie le contenu de chaque lien/référence
-- Extrais les informations bibliographiques quand disponibles
-- Résume les points clés de chaque source
-- Évalue la qualité et la pertinence des sources
-- Structure ta réponse de manière claire`;
+FORMAT DE RÉPONSE OBLIGATOIRE pour chaque référence :
+
+[1] "Titre complet de l'article"
+Auteurs: Nom A, Nom B, et al.
+Journal: Nom du journal, année
+Points clés: 
+- Point important 1
+- Point important 2
+Pertinence: Haute/Moyenne/Faible - Explication
+
+[2] "Titre du deuxième article"
+Auteurs: ...
+(même format)
+
+IMPORTANT:
+- Commence chaque référence par son numéro entre crochets [1], [2], etc.
+- Mets le titre entre guillemets
+- Si une information n'est pas disponible, écris "Non disponible"
+- Résume en 2-3 points clés maximum par référence
+- Évalue la pertinence pour ce cas clinique spécifique`;
 
       if (this.useFirebaseFunctions) {
         console.log('Analyse des références avec GPT-4o via Firebase Functions...');
@@ -441,25 +477,91 @@ Instructions:
   }
 
   private enrichReferencesFromAnalysis(references: any[], analysis: string): any[] {
-    // Enrichir les références avec les informations extraites de l'analyse
-    // Cette méthode pourrait parser l'analyse GPT-4o pour extraire des métadonnées supplémentaires
-    return references.map(ref => ({
-      ...ref,
-      analyzed: true
-    }));
+    // Enrichir les références avec les informations extraites de l'analyse GPT-4o
+    const enrichedRefs = [...references];
+    
+    // Pour chaque référence, essayer d'extraire plus d'infos depuis l'analyse structurée
+    enrichedRefs.forEach((ref, index) => {
+      // Pattern pour trouver le bloc de cette référence dans l'analyse
+      const refBlockPattern = new RegExp(
+        `\\[${ref.label}\\]\\s*"([^"]+)"[\\s\\S]*?(?=\\[\\d+\\]|$)`, 
+        'i'
+      );
+      const blockMatch = analysis.match(refBlockPattern);
+      
+      if (blockMatch) {
+        // Extraire le titre depuis les guillemets
+        if (blockMatch[1]) {
+          ref.title = blockMatch[1];
+        }
+        
+        const blockContent = blockMatch[0];
+        
+        // Extraire les auteurs
+        const authorsMatch = blockContent.match(/Auteurs?:\s*([^\n]+)/i);
+        if (authorsMatch && authorsMatch[1] !== 'Non disponible') {
+          ref.authors = authorsMatch[1].trim();
+        }
+        
+        // Extraire le journal et l'année
+        const journalMatch = blockContent.match(/Journal:\s*([^,\n]+)(?:,\s*(\d{4}))?/i);
+        if (journalMatch) {
+          if (journalMatch[1] && journalMatch[1] !== 'Non disponible') {
+            ref.journal = journalMatch[1].trim();
+          }
+          if (journalMatch[2]) {
+            ref.year = parseInt(journalMatch[2]);
+          }
+        }
+        
+        // Extraire les points clés
+        const pointsMatch = blockContent.match(/Points? clés?:\s*([^\n]+(?:\n\s*-[^\n]+)*)/i);
+        if (pointsMatch) {
+          ref.keyPoints = pointsMatch[1].trim();
+        }
+        
+        // Extraire la pertinence
+        const pertinenceMatch = blockContent.match(/Pertinence:\s*([^\n]+)/i);
+        if (pertinenceMatch) {
+          ref.relevance = pertinenceMatch[1].trim();
+        }
+      }
+      
+      ref.analyzed = true;
+    });
+    
+    console.log('Références enrichies:', enrichedRefs);
+    return enrichedRefs;
   }
 
   private extractReferences(perplexityReport: PerplexityResponse): any[] {
     const references: any[] = [];
+    console.log('Extraction des références, citations brutes:', perplexityReport.citations);
 
     // Parser les citations de Perplexity si elles sont disponibles
     if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
       perplexityReport.citations.forEach((citation: any, index: number) => {
         // Si c'est une simple URL string
         if (typeof citation === 'string') {
+          // Essayer d'extraire un titre depuis l'URL
+          let title = `Source ${index + 1}`;
+          try {
+            const url = new URL(citation);
+            const pathname = url.pathname.split('/').filter(p => p);
+            if (pathname.length > 0) {
+              title = pathname[pathname.length - 1]
+                .replace(/-/g, ' ')
+                .replace(/_/g, ' ')
+                .replace(/\.pdf$/i, '')
+                .replace(/\.html?$/i, '');
+            }
+          } catch (e) {
+            // Garder le titre par défaut si l'URL est invalide
+          }
+          
           references.push({
             label: String(index + 1),
-            title: `Source ${index + 1}`,
+            title: title,
             url: citation,
             authors: '',
             year: null,
@@ -467,20 +569,24 @@ Instructions:
           });
         } 
         // Si c'est un objet structuré
-        else if (typeof citation === 'object') {
-          const label = citation.number || String(index + 1);
-          const title = citation.title || citation.name || citation.text || `Source ${label}`;
-          const url = citation.url || citation.link || citation;
+        else if (typeof citation === 'object' && citation !== null) {
+          // Log pour débugger la structure
+          console.log(`Citation ${index + 1} structure:`, citation);
+          
+          const label = citation.number || citation.id || String(index + 1);
+          const title = citation.title || citation.name || citation.text || 
+                       citation.snippet || `Source ${label}`;
+          const url = citation.url || citation.link || citation.href || '#';
           
           references.push({
-            label: label,
+            label: String(label),
             title: title,
             url: url,
             authors: citation.authors?.join?.(', ') || citation.author || '',
-            year: citation.year || citation.date ? new Date(citation.date).getFullYear() : null,
+            year: citation.year || (citation.date ? new Date(citation.date).getFullYear() : null),
             doi: citation.doi || '',
             pmid: citation.pmid || '',
-            journal: citation.journal || citation.source || ''
+            journal: citation.journal || citation.source || citation.publisher || ''
           });
         }
       });
