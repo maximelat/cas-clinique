@@ -405,6 +405,57 @@ export default function DemoPage() {
     toast.success("Rapport Perplexity téléchargé")
   }
 
+  const exportAsText = () => {
+    let content = `ANALYSE DE CAS CLINIQUE\n${new Date().toLocaleDateString('fr-FR')}\n\n${'='.repeat(50)}\n\n`
+    
+    if (analysisData?.isDemo) {
+      Object.entries(demoSections).forEach(([key, text]) => {
+        content += `${sectionTitles[key as keyof typeof sectionTitles]}\n${'-'.repeat(40)}\n${text}\n\n`
+      })
+    } else if (analysisData?.sections) {
+      const sections = currentSections.length > 0 ? currentSections : analysisData.sections
+      sections.forEach((section: any) => {
+        content += `${sectionTitles[section.type as keyof typeof sectionTitles]}\n${'-'.repeat(40)}\n${section.content}\n\n`
+      })
+    }
+    
+    // Ajouter la section maladies rares si présente
+    if (rareDiseaseData && showRareDiseaseSection) {
+      content += `\n8. Recherche de maladies rares\n${'-'.repeat(40)}\n${rareDiseaseData.report}\n\n`
+    }
+    
+    // Ajouter les références
+    content += `\nRÉFÉRENCES BIBLIOGRAPHIQUES\n${'='.repeat(50)}\n\n`
+    const references = analysisData?.isDemo ? demoReferences : (analysisData?.references || [])
+    references.forEach((ref: any) => {
+      content += `[${ref.label}] ${ref.title}\n`
+      if (ref.authors) content += `    Auteurs: ${ref.authors}\n`
+      if (ref.journal) content += `    Journal: ${ref.journal}\n`
+      if (ref.year) content += `    Année: ${ref.year}\n`
+      if (ref.url && ref.url !== '#') content += `    URL: ${ref.url}\n`
+      content += '\n'
+    })
+    
+    // Ajouter les références maladies rares si présentes
+    if (rareDiseaseData && rareDiseaseData.references.length > 0) {
+      content += `\nRÉFÉRENCES - MALADIES RARES\n${'='.repeat(50)}\n\n`
+      rareDiseaseData.references.forEach((ref: any) => {
+        content += `[${ref.label}] ${ref.title}\n`
+        if (ref.url && ref.url !== '#') content += `    URL: ${ref.url}\n`
+        content += '\n'
+      })
+    }
+    
+    const blob = new Blob([content], { type: 'text/plain; charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'analyse-cas-clinique.txt'
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success("Fichier texte téléchargé")
+  }
+
   const exportAsPDF = async () => {
     const element = document.getElementById('analysis-results')
     if (!element) {
@@ -416,51 +467,239 @@ export default function DemoPage() {
     toast.info("Génération du PDF en cours...")
     
     try {
-      console.log('Début de la génération du canvas...')
+      console.log('Début de la génération du PDF...')
       
-      // Options améliorées pour html2canvas
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        logging: true, // Activer les logs pour debug
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight
+      // Méthode alternative : créer un PDF avec le contenu texte directement
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const margin = 20
+      const maxWidth = pageWidth - 2 * margin
+      let yPosition = margin
+      
+      // Ajouter le titre
+      pdf.setFontSize(20)
+      pdf.setFont('helvetica', 'bold')
+      pdf.text('Analyse de Cas Clinique', margin, yPosition)
+      yPosition += 15
+      
+      // Ajouter la date
+      pdf.setFontSize(10)
+      pdf.setFont('helvetica', 'normal')
+      pdf.text(new Date().toLocaleDateString('fr-FR'), margin, yPosition)
+      yPosition += 10
+      
+      // Ligne de séparation
+      pdf.setLineWidth(0.5)
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition)
+      yPosition += 10
+      
+      // Ajouter le contenu des sections
+      pdf.setFontSize(12)
+      
+      if (analysisData?.isDemo) {
+        // Mode démo
+        Object.entries(demoSections).forEach(([key, content]) => {
+          if (yPosition > pageHeight - 30) {
+            pdf.addPage()
+            yPosition = margin
+          }
+          
+          // Titre de section
+          pdf.setFont('helvetica', 'bold')
+          const title = sectionTitles[key as keyof typeof sectionTitles]
+          pdf.text(title, margin, yPosition)
+          yPosition += 8
+          
+          // Contenu de section
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(10)
+          
+          // Nettoyer le contenu Markdown
+          const cleanContent = content
+            .replace(/\*\*(.*?)\*\*/g, '$1') // Enlever le bold
+            .replace(/\[(.*?)\]/g, '[$1]') // Garder les références
+            .replace(/•/g, '-') // Remplacer les bullets
+          
+          const lines = pdf.splitTextToSize(cleanContent, maxWidth)
+          lines.forEach((line: string) => {
+            if (yPosition > pageHeight - 20) {
+              pdf.addPage()
+              yPosition = margin
+            }
+            pdf.text(line, margin, yPosition)
+            yPosition += 5
+          })
+          
+          yPosition += 10
+          pdf.setFontSize(12)
+        })
+      } else if (analysisData?.sections) {
+        // Mode réel
+        const sections = currentSections.length > 0 ? currentSections : analysisData.sections
+        sections.forEach((section: any) => {
+          if (yPosition > pageHeight - 30) {
+            pdf.addPage()
+            yPosition = margin
+          }
+          
+          // Titre de section
+          pdf.setFont('helvetica', 'bold')
+          const title = sectionTitles[section.type as keyof typeof sectionTitles]
+          pdf.text(title, margin, yPosition)
+          yPosition += 8
+          
+          // Contenu de section
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(10)
+          
+          // Nettoyer le contenu Markdown
+          const cleanContent = section.content
+            .replace(/\*\*(.*?)\*\*/g, '$1')
+            .replace(/\[(.*?)\]/g, '[$1]')
+            .replace(/•/g, '-')
+          
+          const lines = pdf.splitTextToSize(cleanContent, maxWidth)
+          lines.forEach((line: string) => {
+            if (yPosition > pageHeight - 20) {
+              pdf.addPage()
+              yPosition = margin
+            }
+            pdf.text(line, margin, yPosition)
+            yPosition += 5
+          })
+          
+          yPosition += 10
+          pdf.setFontSize(12)
+        })
+      }
+      
+      // Ajouter les références
+      if (yPosition > pageHeight - 40) {
+        pdf.addPage()
+        yPosition = margin
+      }
+      
+      pdf.setFont('helvetica', 'bold')
+      pdf.text('Références bibliographiques', margin, yPosition)
+      yPosition += 8
+      
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(10)
+      
+      const references = analysisData?.isDemo ? demoReferences : (analysisData?.references || [])
+      references.forEach((ref: any) => {
+        if (yPosition > pageHeight - 20) {
+          pdf.addPage()
+          yPosition = margin
+        }
+        
+        const refText = `[${ref.label}] ${ref.title}${ref.authors ? ' - ' + ref.authors : ''}${ref.year ? ' (' + ref.year + ')' : ''}`
+        const lines = pdf.splitTextToSize(refText, maxWidth)
+        lines.forEach((line: string) => {
+          pdf.text(line, margin, yPosition)
+          yPosition += 5
+        })
+        
+        if (ref.url && ref.url !== '#') {
+          pdf.setTextColor(0, 0, 255)
+          pdf.textWithLink(ref.url, margin, yPosition, { url: ref.url })
+          pdf.setTextColor(0, 0, 0)
+          yPosition += 5
+        }
+        
+        yPosition += 3
       })
       
-      console.log('Canvas généré:', canvas.width, 'x', canvas.height)
-      
-      const imgData = canvas.toDataURL('image/png')
-      console.log('Image data générée, longueur:', imgData.length)
-      
-      const pdf = new jsPDF('p', 'mm', 'a4')
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = pdf.internal.pageSize.getHeight()
-      const imgWidth = pdfWidth
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      let heightLeft = imgHeight
-      let position = 0
-
-      // Ajouter la première page
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-      heightLeft -= pdfHeight
-
-      // Ajouter les pages suivantes si nécessaire
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight
+      // Si la recherche de maladies rares a été effectuée
+      if (rareDiseaseData && showRareDiseaseSection) {
         pdf.addPage()
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pdfHeight
+        yPosition = margin
+        
+        pdf.setFontSize(12)
+        pdf.setFont('helvetica', 'bold')
+        pdf.text('8. Recherche de maladies rares', margin, yPosition)
+        yPosition += 8
+        
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(10)
+        
+        const cleanContent = rareDiseaseData.report
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/\[(.*?)\]/g, '[$1]')
+          .replace(/•/g, '-')
+        
+        const lines = pdf.splitTextToSize(cleanContent, maxWidth)
+        lines.forEach((line: string) => {
+          if (yPosition > pageHeight - 20) {
+            pdf.addPage()
+            yPosition = margin
+          }
+          pdf.text(line, margin, yPosition)
+          yPosition += 5
+        })
       }
-
-      console.log('PDF généré, nombre de pages:', pdf.internal.pages.length - 1)
       
+      // Sauvegarder le PDF
       pdf.save('analyse-cas-clinique.pdf')
       toast.success("PDF téléchargé avec succès")
+      console.log('PDF généré avec succès')
+      
     } catch (error: any) {
-      console.error('Erreur détaillée lors de la génération du PDF:', error)
-      toast.error(`Erreur: ${error.message || 'Impossible de générer le PDF'}`)
+      console.error('Erreur lors de la génération du PDF:', error)
+      
+      // Fallback : essayer avec html2canvas si la méthode directe échoue
+      try {
+        console.log('Tentative avec html2canvas...')
+        
+        // Ouvrir tous les accordions avant la capture
+        const accordionButtons = element.querySelectorAll('[data-state="closed"]')
+        accordionButtons.forEach(button => {
+          (button as HTMLElement).click()
+        })
+        
+        // Attendre que les animations se terminent
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        const canvas = await html2canvas(element, {
+          scale: 1.5,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          windowWidth: element.scrollWidth,
+          windowHeight: element.scrollHeight,
+          ignoreElements: (element) => {
+            // Ignorer certains éléments problématiques
+            return element.classList.contains('no-print')
+          }
+        })
+        
+        const imgData = canvas.toDataURL('image/png')
+        const pdf = new jsPDF('p', 'mm', 'a4')
+        const imgWidth = 190 // Largeur avec marges
+        const imgHeight = (canvas.height * imgWidth) / canvas.width
+        
+        pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight)
+        
+        // Ajouter des pages si nécessaire
+        let heightLeft = imgHeight - 277 // 297 - 20 de marges
+        let position = -277
+        
+        while (heightLeft > 0) {
+          pdf.addPage()
+          pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight)
+          heightLeft -= 277
+          position -= 277
+        }
+        
+        pdf.save('analyse-cas-clinique.pdf')
+        toast.success("PDF téléchargé (méthode alternative)")
+        
+      } catch (fallbackError: any) {
+        console.error('Erreur avec html2canvas:', fallbackError)
+        toast.error(`Impossible de générer le PDF. Erreur: ${error.message}`)
+      }
     }
   }
 
@@ -797,6 +1036,14 @@ export default function DemoPage() {
                 >
                   <FileDown className="mr-2 h-4 w-4" />
                   Export PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportAsText}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Export TXT
                 </Button>
                 <Button
                   variant="outline"

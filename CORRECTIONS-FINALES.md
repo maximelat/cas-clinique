@@ -68,3 +68,31 @@ Pour la transcription, vérifier :
 - Permissions microphone accordées
 - Format audio supporté (webm)
 - Clés API configurées 
+
+## 6. Nouvelle fonctionnalité : Export PDF amélioré
+
+### Problème
+L'export PDF ne fonctionnait pas correctement avec html2canvas.
+
+### Solution
+- **Méthode principale** : Génération directe du PDF avec jsPDF (sans html2canvas)
+  - Création du contenu texte formaté
+  - Pagination automatique
+  - Liens cliquables dans les références
+  - Support complet de toutes les sections
+
+- **Méthode de secours** : html2canvas optimisé
+  - Ouvre automatiquement tous les accordions
+  - Paramètres optimisés pour la capture
+
+- **Export alternatif** : Nouveau bouton "Export TXT"
+  - Format texte simple
+  - Compatible avec tous les navigateurs
+  - Inclut toutes les sections et références
+
+### Code modifié
+- `src/app/demo/page.tsx` : Nouvelle fonction `exportAsPDF()` avec approche directe
+- Ajout de la fonction `exportAsText()` pour l'export en fichier texte
+- Nouveau bouton dans l'interface
+
+## Notes de déploiement 
