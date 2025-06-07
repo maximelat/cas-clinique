@@ -46,14 +46,22 @@ export class HistoryService {
         caseText: analysis.caseText,
         sections: analysis.sections,
         references: analysis.references,
-        perplexityReport: analysis.perplexityReport,
-        rareDiseaseData: analysis.rareDiseaseData,
-        images: analysis.images
+        perplexityReport: analysis.perplexityReport || null,
+        rareDiseaseData: analysis.rareDiseaseData || null,
+        images: analysis.images || null
       };
+      
+      // Filtrer les champs undefined pour éviter les erreurs Firestore
+      const cleanedDoc = Object.entries(analysisDoc).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key as keyof AnalysisRecord] = value;
+        }
+        return acc;
+      }, {} as any);
       
       await setDoc(
         doc(db, this.COLLECTION_NAME, analysis.id), 
-        analysisDoc
+        cleanedDoc
       );
     } catch (error) {
       console.error('Erreur lors de la sauvegarde de l\'analyse:', error);
