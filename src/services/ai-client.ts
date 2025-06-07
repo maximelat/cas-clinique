@@ -103,51 +103,50 @@ export class AIClientService {
     }
   }
 
-  async analyzeWithOpenAI(caseText: string, perplexityReport: string, sectionType: string): Promise<string> {
+  private async analyzeWithOpenAI(perplexityData: string, clinicalCase: string): Promise<string> {
     if (!this.openaiApiKey) {
       throw new Error('Clé API OpenAI non configurée');
     }
 
-    const sectionPrompts = {
-      CLINICAL_CONTEXT: "Analyse et rédige le contexte clinique de ce cas. Inclus l'anamnèse, les antécédents pertinents et la présentation clinique actuelle. Base-toi sur les informations de la recherche académique pour enrichir ton analyse.",
-      KEY_DATA: "Identifie et structure les données clés du cas : facteurs de risque, signes vitaux, résultats d'examens, valeurs biologiques importantes. Mets en perspective avec les valeurs de référence issues de la littérature.",
-      DIAGNOSTIC_HYPOTHESES: "Formule les hypothèses diagnostiques principales et différentielles. Justifie chaque hypothèse avec les éléments cliniques ET les données de la littérature médicale fournie.",
-      COMPLEMENTARY_EXAMS: "Liste les examens complémentaires recommandés en urgence et à distance. Justifie leur pertinence en citant les guidelines et recommandations de la recherche.",
-      THERAPEUTIC_DECISIONS: "Détaille les décisions thérapeutiques immédiates et à long terme. Base-toi sur les protocoles et recommandations issus de la recherche. Inclus médicaments, posologies et surveillances.",
-      PROGNOSIS_FOLLOWUP: "Évalue le pronostic en te basant sur les données épidémiologiques de la recherche. Propose un plan de suivi adapté avec les échéances selon les recommandations actuelles.",
-      PATIENT_EXPLANATIONS: "Rédige une explication claire et empathique pour le patient (niveau B1/B2). Évite le jargon médical. Intègre des éléments rassurants basés sur les données scientifiques."
-    };
+    const prompt = `Tu es un médecin expert. Analyse ce cas clinique en te basant sur les données de recherche académique fournies.
 
-    const systemPrompt = `Tu es un médecin expert spécialisé dans l'analyse de cas cliniques. 
-              Tu as accès à une recherche académique approfondie sur ce cas.
-              ${sectionPrompts[sectionType as keyof typeof sectionPrompts]}
-              
-              IMPORTANT : 
-              - Utilise les informations de la recherche académique pour enrichir ton analyse
-              - Cite les sources pertinentes en utilisant [num] quand tu fais référence à des études ou guidelines
-              - Sois précis, structuré et evidence-based
-              - Adapte le niveau de détail technique selon la section
-              - Utilise le formatage Markdown pour structurer ta réponse (titres, listes, gras, etc.)`;
+CAS CLINIQUE :
+${clinicalCase}
 
-    const userPrompt = `CAS CLINIQUE:\n${caseText}\n\nRECHERCHE ACADÉMIQUE:\n${perplexityReport}`;
+DONNÉES DE RECHERCHE ACADÉMIQUE :
+${perplexityData}
+
+Instructions :
+- Analyse le cas en 7 sections exactement
+- Cite les sources entre crochets [1], [2], etc.
+- Sois précis et exhaustif
+- Utilise les données de recherche pour appuyer ton analyse
+- Structure ta réponse en markdown avec les titres de sections
+
+Les 7 sections obligatoires sont :
+1. CLINICAL_CONTEXT : Contexte clinique et résumé du cas
+2. KEY_DATA : Données cliniques importantes (antécédents, symptômes, signes vitaux)
+3. DIAGNOSTIC_HYPOTHESES : Hypothèses diagnostiques différentielles
+4. COMPLEMENTARY_EXAMS : Examens complémentaires recommandés
+5. THERAPEUTIC_DECISIONS : Décisions thérapeutiques et traitement
+6. PROGNOSIS_FOLLOWUP : Pronostic et suivi
+7. PATIENT_EXPLANATIONS : Explications pour le patient (langage simple)`;
 
     try {
       const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
+        'https://api.openai.com/v1/responses',
         {
           model: 'o3-2025-04-16',
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
+          reasoning: { 
+            effort: 'medium'
+          },
+          input: [
             {
               role: 'user',
-              content: userPrompt
+              content: prompt
             }
           ],
-          temperature: 0.3,
-          max_completion_tokens: 1500
+          max_output_tokens: 25000
         },
         {
           headers: {
@@ -157,7 +156,7 @@ export class AIClientService {
         }
       );
 
-      return response.data.choices[0].message.content;
+      return response.data.output_text || response.data.output?.[0]?.text || '';
     } catch (error: any) {
       console.error('Erreur OpenAI:', error);
       
@@ -172,21 +171,63 @@ export class AIClientService {
 
   async analyzeClinicalCase(
     caseText: string, 
-    onProgress?: (message: string) => void,
-    onSectionComplete?: (section: SectionContent, index: number, total: number) => void
-  ): Promise<{
-    perplexityReport: PerplexityResponse;
-    sections: SectionContent[];
-    references: any[];
-  }> {
-    // 1. Recherche Perplexity Academic
-    onProgress?.('Recherche académique en cours...');
-    const perplexityReport = await this.searchWithPerplexity(caseText);
+    progressCallback?: (message: string) => void,
+    sectionCallback?: (section: any, index: number, total: number) => void,
+    images?: { base64: string, type: string }[]
+  ): Promise<{ sections: any[], references: any[], perplexityReport: any }> {
+    if (!this.hasApiKeys()) {
+      throw new Error('Les clés API ne sont pas configurées');
+    }
 
-    // 2. Analyse des sections avec OpenAI en utilisant le rapport Perplexity
+    try {
+      // Étape 1 : Recherche Perplexity
+      progressCallback?.('Recherche dans la littérature médicale...');
+      const perplexityReport = await this.searchWithPerplexity(caseText);
+      
+      // Étape 2 : Analyser les images avec o4-mini si présentes
+      let imageAnalyses = '';
+      if (images && images.length > 0) {
+        progressCallback?.('Analyse des images médicales...');
+        for (let i = 0; i < images.length; i++) {
+          progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
+          const imageAnalysis = await this.analyzeImageWithO4Mini(images[i].base64, images[i].type);
+          imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
+        }
+      }
+
+      // Étape 3 : Construire le prompt complet pour o3
+      const completeData = perplexityReport.answer + (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
+      
+      // Étape 4 : Analyser avec o3 toutes les sections en une fois
+      progressCallback?.('Analyse médicale complète en cours...');
+      const fullAnalysis = await this.analyzeWithOpenAI(completeData, caseText);
+      
+      // Étape 5 : Parser la réponse pour extraire les sections
+      const sections = this.parseSections(fullAnalysis);
+      
+      // Étape 6 : Extraire les références du rapport Perplexity
+      const references = this.extractReferences(perplexityReport);
+      
+      // Appeler le callback pour chaque section
+      sections.forEach((section, index) => {
+        sectionCallback?.(section, index, sections.length);
+      });
+      
+      return {
+        sections,
+        references,
+        perplexityReport
+      };
+    } catch (error: any) {
+      console.error('Erreur complète:', error);
+      throw error;
+    }
+  }
+
+  private parseSections(analysis: string): any[] {
     const sectionTypes = [
       'CLINICAL_CONTEXT',
-      'KEY_DATA',
+      'KEY_DATA', 
       'DIAGNOSTIC_HYPOTHESES',
       'COMPLEMENTARY_EXAMS',
       'THERAPEUTIC_DECISIONS',
@@ -194,43 +235,61 @@ export class AIClientService {
       'PATIENT_EXPLANATIONS'
     ];
 
-    const sectionNames: { [key: string]: string } = {
-      'CLINICAL_CONTEXT': 'Contexte clinique',
-      'KEY_DATA': 'Données clés',
-      'DIAGNOSTIC_HYPOTHESES': 'Hypothèses diagnostiques',
-      'COMPLEMENTARY_EXAMS': 'Examens complémentaires',
-      'THERAPEUTIC_DECISIONS': 'Décisions thérapeutiques',
-      'PROGNOSIS_FOLLOWUP': 'Pronostic et suivi',
-      'PATIENT_EXPLANATIONS': 'Explications patient'
-    };
-
-    const sections: SectionContent[] = [];
+    const sections: any[] = [];
     
+    // Rechercher chaque section dans le texte
     for (let i = 0; i < sectionTypes.length; i++) {
-      const type = sectionTypes[i];
-      onProgress?.(`Analyse ${i + 1}/7: ${sectionNames[type]}...`);
+      const currentType = sectionTypes[i];
+      const nextType = sectionTypes[i + 1];
       
-      const content = await this.analyzeWithOpenAI(
-        caseText, 
-        perplexityReport.answer, 
-        type
+      // Patterns pour trouver les sections
+      const patterns = [
+        new RegExp(`#+ *${currentType}[\\s\\S]*?(?=#|$)`, 'i'),
+        new RegExp(`${currentType}[\\s:]*\\n([\\s\\S]*?)(?=${nextType || '$'})`, 'i'),
+        new RegExp(`\\d+\\.\\s*${currentType}[\\s:]*\\n([\\s\\S]*?)(?=\\d+\\.|$)`, 'i')
+      ];
+      
+      let content = '';
+      for (const pattern of patterns) {
+        const match = analysis.match(pattern);
+        if (match) {
+          content = match[1] || match[0];
+          // Nettoyer le contenu
+          content = content
+            .replace(new RegExp(`#*\\s*${currentType}\\s*:?`, 'i'), '')
+            .replace(/^\d+\.\s*/, '')
+            .trim();
+          break;
+        }
+      }
+      
+      if (content) {
+        sections.push({
+          type: currentType,
+          content: content
+        });
+      }
+    }
+    
+    // Si on n'a pas trouvé toutes les sections, essayer une approche plus simple
+    if (sections.length < 7) {
+      // Diviser le texte en paragraphes et assigner aux sections manquantes
+      const paragraphs = analysis.split(/\n\n+/);
+      const missingSections = sectionTypes.filter(type => 
+        !sections.find(s => s.type === type)
       );
       
-      const section = { type, content };
-      sections.push(section);
-      
-      // Appeler le callback pour afficher la section immédiatement
-      onSectionComplete?.(section, i, sectionTypes.length);
+      missingSections.forEach((type, index) => {
+        if (paragraphs[sections.length + index]) {
+          sections.push({
+            type: type,
+            content: paragraphs[sections.length + index].trim()
+          });
+        }
+      });
     }
-
-    // 3. Extraire les références de Perplexity
-    const references = this.extractReferences(perplexityReport);
-
-    return {
-      perplexityReport,
-      sections,
-      references
-    };
+    
+    return sections;
   }
 
   private extractReferences(perplexityReport: PerplexityResponse): any[] {
@@ -341,5 +400,64 @@ export class AIClientService {
       return false;
     }
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  // Analyser une image avec o4-mini
+  private async analyzeImageWithO4Mini(imageBase64: string, imageType: string = 'medical'): Promise<string> {
+    if (!this.openaiApiKey) {
+      throw new Error('Clé API OpenAI non configurée');
+    }
+
+    const imageTypePrompts = {
+      medical: "Analyse cette image médicale (radiographie, IRM, scanner, échographie, etc.) et décris précisément ce que tu observes.",
+      biology: "Analyse ces résultats biologiques et identifie les valeurs anormales, en les comparant aux valeurs de référence.",
+      ecg: "Analyse cet ECG : rythme, fréquence, intervalles, anomalies éventuelles.",
+      other: "Analyse cette image clinique et décris ce que tu observes de pertinent."
+    };
+
+    const prompt = `${imageTypePrompts[imageType as keyof typeof imageTypePrompts] || imageTypePrompts.other}
+    
+    Sois précis et méthodique. Liste toutes les anomalies observées et leur signification clinique potentielle.`;
+
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/responses',
+        {
+          model: 'o4-mini-2025-04-16',
+          reasoning: { 
+            effort: 'high' // High pour une analyse approfondie des images
+          },
+          input: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: prompt
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/jpeg;base64,${imageBase64}`
+                  }
+                }
+              ]
+            }
+          ],
+          max_output_tokens: 5000
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      return response.data.output_text || response.data.output?.[0]?.text || '';
+    } catch (error: any) {
+      console.error('Erreur analyse image o4-mini:', error);
+      throw new Error('Erreur lors de l\'analyse de l\'image: ' + (error.response?.data?.error?.message || error.message));
+    }
   }
 } 

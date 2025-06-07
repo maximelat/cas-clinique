@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
@@ -142,6 +142,7 @@ export default function DemoPage() {
   const [currentSections, setCurrentSections] = useState<any[]>([])
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [isAudioSupported, setIsAudioSupported] = useState(false)
+  const [uploadedImages, setUploadedImages] = useState<{ base64: string, type: string, name: string }[]>([])
   
   // Hook pour l'enregistrement audio
   const {
@@ -163,6 +164,49 @@ export default function DemoPage() {
   useEffect(() => {
     setIsAudioSupported(AIClientService.isAudioRecordingSupported())
   }, [])
+
+  // Gérer l'upload d'images
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} n'est pas une image`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = e.target?.result as string;
+        const base64Data = base64.split(',')[1];
+        
+        // Déterminer le type d'image médicale
+        let imageType = 'other';
+        const fileName = file.name.toLowerCase();
+        if (fileName.includes('bio') || fileName.includes('lab') || fileName.includes('sang')) {
+          imageType = 'biology';
+        } else if (fileName.includes('ecg') || fileName.includes('ekg')) {
+          imageType = 'ecg';
+        } else if (fileName.includes('radio') || fileName.includes('rx') || fileName.includes('irm') || 
+                   fileName.includes('scan') || fileName.includes('echo')) {
+          imageType = 'medical';
+        }
+
+        setUploadedImages(prev => [...prev, {
+          base64: base64Data,
+          type: imageType,
+          name: file.name
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Supprimer une image
+  const removeImage = (index: number) => {
+    setUploadedImages(prev => prev.filter((_, i) => i !== index));
+  }
 
   // Formater le temps d'enregistrement
   const formatTime = (seconds: number) => {
@@ -266,7 +310,8 @@ export default function DemoPage() {
             // Afficher les sections au fur et à mesure
             setCurrentSections(prev => [...prev, section])
             if (!showResults) setShowResults(true)
-          }
+          },
+          uploadedImages.length > 0 ? uploadedImages : undefined
         )
 
         setAnalysisData({
@@ -517,6 +562,57 @@ export default function DemoPage() {
                 )}
               </div>
 
+              {/* Upload d'images */}
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="images">Images médicales (optionnel)</Label>
+                  <div className="mt-2 flex items-center gap-4">
+                    <input
+                      type="file"
+                      id="images"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => document.getElementById('images')?.click()}
+                      disabled={isAnalyzing}
+                    >
+                      <ImagePlus className="h-4 w-4 mr-2" />
+                      Ajouter des images
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
+                    </span>
+                  </div>
+                </div>
+
+                {uploadedImages.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {uploadedImages.map((img, index) => (
+                      <div key={index} className="relative group">
+                        <div className="border rounded-lg p-3 bg-gray-50">
+                          <p className="text-xs font-medium truncate">{img.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeImage(index)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className={`border rounded-lg p-4 ${isDemoMode ? 'bg-blue-50 border-blue-200' : hasApiKeys ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <div className="flex">
                   <AlertCircle className={`w-5 h-5 mr-2 flex-shrink-0 ${isDemoMode ? 'text-blue-600' : hasApiKeys ? 'text-green-600' : 'text-red-600'}`} />
@@ -609,6 +705,7 @@ export default function DemoPage() {
                     setTextContent("")
                     setAnalysisData(null)
                     setCurrentSections([])
+                    setUploadedImages([])
                   }}
                 >
                   Nouvelle analyse

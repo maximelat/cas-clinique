@@ -60,50 +60,62 @@ export class AIService {
     }
   }
 
-  async analyzeWithOpenAI(caseText: string, perplexityReport: string, sectionType: string): Promise<string> {
+  private async analyzeWithOpenAI(caseText: string, perplexityReport: string, sectionType: string): Promise<string> {
     const sectionPrompts = {
-      CLINICAL_CONTEXT: "Analyse et rédige le contexte clinique de ce cas. Inclus l'anamnèse, les antécédents pertinents et la présentation clinique actuelle.",
-      KEY_DATA: "Identifie et structure les données clés du cas : facteurs de risque, signes vitaux, résultats d'examens, valeurs biologiques importantes.",
-      DIAGNOSTIC_HYPOTHESES: "Formule les hypothèses diagnostiques principales et différentielles. Justifie chaque hypothèse avec les éléments cliniques.",
-      COMPLEMENTARY_EXAMS: "Liste les examens complémentaires recommandés en urgence et à distance. Justifie leur pertinence.",
-      THERAPEUTIC_DECISIONS: "Détaille les décisions thérapeutiques immédiates et à long terme. Inclus médicaments, posologies et surveillances.",
-      PROGNOSIS_FOLLOWUP: "Évalue le pronostic et propose un plan de suivi adapté avec les échéances.",
-      PATIENT_EXPLANATIONS: "Rédige une explication claire et empathique pour le patient (niveau B1/B2). Évite le jargon médical."
+      CLINICAL_CONTEXT: "Analyse et rédige le contexte clinique de ce cas. Inclus l'anamnèse, les antécédents pertinents et la présentation clinique actuelle. Base-toi sur les informations de la recherche académique pour enrichir ton analyse.",
+      KEY_DATA: "Identifie et structure les données clés du cas : facteurs de risque, signes vitaux, résultats d'examens, valeurs biologiques importantes. Mets en perspective avec les valeurs de référence issues de la littérature.",
+      DIAGNOSTIC_HYPOTHESES: "Formule les hypothèses diagnostiques principales et différentielles. Justifie chaque hypothèse avec les éléments cliniques ET les données de la littérature médicale fournie.",
+      COMPLEMENTARY_EXAMS: "Liste les examens complémentaires recommandés en urgence et à distance. Justifie leur pertinence en citant les guidelines et recommandations de la recherche.",
+      THERAPEUTIC_DECISIONS: "Détaille les décisions thérapeutiques immédiates et à long terme. Base-toi sur les protocoles et recommandations issus de la recherche. Inclus médicaments, posologies et surveillances.",
+      PROGNOSIS_FOLLOWUP: "Évalue le pronostic en te basant sur les données épidémiologiques de la recherche. Propose un plan de suivi adapté avec les échéances selon les recommandations actuelles.",
+      PATIENT_EXPLANATIONS: "Rédige une explication claire et empathique pour le patient (niveau B1/B2). Évite le jargon médical. Intègre des éléments rassurants basés sur les données scientifiques."
     };
 
-    try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-4-turbo-preview',
-          messages: [
-            {
-              role: 'system',
-              content: `Tu es un médecin expert. Voici le cas clinique et le rapport de recherche académique. 
-              ${sectionPrompts[sectionType as keyof typeof sectionPrompts]}
-              Utilise les références du rapport en les citant avec [num]. Sois précis et structuré.`
-            },
-            {
-              role: 'user',
-              content: `Cas clinique:\n${caseText}\n\nRapport de recherche:\n${perplexityReport}`
-            }
-          ],
-          temperature: 0.3,
-          max_completion_tokens: 1500
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+    const prompt = `Tu es un médecin expert spécialisé dans l'analyse de cas cliniques. 
+Tu as accès à une recherche académique approfondie sur ce cas.
+${sectionPrompts[sectionType as keyof typeof sectionPrompts]}
 
-      return response.data.choices[0].message.content;
-    } catch (error) {
-      console.error('Erreur OpenAI:', error);
-      throw new Error('Erreur lors de l\'analyse OpenAI');
+IMPORTANT : 
+- Utilise les informations de la recherche académique pour enrichir ton analyse
+- Cite les sources pertinentes en utilisant [num] quand tu fais référence à des études ou guidelines
+- Sois précis, structuré et evidence-based
+- Adapte le niveau de détail technique selon la section
+- Utilise le formatage Markdown pour structurer ta réponse (titres, listes, gras, etc.)
+
+CAS CLINIQUE:
+${caseText}
+
+RECHERCHE ACADÉMIQUE:
+${perplexityReport}`;
+
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'o3-2025-04-16',
+        reasoning: { 
+          effort: 'medium'
+        },
+        input: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_output_tokens: 25000
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Erreur OpenAI: ${error.error?.message || 'Erreur inconnue'}`);
     }
+
+    const data = await response.json();
+    return data.output_text || data.output?.[0]?.text || '';
   }
 
   async analyzeClinicalCase(caseText: string): Promise<{
