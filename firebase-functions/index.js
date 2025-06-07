@@ -306,7 +306,7 @@ exports.transcribeAudio = functions
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
 
-      console.log('Transcription audio avec whisper-1...');
+      console.log('Transcription audio...');
 
       // Convertir base64 en Buffer
       const base64Data = audioBase64.replace(/^data:audio\/\w+;base64,/, '');
@@ -318,45 +318,82 @@ exports.transcribeAudio = functions
         throw new functions.https.HttpsError('invalid-argument', 'Fichier audio trop court ou vide');
       }
 
-      // Créer FormData pour whisper-1
+      // Créer FormData
       const FormData = require('form-data');
       const formData = new FormData();
       
-      // Essayer différents formats si webm échoue
-      let filename = 'audio.webm';
-      let contentType = 'audio/webm';
-      
-      // Ajouter le fichier avec le bon type MIME
+      // Selon la doc OpenAI, on doit envoyer le fichier avec un nom approprié
       formData.append('file', audioBuffer, {
-        filename: filename,
-        contentType: contentType,
-        knownLength: audioBuffer.length
+        filename: 'audio.webm',
+        contentType: 'audio/webm'
       });
-      formData.append('model', 'whisper-1');
+      
+      // Essayer d'abord avec gpt-4o-transcribe (meilleure qualité)
+      let model = 'gpt-4o-transcribe';
+      let response_format = 'json'; // Obligatoire pour gpt-4o-transcribe
+      
+      formData.append('model', model);
       formData.append('language', 'fr');
-      formData.append('temperature', '0.2');
+      formData.append('response_format', response_format);
 
-      console.log('Envoi à l\'API OpenAI (whisper-1)...');
+      console.log('Envoi à l\'API OpenAI avec', model);
 
-      const response = await axios.post(
-        'https://api.openai.com/v1/audio/transcriptions',
-        formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            ...formData.getHeaders()
-          },
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
-          timeout: 120000 // 2 minutes timeout
-        }
-      );
+      try {
+        const response = await axios.post(
+          'https://api.openai.com/v1/audio/transcriptions',
+          formData,
+          {
+            headers: {
+              'Authorization': `Bearer ${OPENAI_API_KEY}`,
+              ...formData.getHeaders()
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            timeout: 120000 // 2 minutes timeout
+          }
+        );
 
-      console.log('Réponse reçue, status:', response.status);
-      const text = response.data.text || '';
-      console.log('Transcription terminée, longueur:', text.length);
+        console.log('Réponse reçue, status:', response.status);
+        const text = response.data.text || '';
+        console.log('Transcription terminée, longueur:', text.length);
 
-      return { text };
+        return { text };
+        
+      } catch (error) {
+        // Si gpt-4o-transcribe échoue, essayer avec whisper-1
+        console.error('Erreur avec gpt-4o-transcribe, essai avec whisper-1:', error.response?.data || error.message);
+        
+        // Recréer le formData pour whisper-1
+        const formData2 = new FormData();
+        formData2.append('file', audioBuffer, {
+          filename: 'audio.webm',
+          contentType: 'audio/webm'
+        });
+        formData2.append('model', 'whisper-1');
+        formData2.append('language', 'fr');
+        // whisper-1 n'a pas besoin de response_format obligatoire
+
+        const response2 = await axios.post(
+          'https://api.openai.com/v1/audio/transcriptions',
+          formData2,
+          {
+            headers: {
+              'Authorization': `Bearer ${OPENAI_API_KEY}`,
+              ...formData2.getHeaders()
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            timeout: 120000
+          }
+        );
+
+        console.log('Réponse whisper-1 reçue, status:', response2.status);
+        const text = response2.data.text || '';
+        console.log('Transcription whisper-1 terminée, longueur:', text.length);
+
+        return { text };
+      }
+      
     } catch (error) {
       console.error('Erreur transcription détaillée:', error.response?.data || error.message);
       console.error('Status:', error.response?.status);

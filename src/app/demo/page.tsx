@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
@@ -16,6 +16,7 @@ import jsPDF from 'jspdf'
 import { useAudioRecorder } from "@/hooks/useAudioRecorder"
 import { useAuth } from "@/contexts/AuthContext"
 import { CreditsService } from "@/services/credits"
+import { HistoryService } from "@/services/history"
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -360,15 +361,28 @@ export default function DemoPage() {
           ? titleBase.substring(0, 97) + '...' 
           : titleBase
         
-        setAnalysisData({
+        const analysisData = {
           id: analysisId,
           title: analysisTitle,
           date: new Date().toISOString(),
           isDemo: false,
+          caseText: textContent,
           sections: result.sections,
           references: result.references,
-          perplexityReport: result.perplexityReport
-        })
+          perplexityReport: result.perplexityReport,
+          images: uploadedImages.length > 0 ? uploadedImages : undefined
+        }
+        
+        setAnalysisData(analysisData)
+        
+        // Sauvegarder dans l'historique
+        try {
+          await HistoryService.saveAnalysis(user!.uid, analysisData)
+          console.log('Analyse sauvegardée dans l\'historique')
+        } catch (saveError) {
+          console.error('Erreur lors de la sauvegarde:', saveError)
+          // Ne pas bloquer l'utilisateur si la sauvegarde échoue
+        }
         
         const duration = Date.now() - startTime
         toast.success(`Analyse terminée en ${Math.round(duration / 1000)}s !`)
@@ -747,6 +761,21 @@ export default function DemoPage() {
       }])
 
       toast.success("Recherche de maladies rares terminée")
+      
+      // Mettre à jour l'analyse dans l'historique si elle existe
+      if (analysisData && analysisData.id && user) {
+        try {
+          const updatedAnalysis = {
+            ...analysisData,
+            rareDiseaseData: result
+          }
+          await HistoryService.saveAnalysis(user.uid, updatedAnalysis)
+          setAnalysisData(updatedAnalysis)
+          console.log('Analyse mise à jour avec la recherche de maladies rares')
+        } catch (saveError) {
+          console.error('Erreur lors de la mise à jour:', saveError)
+        }
+      }
     } catch (error: any) {
       toast.error(error.message || "Erreur lors de la recherche de maladies rares")
       console.error("Erreur:", error)
@@ -798,12 +827,22 @@ export default function DemoPage() {
               {isDemoMode ? "Mode démonstration" : "Mode analyse réelle"}
             </p>
           </div>
-          <Link href="/">
-            <Button variant="outline">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Accueil
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            {user && (
+              <Link href="/history">
+                <Button variant="outline">
+                  <History className="mr-2 h-4 w-4" />
+                  Historique
+                </Button>
+              </Link>
+            )}
+            <Link href="/">
+              <Button variant="outline">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Accueil
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {!showResults ? (
