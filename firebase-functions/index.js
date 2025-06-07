@@ -57,15 +57,35 @@ exports.analyzeWithO3 = functions
         }
       );
 
-      console.log('Réponse API complète:', JSON.stringify(response.data).substring(0, 500));
+      // L'API Responses retourne une structure différente
+      let text = '';
       
-      const text = response.data.output_text || response.data.content || '';
-      console.log('Réponse o3 reçue, longueur:', text.length);
+      // La réponse est dans output[1].content[0].text pour l'API Responses
+      if (response.data.output && Array.isArray(response.data.output)) {
+        const messageOutput = response.data.output.find(o => o.type === 'message');
+        if (messageOutput && messageOutput.content && Array.isArray(messageOutput.content)) {
+          const textContent = messageOutput.content.find(c => c.type === 'output_text');
+          if (textContent && textContent.text) {
+            text = textContent.text;
+            console.log('Texte extrait de output[].content[].text:', text.length, 'caractères');
+          }
+        }
+      }
+      
+      // Fallback au cas où la structure change
+      if (!text) {
+        text = response.data.output_text || 
+               response.data.content || 
+               response.data.text ||
+               '';
+      }
+                  
+      console.log('Réponse o3 reçue, longueur totale:', text.length);
       console.log('Usage:', response.data.usage);
       
       if (!text || text.length === 0) {
         console.error('ATTENTION: Réponse vide de l\'API o3');
-        console.error('Structure de la réponse:', Object.keys(response.data));
+        console.error('Structure de response.data.output:', JSON.stringify(response.data.output, null, 2).substring(0, 500));
       }
       
       return { text };
@@ -146,7 +166,23 @@ exports.analyzeImageWithO3 = functions
         }
       );
 
-      const text = response.data.output_text || '';
+      // Même structure pour l'API Responses avec images
+      let text = '';
+      
+      if (response.data.output && Array.isArray(response.data.output)) {
+        const messageOutput = response.data.output.find(o => o.type === 'message');
+        if (messageOutput && messageOutput.content && Array.isArray(messageOutput.content)) {
+          const textContent = messageOutput.content.find(c => c.type === 'output_text');
+          if (textContent && textContent.text) {
+            text = textContent.text;
+          }
+        }
+      }
+      
+      if (!text) {
+        text = response.data.output_text || '';
+      }
+      
       console.log('Réponse o3 Vision reçue, longueur:', text.length);
       console.log('Usage Vision:', response.data.usage);
       
