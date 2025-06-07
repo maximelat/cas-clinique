@@ -25,7 +25,17 @@ exports.analyzeWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
       }
 
+      // Vérifier la configuration de la clé API
+      if (!OPENAI_API_KEY) {
+        console.error('ERREUR: Clé OpenAI non configurée dans Firebase Functions');
+        throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur. Vérifiez la configuration Firebase.');
+      }
+
       console.log('Appel OpenAI avec o3-2025-04-16 (Responses API)...');
+      console.log('Clé API présente:', !!OPENAI_API_KEY, 'Longueur:', OPENAI_API_KEY?.length);
+      console.log('Longueur du prompt:', prompt.length);
+      console.log('Début du prompt:', prompt.substring(0, 200) + '...');
+      
       const response = await axios.post(
         'https://api.openai.com/v1/responses',
         {
@@ -47,9 +57,16 @@ exports.analyzeWithO3 = functions
         }
       );
 
-      const text = response.data.output_text || '';
+      console.log('Réponse API complète:', JSON.stringify(response.data).substring(0, 500));
+      
+      const text = response.data.output_text || response.data.content || '';
       console.log('Réponse o3 reçue, longueur:', text.length);
       console.log('Usage:', response.data.usage);
+      
+      if (!text || text.length === 0) {
+        console.error('ATTENTION: Réponse vide de l\'API o3');
+        console.error('Structure de la réponse:', Object.keys(response.data));
+      }
       
       return { text };
     } catch (error) {
