@@ -301,11 +301,19 @@ exports.transcribeAudio = functions
         throw new functions.https.HttpsError('invalid-argument', 'Audio requis');
       }
 
+      if (!OPENAI_API_KEY) {
+        console.error('Clé OpenAI non configurée');
+        throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
+      }
+
+      console.log('Transcription audio avec gpt-4o-transcribe...');
+
       // Convertir base64 en Buffer
       const base64Data = audioBase64.replace(/^data:audio\/\w+;base64,/, '');
       const audioBuffer = Buffer.from(base64Data, 'base64');
+      console.log('Taille du buffer audio:', audioBuffer.length, 'bytes');
 
-      // Créer FormData
+      // Créer FormData avec paramètres simplifiés
       const FormData = require('form-data');
       const formData = new FormData();
       formData.append('file', audioBuffer, {
@@ -314,10 +322,9 @@ exports.transcribeAudio = functions
       });
       formData.append('model', 'gpt-4o-transcribe');
       formData.append('language', 'fr');
-      formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
-      formData.append('response_format', 'json');
-      formData.append('temperature', '0.2');
-      formData.append('chunking_strategy', 'auto');
+      formData.append('response_format', 'json'); // Obligatoire pour gpt-4o-transcribe
+
+      console.log('Envoi à l\'API OpenAI...');
 
       const response = await axios.post(
         'https://api.openai.com/v1/audio/transcriptions',
@@ -326,16 +333,29 @@ exports.transcribeAudio = functions
           headers: {
             'Authorization': `Bearer ${OPENAI_API_KEY}`,
             ...formData.getHeaders()
-          }
+          },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity
         }
       );
 
-      return { text: response.data.text || '' };
+      console.log('Réponse reçue, status:', response.status);
+      const text = response.data.text || '';
+      console.log('Transcription terminée, longueur:', text.length);
+
+      return { text };
     } catch (error) {
-      console.error('Erreur transcription:', error);
+      console.error('Erreur transcription détaillée:', error.response?.data || error.message);
+      console.error('Status:', error.response?.status);
+      console.error('Config utilisée:', {
+        hasKey: !!OPENAI_API_KEY,
+        keyLength: OPENAI_API_KEY?.length,
+        model: 'gpt-4o-transcribe'
+      });
+      
       throw new functions.https.HttpsError(
         'internal', 
-        'Erreur lors de la transcription: ' + error.message
+        'Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message)
       );
     }
   }); 
