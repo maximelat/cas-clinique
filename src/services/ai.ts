@@ -24,11 +24,11 @@ export class AIService {
       const response = await axios.post(
         'https://api.perplexity.ai/chat/completions',
         {
-          model: 'pplx-7b-online',
+          model: 'sonar-reasoning-pro',
           messages: [
             {
               role: 'system',
-              content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni. Donne des réponses détaillées avec des citations complètes (titre, auteurs, DOI/PMID, lien).'
+              content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni en te concentrant sur les publications médicales récentes, les guidelines et les études cliniques. Fournis des réponses détaillées avec les sources.'
             },
             {
               role: 'user',
@@ -36,12 +36,16 @@ export class AIService {
             }
           ],
           stream: false,
-          search_recency_filter: 'month'
+          search_mode: 'academic',
+          web_search_options: {
+            search_context_size: 'high'
+          }
         },
         {
           headers: {
             'Authorization': `Bearer ${this.perplexityApiKey}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           }
         }
       );

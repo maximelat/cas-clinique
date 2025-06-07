@@ -27,6 +27,7 @@ jobs:
         NEXT_PUBLIC_BASE_PATH: /projet/clinical-case-analyzer
         PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY }}
         OPENAI_API_KEY: ${{ secrets.OPENAI }}
+        NEXT_PUBLIC_API_URL: ${{ secrets.API_URL }}
       run: npm run build
 
     - name: Create .htaccess for SPA routing

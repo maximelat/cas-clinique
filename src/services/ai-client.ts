@@ -14,8 +14,8 @@ export class AIClientService {
   private baseUrl: string;
 
   constructor() {
-    // Utiliser l'URL de base de l'application
-    this.baseUrl = '/api/analyze';
+    // Utiliser l'URL du backend externe ou l'URL locale
+    this.baseUrl = process.env.NEXT_PUBLIC_API_URL || '/api/analyze';
   }
 
   hasApiKeys(): boolean {
