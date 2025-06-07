@@ -18,37 +18,51 @@ let auth: Auth | undefined;
 let db: Firestore | undefined;
 let googleProvider: GoogleAuthProvider | undefined;
 
-// Initialiser Firebase uniquement côté client
-if (typeof window !== 'undefined' && firebaseConfig.apiKey) {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  googleProvider = new GoogleAuthProvider();
-  db = getFirestore(app);
-  
-  // Configuration pour l'authentification Google
-  googleProvider.setCustomParameters({
-    prompt: 'select_account'
-  });
+// Vérifier si Firebase est correctement configuré
+export function isFirebaseConfigured(): boolean {
+  return !!(
+    firebaseConfig.apiKey &&
+    firebaseConfig.authDomain &&
+    firebaseConfig.projectId &&
+    firebaseConfig.appId
+  );
+}
+
+// Initialiser Firebase uniquement côté client et si configuré
+if (typeof window !== 'undefined' && isFirebaseConfigured()) {
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    googleProvider = new GoogleAuthProvider();
+    db = getFirestore(app);
+    
+    // Configuration pour l'authentification Google
+    googleProvider.setCustomParameters({
+      prompt: 'select_account'
+    });
+  } catch (error) {
+    console.error('Erreur lors de l\'initialisation de Firebase:', error);
+  }
 }
 
 // Créer des fonctions pour accéder aux services
 export function getFirebaseAuth(): Auth {
   if (!auth) {
-    throw new Error('Firebase Auth n\'est pas initialisé');
+    throw new Error('Firebase Auth n\'est pas initialisé. Vérifiez vos variables d\'environnement.');
   }
   return auth;
 }
 
 export function getFirebaseDb(): Firestore {
   if (!db) {
-    throw new Error('Firestore n\'est pas initialisé');
+    throw new Error('Firestore n\'est pas initialisé. Vérifiez vos variables d\'environnement.');
   }
   return db;
 }
 
 export function getGoogleProvider(): GoogleAuthProvider {
   if (!googleProvider) {
-    throw new Error('Google Provider n\'est pas initialisé');
+    throw new Error('Google Provider n\'est pas initialisé. Vérifiez vos variables d\'environnement.');
   }
   return googleProvider;
 }

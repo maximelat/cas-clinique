@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
+import { getFirebaseAuth, getGoogleProvider, isFirebaseConfigured } from '@/lib/firebase';
 import { CreditsService, UserCredits } from '@/services/credits';
 import { toast } from 'sonner';
 
@@ -41,6 +41,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Initialiser l'authentification côté client uniquement
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    // Vérifier si Firebase est configuré
+    if (!isFirebaseConfigured()) {
+      console.warn('Firebase n\'est pas configuré. L\'authentification est désactivée.');
+      setLoading(false);
+      return;
+    }
 
     try {
       const auth = getFirebaseAuth();
@@ -83,6 +90,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Se connecter avec Google
   const signInWithGoogle = async () => {
+    if (!isFirebaseConfigured()) {
+      toast.error('Firebase n\'est pas configuré. L\'authentification est désactivée.');
+      return;
+    }
+
     if (!authInitialized) {
       toast.error('L\'authentification n\'est pas encore initialisée');
       return;
@@ -110,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Se déconnecter
   const logout = async () => {
-    if (!authInitialized) return;
+    if (!isFirebaseConfigured() || !authInitialized) return;
 
     try {
       const auth = getFirebaseAuth();

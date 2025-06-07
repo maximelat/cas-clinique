@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
-import { getFirebaseDb } from '@/lib/firebase';
+import { getFirebaseDb, isFirebaseConfigured } from '@/lib/firebase';
 
 export interface UserCredits {
   uid: string;
@@ -33,6 +33,11 @@ export class CreditsService {
 
   // Obtenir les crédits d'un utilisateur
   static async getUserCredits(uid: string): Promise<UserCredits | null> {
+    if (!isFirebaseConfigured()) {
+      console.warn('Firebase non configuré - getUserCredits');
+      return null;
+    }
+
     try {
       const db = getFirebaseDb();
       const userDoc = await getDoc(doc(db, 'users', uid));
@@ -60,6 +65,10 @@ export class CreditsService {
 
   // Créer un nouvel utilisateur avec des crédits initiaux
   static async createUser(uid: string, email: string): Promise<UserCredits> {
+    if (!isFirebaseConfigured()) {
+      throw new Error('Firebase n\'est pas configuré');
+    }
+
     try {
       const db = getFirebaseDb();
       const userData: UserCredits = {
@@ -97,6 +106,11 @@ export class CreditsService {
 
   // Utiliser un crédit
   static async useCredit(uid: string): Promise<boolean> {
+    if (!isFirebaseConfigured()) {
+      console.warn('Firebase non configuré - useCredit');
+      return true; // Permettre l'utilisation sans Firebase
+    }
+
     try {
       const userCredits = await this.getUserCredits(uid);
       
@@ -136,6 +150,10 @@ export class CreditsService {
 
   // Ajouter des crédits (admin seulement)
   static async addCredits(targetUid: string, amount: number, adminEmail: string): Promise<void> {
+    if (!isFirebaseConfigured()) {
+      throw new Error('Firebase n\'est pas configuré');
+    }
+
     if (!this.isAdmin(adminEmail)) {
       throw new Error('Seul l\'administrateur peut ajouter des crédits');
     }
@@ -171,6 +189,10 @@ export class CreditsService {
 
   // Réinitialiser les crédits d'un utilisateur (admin seulement)
   static async resetCredits(targetUid: string, adminEmail: string): Promise<void> {
+    if (!isFirebaseConfigured()) {
+      throw new Error('Firebase n\'est pas configuré');
+    }
+
     if (!this.isAdmin(adminEmail)) {
       throw new Error('Seul l\'administrateur peut réinitialiser les crédits');
     }
@@ -206,6 +228,10 @@ export class CreditsService {
 
   // Enregistrer une transaction
   private static async logTransaction(transaction: CreditTransaction): Promise<void> {
+    if (!isFirebaseConfigured()) {
+      return; // Ignorer silencieusement si Firebase n'est pas configuré
+    }
+
     try {
       const db = getFirebaseDb();
       await setDoc(doc(db, 'transactions', `${transaction.uid}_${Date.now()}`), {
