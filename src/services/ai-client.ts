@@ -125,6 +125,7 @@ export class AIClientService {
   }
 
   private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
+    // Note: Utilise GPT-4o car o3 n'est pas encore disponible publiquement
     const prompt = `Tu es un médecin expert. Analyse ce cas clinique en te basant sur les données de recherche académique fournies.
 
 CAS CLINIQUE :
@@ -152,7 +153,10 @@ Les 7 sections obligatoires sont :
     try {
       if (this.useFirebaseFunctions) {
         console.log('Utilisation de Firebase Functions pour o3...');
-        return await analyzeWithO3ViaFunction(prompt);
+        console.log('Longueur du prompt o3:', prompt.length);
+        const result = await analyzeWithO3ViaFunction(prompt);
+        console.log('Réponse Firebase o3 reçue, longueur:', result?.length || 0);
+        return result;
       } else {
         // Mode développement - appel direct
         console.log('Appel API OpenAI o3 direct (mode dev)...');
@@ -223,6 +227,7 @@ Les 7 sections obligatoires sont :
       console.log('Analyse des liens avec GPT-4o...');
       const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
       console.log('Analyse GPT-4o terminée');
+      console.log('Résultat analyse GPT-4o:', referencesAnalysis.analysis?.substring(0, 200) + '...');
       
       // Étape 3 : Analyser les images avec o3 si présentes
       let imageAnalyses = '';
@@ -244,13 +249,17 @@ Les 7 sections obligatoires sont :
                           `ANALYSE DES RÉFÉRENCES ET LIENS:\n${referencesAnalysis.analysis}` +
                           (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
       
+      console.log('Longueur des données complètes:', completeData.length);
       const fullAnalysis = await this.analyzeWithO3(completeData, caseText);
       console.log('Analyse o3 terminée');
+      console.log('Longueur réponse o3:', fullAnalysis?.length || 0);
+      console.log('Début réponse o3:', fullAnalysis?.substring(0, 500) || 'RÉPONSE VIDE');
       
       // Étape 5 : Parser la réponse pour extraire les sections
       console.log('Parsing des sections...');
       const sections = this.parseSections(fullAnalysis);
       console.log('Sections parsées:', sections.length);
+      console.log('Sections trouvées:', sections.map(s => s.type).join(', '));
       
       // Appeler le callback pour chaque section
       sections.forEach((section, index) => {
@@ -270,6 +279,13 @@ Les 7 sections obligatoires sont :
   }
 
   private parseSections(analysis: string): any[] {
+    console.log('parseSections - Analyse reçue:', analysis ? `${analysis.length} caractères` : 'VIDE');
+    
+    if (!analysis || analysis.trim().length === 0) {
+      console.error('parseSections - Analyse vide ou invalide');
+      return [];
+    }
+    
     const sectionTypes = [
       'CLINICAL_CONTEXT',
       'KEY_DATA', 

@@ -50,13 +50,21 @@ export async function analyzeWithO3ViaFunction(prompt: string): Promise<string> 
   );
 
   try {
+    console.log('Appel Firebase analyzeWithO3, prompt longueur:', prompt.length);
     const result = await analyzeO3({ prompt });
+    console.log('Réponse Firebase o3:', result.data);
+    
     if (result.data.error) {
+      console.error('Erreur dans la réponse:', result.data.error);
       throw new Error(result.data.error);
     }
-    return result.data.text;
+    
+    const text = result.data.text || '';
+    console.log('Texte extrait de la réponse o3:', text.length, 'caractères');
+    return text;
   } catch (error: any) {
-    console.error('Erreur Firebase Function:', error);
+    console.error('Erreur Firebase Function o3 complète:', error);
+    console.error('Détails erreur:', error.code, error.message, error.details);
     throw new Error('Erreur lors de l\'analyse: ' + error.message);
   }
 }

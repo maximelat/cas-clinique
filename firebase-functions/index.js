@@ -25,18 +25,19 @@ exports.analyzeWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
       }
 
+      console.log('Appel OpenAI avec GPT-4o (o3 pas encore disponible)...');
       const response = await axios.post(
-        'https://api.openai.com/v1/responses',
+        'https://api.openai.com/v1/chat/completions',
         {
-          model: 'o3-2025-04-16',
-          reasoning: { effort: 'medium' },
-          input: [
+          model: 'gpt-4o',
+          messages: [
             {
               role: 'user',
               content: prompt
             }
           ],
-          max_output_tokens: 25000
+          max_tokens: 8000,
+          temperature: 0.3
         },
         {
           headers: {
@@ -46,16 +47,20 @@ exports.analyzeWithO3 = functions
         }
       );
 
-      const text = response.data.output_text || 
-                   response.data.output?.[0]?.text || 
-                   response.data.choices?.[0]?.message?.content || '';
-
+      const text = response.data.choices?.[0]?.message?.content || '';
+      console.log('Réponse GPT-4o reçue, longueur:', text.length);
+      
       return { text };
     } catch (error) {
-      console.error('Erreur o3:', error);
+      console.error('Erreur GPT-4o détaillée:', error.response?.data || error.message);
+      console.error('Status:', error.response?.status);
+      console.error('Config:', { 
+        hasKey: !!OPENAI_API_KEY, 
+        keyLength: OPENAI_API_KEY?.length 
+      });
       throw new functions.https.HttpsError(
         'internal', 
-        'Erreur lors de l\'analyse: ' + error.message
+        'Erreur lors de l\'analyse GPT-4o: ' + (error.response?.data?.error?.message || error.message)
       );
     }
   });
@@ -72,31 +77,29 @@ exports.analyzeImageWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt et image requis');
       }
 
+      console.log('Appel OpenAI Vision avec GPT-4o (o3 pas encore disponible)...');
       const response = await axios.post(
-        'https://api.openai.com/v1/responses',
+        'https://api.openai.com/v1/chat/completions',
         {
-          model: 'o3-2025-04-16',
-          reasoning: { effort: 'high' },
-          input: [
+          model: 'gpt-4o',
+          messages: [
             {
               role: 'user',
               content: [
                 {
-                  type: 'input_text',
+                  type: 'text',
                   text: prompt
                 },
                 {
-                  type: 'input_image',
-                  source: {
-                    type: 'base64',
-                    media_type: 'image/jpeg',
-                    data: imageBase64
+                  type: 'image_url',
+                  image_url: {
+                    url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
                   }
                 }
               ]
             }
           ],
-          max_output_tokens: 5000
+          max_tokens: 4000
         },
         {
           headers: {
@@ -106,9 +109,9 @@ exports.analyzeImageWithO3 = functions
         }
       );
 
-      const text = response.data.output_text || 
-                   response.data.output?.[0]?.text || '';
-
+      const text = response.data.choices?.[0]?.message?.content || '';
+      console.log('Réponse GPT-4o Vision reçue, longueur:', text.length);
+      
       return { text };
     } catch (error) {
       console.error('Erreur analyse image o3:', error);
