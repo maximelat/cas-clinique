@@ -315,6 +315,9 @@ exports.transcribeAudio = functions
       formData.append('model', 'gpt-4o-transcribe');
       formData.append('language', 'fr');
       formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
+      formData.append('response_format', 'json');
+      formData.append('temperature', '0.2');
+      formData.append('chunking_strategy', 'auto');
 
       const response = await axios.post(
         'https://api.openai.com/v1/audio/transcriptions',

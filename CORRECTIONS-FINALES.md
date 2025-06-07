@@ -1,10 +1,23 @@
 # Corrections finales apportées
 
-## 1. ✅ Transcription audio
+## 1. ✅ Transcription audio améliorée
 
-**Modèle utilisé** : `gpt-4o-transcribe` 
-- Confirmé comme étant le bon modèle pour la transcription
-- Utilisé dans `src/services/ai-client.ts` et Firebase Functions
+**Modèle par défaut** : `gpt-4o-transcribe`
+- Ajout de logs détaillés pour le débogage
+- Support des paramètres corrects selon la doc officielle
+- Ajout du paramètre `chunking_strategy: 'auto'`
+- Format de réponse obligatoire : `json`
+
+**Nouvelle fonctionnalité** : Changement de modèle
+```javascript
+const aiService = new AIClientService();
+aiService.setTranscriptionModel('whisper-1'); // Si problèmes avec gpt-4o
+```
+
+**Modèles disponibles** :
+- `gpt-4o-transcribe` (défaut)
+- `gpt-4o-mini-transcribe` 
+- `whisper-1` (le plus stable)
 
 ## 2. ✅ Amélioration de l'export PDF
 

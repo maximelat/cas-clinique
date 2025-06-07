@@ -22,6 +22,7 @@ export class AIClientService {
   private openaiApiKey: string | undefined;
   private isProduction: boolean = false;
   private useFirebaseFunctions: boolean = false;
+  private transcriptionModel: 'whisper-1' | 'gpt-4o-transcribe' = 'gpt-4o-transcribe';
 
   constructor() {
     // Clés API exposées côté client - À utiliser uniquement pour des projets de démonstration
@@ -728,14 +729,29 @@ IMPORTANT:
         }
         
         console.log('Transcription audio directe (mode dev)...');
+        console.log('Taille du blob audio:', audioBlob.size, 'bytes');
+        console.log('Type du blob:', audioBlob.type);
         
         // Créer un FormData pour envoyer le fichier audio
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'gpt-4o-transcribe');
+        formData.append('model', this.transcriptionModel);
         formData.append('language', 'fr');
         formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
+        
+        // response_format: json est obligatoire pour gpt-4o-transcribe
+        formData.append('response_format', 'json');
+        
+        // Temperature est supportée pour tous les modèles
+        formData.append('temperature', '0.2');
+        
+        // Optionnel : chunking_strategy pour gpt-4o-transcribe
+        if (this.transcriptionModel !== 'whisper-1') {
+          formData.append('chunking_strategy', 'auto');
+        }
 
+        console.log('Envoi à l\'API de transcription avec modèle:', this.transcriptionModel);
+        
         const response = await axios.post(
           'https://api.openai.com/v1/audio/transcriptions',
           formData,
@@ -747,7 +763,15 @@ IMPORTANT:
           }
         );
 
-        return response.data.text || '';
+        console.log('Réponse de transcription, status:', response.status);
+        console.log('Données reçues:', response.data);
+        
+        const transcription = response.data.text || '';
+        if (!transcription) {
+          console.error('ATTENTION: Transcription vide reçue');
+        }
+        
+        return transcription;
       }
     } catch (error: any) {
       console.error('Erreur de transcription:', error);
@@ -762,6 +786,12 @@ IMPORTANT:
       return false;
     }
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  // Méthode pour changer le modèle de transcription
+  setTranscriptionModel(model: 'whisper-1' | 'gpt-4o-transcribe') {
+    console.log('Changement du modèle de transcription:', this.transcriptionModel, '->', model);
+    this.transcriptionModel = model;
   }
 
   // Recherche de maladies rares avec sonar-deep-research
