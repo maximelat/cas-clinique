@@ -147,7 +147,7 @@ export class AIClientService {
             }
           ],
           temperature: 0.3,
-          max_tokens: 1500
+          max_completion_tokens: 1500
         },
         {
           headers: {

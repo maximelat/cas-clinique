@@ -89,7 +89,7 @@ export class AIService {
             }
           ],
           temperature: 0.3,
-          max_tokens: 1500
+          max_completion_tokens: 1500
         },
         {
           headers: {
