@@ -225,11 +225,17 @@ Assure-toi d'intégrer toutes les informations pertinentes des sources dans ton 
         progressCallback?.('Analyse des images médicales avec o3...');
         console.log(`Analyse de ${images.length} images avec o3...`);
         for (let i = 0; i < images.length; i++) {
-          progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
-          const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type);
-          imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
+          try {
+            progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
+            const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
+          } catch (imageError: any) {
+            console.error(`Erreur lors de l'analyse de l'image ${i + 1}:`, imageError.message);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\nErreur lors de l'analyse de cette image.`;
+            // Continuer avec les autres images sans bloquer tout le processus
+          }
         }
-        console.log('Analyse des images terminée');
+        console.log('Analyse des images terminée (avec erreurs possibles)');
       }
 
       // Étape 4 : Analyser avec o3 le cas clinique + rapport Perplexity + analyse des liens + images
@@ -570,27 +576,64 @@ IMPORTANT:
 
     // Si pas de citations structurées, essayer d'extraire du texte
     if (references.length === 0 && perplexityReport.answer) {
-      // Rechercher des patterns de citations dans le texte nettoyé
-      // Pattern: [1][5][9] dans le texte
-      const citationNumbersRegex = /\[(\d+)\]/g;
-      const citationNumbers = new Set<string>();
+      // Pattern amélioré pour extraire les références avec leurs URLs du texte Perplexity
+      // Format: [1] titre (URL)
+      const referencePattern = /\[(\d+)\]\s*(?:\[([^\]]+)\]\s*)?\(([^)]+)\)|### \*\*Sources\*\*[\s\S]*?\[(\d+)\]\s*\[([^\]]+)\]\(([^)]+)\)/g;
       
       let match;
-      while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
-        citationNumbers.add(match[1]);
+      while ((match = referencePattern.exec(perplexityReport.answer)) !== null) {
+        const num = match[1] || match[4];
+        const title = match[2] || match[5] || `Source ${num}`;
+        const url = match[3] || match[6];
+        
+        if (num && url) {
+          references.push({
+            label: num,
+            title: title.trim(),
+            url: url.trim(),
+            authors: '',
+            year: null,
+            journal: ''
+          });
+        }
       }
       
-      // Créer des références pour chaque numéro trouvé
-      Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
-        references.push({
-          label: num,
-          title: `Source ${num}`,
-          url: '#', // URL placeholder
-          authors: '',
-          year: null,
-          journal: ''
+      // Si toujours pas de références, chercher juste les numéros de citation
+      if (references.length === 0) {
+        const citationNumbersRegex = /\[(\d+)\]/g;
+        const citationNumbers = new Set<string>();
+        
+        while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
+          citationNumbers.add(match[1]);
+        }
+        
+        // Pour chaque numéro, essayer de trouver l'URL correspondante dans la section Sources
+        const sourcesSection = perplexityReport.answer.match(/### \*\*Sources\*\*[\s\S]*$/);
+        
+        Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
+          let title = `Source ${num}`;
+          let url = '#';
+          
+          // Chercher l'URL dans la section sources si elle existe
+          if (sourcesSection) {
+            const sourcePattern = new RegExp(`\\[${num}\\]\\s*\\[([^\\]]+)\\]\\(([^)]+)\\)`, 'g');
+            const sourceMatch = sourcePattern.exec(sourcesSection[0]);
+            if (sourceMatch) {
+              title = sourceMatch[1] || title;
+              url = sourceMatch[2] || url;
+            }
+          }
+          
+          references.push({
+            label: num,
+            title: title.trim(),
+            url: url.trim(),
+            authors: '',
+            year: null,
+            journal: ''
+          });
         });
-      });
+      }
     }
 
     return references;
@@ -614,36 +657,32 @@ IMPORTANT:
         console.log('Analyse d\'image avec o3 via Firebase Functions...');
         return await analyzeImageWithO3ViaFunction(prompt, imageBase64);
       } else {
-        // Mode développement - appel direct à l'API Responses
-        console.log('Analyse d\'image avec o3 Responses API (mode dev)...');
+        // Mode développement - utiliser GPT-4o pour les images (o3 ne supporte pas encore)
+        console.log('Analyse d\'image avec GPT-4o (mode dev)...');
         
         const response = await axios.post(
-          'https://api.openai.com/v1/responses',
+          'https://api.openai.com/v1/chat/completions',
           {
-            model: 'o3-2025-04-16',
-            reasoning: { 
-              effort: 'high'
-            },
-            input: [
+            model: 'gpt-4o',
+            messages: [
               {
                 role: 'user',
                 content: [
                   {
-                    type: 'input_text',
+                    type: 'text',
                     text: prompt
                   },
                   {
-                    type: 'input_image',
-                    source: {
-                      type: 'base64',
-                      media_type: 'image/jpeg',
-                      data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:image/jpeg;base64,${imageBase64.replace(/^data:image\/\w+;base64,/, '')}`
                     }
                   }
                 ]
               }
             ],
-            max_output_tokens: 5000
+            max_tokens: 5000,
+            temperature: 0.3
           },
           {
             headers: {
@@ -653,9 +692,8 @@ IMPORTANT:
           }
         );
 
-        // L'API Responses retourne output_text directement
-        const outputText = response.data.output_text || '';
-        console.log('Réponse o3 Vision dev, usage:', response.data.usage);
+        const outputText = response.data.choices?.[0]?.message?.content || '';
+        console.log('Réponse GPT-4o Vision dev, usage:', response.data.usage);
         
         return outputText;
       }

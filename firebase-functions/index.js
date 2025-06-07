@@ -131,32 +131,34 @@ exports.analyzeImageWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt et image requis');
       }
 
-      console.log('Appel OpenAI Vision avec o3-2025-04-16 (Responses API)...');
+      // Fallback sur GPT-4o pour l'analyse d'images car o3 Responses API ne supporte pas encore les images
+      console.log('Utilisation de GPT-4o pour l\'analyse d\'image (o3 ne supporte pas encore les images)...');
+      
+      const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+      
       const response = await axios.post(
-        'https://api.openai.com/v1/responses',
+        'https://api.openai.com/v1/chat/completions',
         {
-          model: 'o3-2025-04-16',
-          reasoning: { effort: 'high' }, // High effort pour l'analyse d'images
-          input: [
+          model: 'gpt-4o',
+          messages: [
             {
               role: 'user',
               content: [
                 {
-                  type: 'input_text',
+                  type: 'text',
                   text: prompt
                 },
                 {
-                  type: 'input_image',
-                  source: {
-                    type: 'base64',
-                    media_type: 'image/jpeg',
-                    data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/jpeg;base64,${cleanImageBase64}`
                   }
                 }
               ]
             }
           ],
-          max_output_tokens: 5000
+          max_tokens: 5000,
+          temperature: 0.3
         },
         {
           headers: {
@@ -166,24 +168,10 @@ exports.analyzeImageWithO3 = functions
         }
       );
 
-      // Même structure pour l'API Responses avec images
-      let text = '';
+      // GPT-4o utilise une structure différente
+      const text = response.data.choices?.[0]?.message?.content || '';
       
-      if (response.data.output && Array.isArray(response.data.output)) {
-        const messageOutput = response.data.output.find(o => o.type === 'message');
-        if (messageOutput && messageOutput.content && Array.isArray(messageOutput.content)) {
-          const textContent = messageOutput.content.find(c => c.type === 'output_text');
-          if (textContent && textContent.text) {
-            text = textContent.text;
-          }
-        }
-      }
-      
-      if (!text) {
-        text = response.data.output_text || '';
-      }
-      
-      console.log('Réponse o3 Vision reçue, longueur:', text.length);
+      console.log('Réponse GPT-4o Vision reçue, longueur:', text.length);
       console.log('Usage Vision:', response.data.usage);
       
       return { text };
