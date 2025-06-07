@@ -133,39 +133,51 @@ Les 7 sections obligatoires sont :
 7. PATIENT_EXPLANATIONS : Explications pour le patient (langage simple)`;
 
     try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/responses',
-        {
-          model: 'o3-2025-04-16',
-          reasoning: { 
-            effort: 'medium'
-          },
-          input: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          max_output_tokens: 25000
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      return response.data.output_text || response.data.output?.[0]?.text || '';
-    } catch (error: any) {
-      console.error('Erreur OpenAI:', error);
+      console.log('Appel API OpenAI o3 via route API...');
       
-      // Si c'est une erreur CORS, suggérer d'utiliser un backend
-      if (error.message.includes('CORS') || error.message.includes('Network Error')) {
-        throw new Error('Erreur CORS avec OpenAI. Pour la production, utilisez un backend sécurisé (voir SECURE-OPTIONS.md)');
+      // Utiliser la route API au lieu de l'appel direct
+      const response = await axios.post('/api/openai', {
+        action: 'analyze',
+        model: 'o3-2025-04-16',
+        reasoning: { 
+          effort: 'medium'
+        },
+        input: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_output_tokens: 25000
+      });
+
+      console.log('Réponse OpenAI reçue:', response.data);
+      
+      // Gérer différents formats de réponse possibles
+      let outputText = '';
+      
+      if (response.data.output_text) {
+        outputText = response.data.output_text;
+      } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
+        outputText = response.data.output[0].text;
+      } else if (response.data.choices && response.data.choices[0]?.message?.content) {
+        outputText = response.data.choices[0].message.content;
+      } else {
+        console.error('Format de réponse OpenAI non reconnu:', response.data);
+        throw new Error('Format de réponse OpenAI non reconnu');
       }
       
-      throw new Error('Erreur lors de l\'analyse OpenAI: ' + (error.response?.data?.error?.message || error.message));
+      console.log('Texte extrait de la réponse OpenAI, longueur:', outputText.length);
+      return outputText;
+    } catch (error: any) {
+      console.error('Erreur OpenAI détaillée:', error.response?.data || error);
+      console.error('Status:', error.response?.status);
+      
+      if (error.response?.data?.error) {
+        throw new Error('Erreur OpenAI: ' + error.response.data.error);
+      }
+      
+      throw new Error('Erreur lors de l\'analyse OpenAI: ' + error.message);
     }
   }
 
@@ -182,31 +194,41 @@ Les 7 sections obligatoires sont :
     try {
       // Étape 1 : Recherche Perplexity
       progressCallback?.('Recherche dans la littérature médicale...');
+      console.log('Début recherche Perplexity...');
       const perplexityReport = await this.searchWithPerplexity(caseText);
+      console.log('Recherche Perplexity terminée, rapport:', perplexityReport);
       
       // Étape 2 : Analyser les images avec o4-mini si présentes
       let imageAnalyses = '';
       if (images && images.length > 0) {
         progressCallback?.('Analyse des images médicales...');
+        console.log(`Analyse de ${images.length} images...`);
         for (let i = 0; i < images.length; i++) {
           progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
           const imageAnalysis = await this.analyzeImageWithO4Mini(images[i].base64, images[i].type);
           imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
         }
+        console.log('Analyse des images terminée');
       }
 
       // Étape 3 : Construire le prompt complet pour o3
       const completeData = perplexityReport.answer + (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
+      console.log('Données complètes préparées, longueur:', completeData.length);
       
       // Étape 4 : Analyser avec o3 toutes les sections en une fois
       progressCallback?.('Analyse médicale complète en cours...');
+      console.log('Début analyse OpenAI o3...');
       const fullAnalysis = await this.analyzeWithOpenAI(completeData, caseText);
+      console.log('Analyse OpenAI terminée, longueur de la réponse:', fullAnalysis.length);
       
       // Étape 5 : Parser la réponse pour extraire les sections
+      console.log('Parsing des sections...');
       const sections = this.parseSections(fullAnalysis);
+      console.log('Sections parsées:', sections.length);
       
       // Étape 6 : Extraire les références du rapport Perplexity
       const references = this.extractReferences(perplexityReport);
+      console.log('Références extraites:', references.length);
       
       // Appeler le callback pour chaque section
       sections.forEach((section, index) => {
@@ -219,7 +241,8 @@ Les 7 sections obligatoires sont :
         perplexityReport
       };
     } catch (error: any) {
-      console.error('Erreur complète:', error);
+      console.error('Erreur complète dans analyzeClinicalCase:', error);
+      console.error('Stack trace:', error.stack);
       throw error;
     }
   }
@@ -363,33 +386,33 @@ Les 7 sections obligatoires sont :
     }
 
     try {
-      // Créer un FormData pour envoyer le fichier audio
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'audio.webm');
-      formData.append('model', 'gpt-4o-transcribe');
-      formData.append('language', 'fr'); // Français
-      formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
+      // Convertir le blob en base64 pour l'envoyer via JSON
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          resolve(base64);
+        };
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(audioBlob);
+      const audioBase64 = await base64Promise;
 
-      const response = await axios.post(
-        'https://api.openai.com/v1/audio/transcriptions',
-        formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
+      // Utiliser la route API
+      const response = await axios.post('/api/openai', {
+        action: 'transcribe',
+        audioBase64: audioBase64
+      });
 
-      return response.data.text;
+      return response.data.text || '';
     } catch (error: any) {
       console.error('Erreur de transcription:', error);
       
-      if (error.message.includes('CORS') || error.message.includes('Network Error')) {
-        throw new Error('Erreur CORS avec la transcription. Pour la production, utilisez un backend sécurisé.');
+      if (error.response?.data?.error) {
+        throw new Error('Erreur de transcription: ' + error.response.data.error);
       }
       
-      throw new Error('Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message));
+      throw new Error('Erreur lors de la transcription: ' + error.message);
     }
   }
 
@@ -420,46 +443,46 @@ Les 7 sections obligatoires sont :
     Sois précis et méthodique. Liste toutes les anomalies observées et leur signification clinique potentielle.`;
 
     try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/responses',
-        {
-          model: 'o4-mini',
-          reasoning: { 
-            effort: 'high' // High pour une analyse approfondie des images
-          },
-          input: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'input_text',
-                  text: prompt
-                },
-                {
-                  type: 'input_image',
-                  source: {
-                    type: 'base64',
-                    media_type: 'image/jpeg',
-                    data: imageBase64
-                  }
+      // Utiliser la route API au lieu de l'appel direct
+      const response = await axios.post('/api/openai', {
+        action: 'analyze-image',
+        input: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: prompt
+              },
+              {
+                type: 'input_image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: imageBase64
                 }
-              ]
-            }
-          ],
-          max_output_tokens: 5000
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
+              }
+            ]
           }
-        }
-      );
+        ]
+      });
 
-      return response.data.output_text || response.data.output?.[0]?.text || '';
+      // Gérer la réponse
+      let outputText = '';
+      
+      if (response.data.output_text) {
+        outputText = response.data.output_text;
+      } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
+        outputText = response.data.output[0].text;
+      } else {
+        console.error('Format de réponse o4-mini non reconnu:', response.data);
+        throw new Error('Format de réponse non reconnu');
+      }
+      
+      return outputText;
     } catch (error: any) {
       console.error('Erreur analyse image o4-mini:', error);
-      throw new Error('Erreur lors de l\'analyse de l\'image: ' + (error.response?.data?.error?.message || error.message));
+      throw new Error('Erreur lors de l\'analyse de l\'image: ' + (error.response?.data?.error || error.message));
     }
   }
 } 
