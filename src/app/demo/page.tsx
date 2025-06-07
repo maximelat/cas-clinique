@@ -351,7 +351,19 @@ export default function DemoPage() {
           uploadedImages.length > 0 ? uploadedImages : undefined
         )
 
+        // Générer un ID unique pour l'analyse
+        const analysisId = `cas-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        
+        // Générer un titre basé sur le début du cas clinique (max 100 caractères)
+        const titleBase = textContent.replace(/\s+/g, ' ').trim()
+        const analysisTitle = titleBase.length > 100 
+          ? titleBase.substring(0, 97) + '...' 
+          : titleBase
+        
         setAnalysisData({
+          id: analysisId,
+          title: analysisTitle,
+          date: new Date().toISOString(),
           isDemo: false,
           sections: result.sections,
           references: result.references,
@@ -360,6 +372,7 @@ export default function DemoPage() {
         
         const duration = Date.now() - startTime
         toast.success(`Analyse terminée en ${Math.round(duration / 1000)}s !`)
+        toast.info(`ID de l'analyse : ${analysisId}`, { duration: 5000 })
       } catch (error: any) {
         toast.error(error.message || "Erreur lors de l'analyse")
         console.error("Erreur:", error)
@@ -1015,9 +1028,24 @@ export default function DemoPage() {
         ) : (
           <div id="analysis-results">
             <div className="mb-6 flex justify-between items-center">
-              <h2 className="text-2xl font-bold">
-                Résultat de l'analyse {analysisData?.isDemo ? "(Démo)" : "(IA)"}
-              </h2>
+              <div>
+                <h2 className="text-2xl font-bold">
+                  Résultat de l'analyse {analysisData?.isDemo ? "(Démo)" : "(IA)"}
+                </h2>
+                {analysisData && !analysisData.isDemo && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">ID :</span> {analysisData.id}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">Date :</span> {new Date(analysisData.date).toLocaleString('fr-FR')}
+                    </p>
+                    <p className="text-sm text-gray-600 italic">
+                      "{analysisData.title}"
+                    </p>
+                  </div>
+                )}
+              </div>
               <div className="flex gap-2">
                 {!analysisData?.isDemo && analysisData?.perplexityReport && (
                   <Button

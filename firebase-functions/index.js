@@ -306,25 +306,24 @@ exports.transcribeAudio = functions
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
 
-      console.log('Transcription audio avec gpt-4o-transcribe...');
+      console.log('Transcription audio avec whisper-1...');
 
       // Convertir base64 en Buffer
       const base64Data = audioBase64.replace(/^data:audio\/\w+;base64,/, '');
       const audioBuffer = Buffer.from(base64Data, 'base64');
       console.log('Taille du buffer audio:', audioBuffer.length, 'bytes');
 
-      // Créer FormData avec paramètres simplifiés
+      // Créer FormData pour whisper-1 (plus robuste avec webm)
       const FormData = require('form-data');
       const formData = new FormData();
       formData.append('file', audioBuffer, {
         filename: 'audio.webm',
         contentType: 'audio/webm'
       });
-      formData.append('model', 'gpt-4o-transcribe');
+      formData.append('model', 'whisper-1'); // Utiliser whisper-1 qui est plus robuste
       formData.append('language', 'fr');
-      formData.append('response_format', 'json'); // Obligatoire pour gpt-4o-transcribe
 
-      console.log('Envoi à l\'API OpenAI...');
+      console.log('Envoi à l\'API OpenAI (whisper-1)...');
 
       const response = await axios.post(
         'https://api.openai.com/v1/audio/transcriptions',
@@ -350,7 +349,7 @@ exports.transcribeAudio = functions
       console.error('Config utilisée:', {
         hasKey: !!OPENAI_API_KEY,
         keyLength: OPENAI_API_KEY?.length,
-        model: 'gpt-4o-transcribe'
+        model: 'whisper-1'
       });
       
       throw new functions.https.HttpsError(

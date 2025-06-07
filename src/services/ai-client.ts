@@ -706,9 +706,8 @@ IMPORTANT:
         // Simple FormData avec les paramètres essentiels
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'gpt-4o-transcribe'); // Toujours utiliser gpt-4o-transcribe
+        formData.append('model', 'whisper-1'); // Utiliser whisper-1 (plus robuste)
         formData.append('language', 'fr');
-        formData.append('response_format', 'json'); // Obligatoire pour gpt-4o-transcribe
         
         const response = await axios.post(
           'https://api.openai.com/v1/audio/transcriptions',
@@ -812,6 +811,9 @@ Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur le
         answer: response.data.choices?.[0]?.message?.content || '',
         citations: response.data.citations || []
       };
+
+      // Nettoyer le contenu en retirant les balises <think>...</think>
+      perplexityReport.answer = perplexityReport.answer.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
       // Extraire et analyser les références
       const references = this.extractReferences(perplexityReport);
