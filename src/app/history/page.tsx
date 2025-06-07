@@ -89,7 +89,7 @@ export default function HistoryPage() {
   }
 
   const openAnalysis = (analysisId: string) => {
-    router.push(`/analysis/${analysisId}`)
+    router.push(`/analysis/view?id=${analysisId}`)
   }
 
   if (!user) {

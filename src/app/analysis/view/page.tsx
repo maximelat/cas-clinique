@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -28,12 +28,13 @@ const sectionTitles = {
   RARE_DISEASES: "8. Recherche de maladies rares"
 }
 
-export default function AnalysisPage() {
-  const params = useParams()
+function AnalysisView() {
+  const searchParams = useSearchParams()
   const router = useRouter()
   const { user } = useAuth()
   const [analysis, setAnalysis] = useState<AnalysisRecord | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const id = searchParams.get('id')
 
   useEffect(() => {
     if (!user) {
@@ -42,14 +43,14 @@ export default function AnalysisPage() {
     }
     
     loadAnalysis()
-  }, [user, params.id, router])
+  }, [user, id, router])
 
   const loadAnalysis = async () => {
-    if (!params.id || typeof params.id !== 'string') return
+    if (!id) return
     
     try {
       setIsLoading(true)
-      const analysisData = await HistoryService.getAnalysis(params.id)
+      const analysisData = await HistoryService.getAnalysis(id)
       
       if (!analysisData) {
         toast.error("Analyse non trouvée")
@@ -437,5 +438,17 @@ export default function AnalysisPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function AnalysisPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    }>
+      <AnalysisView />
+    </Suspense>
   )
 } 

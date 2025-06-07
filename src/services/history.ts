@@ -34,6 +34,10 @@ export class HistoryService {
    */
   static async saveAnalysis(userId: string, analysis: any): Promise<void> {
     try {
+      if (!db) {
+        throw new Error('Base de données non initialisée');
+      }
+      
       const analysisDoc: AnalysisRecord = {
         id: analysis.id,
         userId,
@@ -62,6 +66,10 @@ export class HistoryService {
    */
   static async getUserAnalyses(userId: string, maxResults: number = 50): Promise<AnalysisRecord[]> {
     try {
+      if (!db) {
+        throw new Error('Base de données non initialisée');
+      }
+      
       const q = query(
         collection(db, this.COLLECTION_NAME),
         where('userId', '==', userId),
@@ -88,6 +96,10 @@ export class HistoryService {
    */
   static async getAnalysis(analysisId: string): Promise<AnalysisRecord | null> {
     try {
+      if (!db) {
+        throw new Error('Base de données non initialisée');
+      }
+      
       const docRef = doc(db, this.COLLECTION_NAME, analysisId);
       const docSnap = await getDoc(docRef);
       
@@ -107,6 +119,10 @@ export class HistoryService {
    */
   static async deleteAnalysis(analysisId: string, userId: string): Promise<void> {
     try {
+      if (!db) {
+        throw new Error('Base de données non initialisée');
+      }
+      
       // Vérifier que l'analyse appartient bien à l'utilisateur
       const analysis = await this.getAnalysis(analysisId);
       if (!analysis || analysis.userId !== userId) {
