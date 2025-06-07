@@ -46,6 +46,10 @@ if (typeof window !== 'undefined' && isFirebaseConfigured()) {
 }
 
 // Créer des fonctions pour accéder aux services
+export function getFirebaseApp(): FirebaseApp | undefined {
+  return app;
+}
+
 export function getFirebaseAuth(): Auth {
   if (!auth) {
     throw new Error('Firebase Auth n\'est pas initialisé. Vérifiez vos variables d\'environnement.');
