@@ -116,8 +116,7 @@ export class AIClientService {
       PATIENT_EXPLANATIONS: "Rédige une explication claire et empathique pour le patient (niveau B1/B2). Évite le jargon médical. Intègre des éléments rassurants basés sur les données scientifiques."
     };
 
-    try {
-      const systemPrompt = `Tu es un médecin expert spécialisé dans l'analyse de cas cliniques. 
+    const systemPrompt = `Tu es un médecin expert spécialisé dans l'analyse de cas cliniques. 
               Tu as accès à une recherche académique approfondie sur ce cas.
               ${sectionPrompts[sectionType as keyof typeof sectionPrompts]}
               
@@ -128,8 +127,9 @@ export class AIClientService {
               - Adapte le niveau de détail technique selon la section
               - Utilise le formatage Markdown pour structurer ta réponse (titres, listes, gras, etc.)`;
 
-      const userPrompt = `CAS CLINIQUE:\n${caseText}\n\nRECHERCHE ACADÉMIQUE:\n${perplexityReport}`;
+    const userPrompt = `CAS CLINIQUE:\n${caseText}\n\nRECHERCHE ACADÉMIQUE:\n${perplexityReport}`;
 
+    try {
       // Pour OpenAI, on peut essayer d'utiliser un proxy CORS si nécessaire
       const response = await axios.post(
         `${this.corsProxy}https://api.openai.com/v1/chat/completions`,
