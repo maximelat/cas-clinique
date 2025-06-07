@@ -25,8 +25,8 @@ jobs:
     - name: Build Next.js application
       env:
         NEXT_PUBLIC_BASE_PATH: /projet/clinical-case-analyzer
-        PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI }}
+        PERPLEXITY_API_KEY: ${{ secrets.perplexity }}
+        OPENAI_API_KEY: ${{ secrets.openai }}
         NEXT_PUBLIC_API_URL: ${{ secrets.API_URL }}
       run: npm run build
 

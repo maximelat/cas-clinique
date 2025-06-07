@@ -50,8 +50,8 @@ Utilisez des fonctions serverless (AWS Lambda, Netlify Functions, etc.) :
 
 ### GitHub Secrets requis :
 
-- `PERPLEXITY` : Clé API Perplexity
-- `OPENAI` : Clé API OpenAI  
+- `perplexity` : Clé API Perplexity
+- `openai` : Clé API OpenAI  
 - `API_URL` : URL du backend (si option 2 ou 3)
 - `FTP_USERNAME` : Utilisateur FTP
 - `FTP_PASSWORD` : Mot de passe FTP

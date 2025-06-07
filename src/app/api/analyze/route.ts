@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: 'gpt-4-turbo-preview',
+          model: 'o3',
           messages: [
             {
               role: 'system',
