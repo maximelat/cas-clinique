@@ -1,4 +1,11 @@
 import axios from 'axios';
+import { isFirebaseConfigured } from '@/lib/firebase';
+import { 
+  analyzeWithO3ViaFunction, 
+  analyzeImageWithO3ViaFunction,
+  analyzePerplexityWithGPT4MiniViaFunction,
+  transcribeAudioViaFunction 
+} from '@/lib/firebase-functions';
 
 interface PerplexityResponse {
   citations: any[];
@@ -14,6 +21,7 @@ export class AIClientService {
   private perplexityApiKey: string | undefined;
   private openaiApiKey: string | undefined;
   private isProduction: boolean = false;
+  private useFirebaseFunctions: boolean = false;
 
   constructor() {
     // Clés API exposées côté client - À utiliser uniquement pour des projets de démonstration
@@ -24,10 +32,17 @@ export class AIClientService {
     if (typeof window !== 'undefined') {
       this.isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
     }
+    
+    // Utiliser Firebase Functions si Firebase est configuré et qu'on est en production
+    this.useFirebaseFunctions = this.isProduction && isFirebaseConfigured();
+    
+    if (this.useFirebaseFunctions) {
+      console.log('Mode production détecté - Utilisation de Firebase Functions pour OpenAI');
+    }
   }
 
   hasApiKeys(): boolean {
-    return !!(this.perplexityApiKey && this.openaiApiKey);
+    return !!(this.perplexityApiKey && (this.openaiApiKey || this.useFirebaseFunctions));
   }
 
   async searchWithPerplexity(query: string): Promise<PerplexityResponse> {
@@ -109,18 +124,14 @@ export class AIClientService {
     }
   }
 
-  private async analyzeWithOpenAI(perplexityData: string, clinicalCase: string): Promise<string> {
-    if (!this.openaiApiKey) {
-      throw new Error('Clé API OpenAI non configurée');
-    }
-
+  private async analyzeWithOpenAI(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
     const prompt = `Tu es un médecin expert. Analyse ce cas clinique en te basant sur les données de recherche académique fournies.
 
 CAS CLINIQUE :
 ${clinicalCase}
 
-DONNÉES DE RECHERCHE ACADÉMIQUE :
-${perplexityData}
+SYNTHÈSE DE LA RECHERCHE ACADÉMIQUE :
+${perplexityDataProcessed}
 
 Instructions :
 - Analyse le cas en 7 sections exactement
@@ -139,79 +150,54 @@ Les 7 sections obligatoires sont :
 7. PATIENT_EXPLANATIONS : Explications pour le patient (langage simple)`;
 
     try {
-      console.log('Appel API OpenAI o3 direct...');
-      
-      if (this.isProduction) {
-        console.warn('⚠️ Appel OpenAI en production détecté. CORS va probablement bloquer la requête.');
-        console.warn('Solutions: 1) Utilisez le mode démo, 2) Installez une extension CORS pour tester, 3) Déployez un backend');
-      }
-      
-      const response = await axios.post(
-        'https://api.openai.com/v1/responses',
-        {
-          model: 'o3-2025-04-16',
-          reasoning: { 
-            effort: 'medium'
-          },
-          input: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          max_output_tokens: 25000
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      console.log('Réponse OpenAI reçue:', response.data);
-      
-      // Gérer différents formats de réponse possibles
-      let outputText = '';
-      
-      if (response.data.output_text) {
-        outputText = response.data.output_text;
-      } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
-        outputText = response.data.output[0].text;
-      } else if (response.data.choices && response.data.choices[0]?.message?.content) {
-        outputText = response.data.choices[0].message.content;
+      if (this.useFirebaseFunctions) {
+        console.log('Utilisation de Firebase Functions pour o3...');
+        return await analyzeWithO3ViaFunction(prompt);
       } else {
-        console.error('Format de réponse OpenAI non reconnu:', response.data);
-        throw new Error('Format de réponse OpenAI non reconnu');
-      }
-      
-      console.log('Texte extrait de la réponse OpenAI, longueur:', outputText.length);
-      return outputText;
-    } catch (error: any) {
-      console.error('Erreur OpenAI détaillée:', error.response?.data || error);
-      console.error('Status:', error.response?.status);
-      
-      // Si c'est une erreur CORS
-      if (error.message.includes('CORS') || error.message.includes('Network Error') || !error.response) {
-        if (this.isProduction) {
-          throw new Error(`
-            ⚠️ ERREUR CORS EN PRODUCTION
-            
-            OpenAI bloque les appels depuis les navigateurs pour des raisons de sécurité.
-            
-            Solutions:
-            1. Utilisez le MODE DÉMO (recommandé)
-            2. Installez temporairement une extension Chrome "CORS Unblock"
-            3. Déployez un vrai backend (Node.js, Python, etc.)
-            
-            Cette limitation est normale et attendue en production.
-          `);
+        // Mode développement - appel direct
+        console.log('Appel API OpenAI o3 direct (mode dev)...');
+        
+        const response = await axios.post(
+          'https://api.openai.com/v1/responses',
+          {
+            model: 'o3-2025-04-16',
+            reasoning: { 
+              effort: 'medium'
+            },
+            input: [
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            max_output_tokens: 25000
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        // Gérer différents formats de réponse possibles
+        let outputText = '';
+        
+        if (response.data.output_text) {
+          outputText = response.data.output_text;
+        } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
+          outputText = response.data.output[0].text;
+        } else if (response.data.choices && response.data.choices[0]?.message?.content) {
+          outputText = response.data.choices[0].message.content;
         } else {
-          throw new Error('Erreur CORS avec OpenAI. Vérifiez votre configuration.');
+          throw new Error('Format de réponse OpenAI non reconnu');
         }
+        
+        return outputText;
       }
-      
-      throw new Error('Erreur lors de l\'analyse OpenAI: ' + (error.response?.data?.error?.message || error.message));
+    } catch (error: any) {
+      console.error('Erreur OpenAI détaillée:', error);
+      throw new Error('Erreur lors de l\'analyse OpenAI: ' + error.message);
     }
   }
 
@@ -232,35 +218,68 @@ Les 7 sections obligatoires sont :
       const perplexityReport = await this.searchWithPerplexity(caseText);
       console.log('Recherche Perplexity terminée, rapport:', perplexityReport);
       
-      // Étape 2 : Analyser les images avec o4-mini si présentes
+      // Étape 2 : Analyser les données Perplexity avec GPT-4o-mini
+      progressCallback?.('Analyse des données de recherche...');
+      console.log('Analyse des données Perplexity avec GPT-4o-mini...');
+      let perplexityDataProcessed = perplexityReport.answer;
+      
+      if (this.useFirebaseFunctions) {
+        perplexityDataProcessed = await analyzePerplexityWithGPT4MiniViaFunction(perplexityReport.answer);
+      } else if (this.openaiApiKey) {
+        // En dev, utiliser GPT-4o-mini directement
+        const gptResponse = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o-mini-2024-07-18',
+            messages: [
+              {
+                role: 'user',
+                content: `Analyse ces données de recherche académique et extrais les points clés, les références importantes et les conclusions principales. Sois concis mais exhaustif.\n\nDONNÉES DE RECHERCHE:\n${perplexityReport.answer}`
+              }
+            ],
+            max_tokens: 4000,
+            temperature: 0.3
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        perplexityDataProcessed = gptResponse.data.choices?.[0]?.message?.content || perplexityReport.answer;
+      }
+      console.log('Analyse GPT-4o-mini terminée');
+      
+      // Étape 3 : Analyser les images avec o3 si présentes
       let imageAnalyses = '';
       if (images && images.length > 0) {
         progressCallback?.('Analyse des images médicales...');
-        console.log(`Analyse de ${images.length} images...`);
+        console.log(`Analyse de ${images.length} images avec o3...`);
         for (let i = 0; i < images.length; i++) {
           progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
-          const imageAnalysis = await this.analyzeImageWithO4Mini(images[i].base64, images[i].type);
+          const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type);
           imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
         }
         console.log('Analyse des images terminée');
       }
 
-      // Étape 3 : Construire le prompt complet pour o3
-      const completeData = perplexityReport.answer + (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
+      // Étape 4 : Construire le prompt complet pour o3
+      const completeData = perplexityDataProcessed + (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
       console.log('Données complètes préparées, longueur:', completeData.length);
       
-      // Étape 4 : Analyser avec o3 toutes les sections en une fois
+      // Étape 5 : Analyser avec o3 toutes les sections en une fois
       progressCallback?.('Analyse médicale complète en cours...');
-      console.log('Début analyse OpenAI o3...');
+      console.log('Début analyse finale avec o3...');
       const fullAnalysis = await this.analyzeWithOpenAI(completeData, caseText);
-      console.log('Analyse OpenAI terminée, longueur de la réponse:', fullAnalysis.length);
+      console.log('Analyse o3 terminée, longueur de la réponse:', fullAnalysis.length);
       
-      // Étape 5 : Parser la réponse pour extraire les sections
+      // Étape 6 : Parser la réponse pour extraire les sections
       console.log('Parsing des sections...');
       const sections = this.parseSections(fullAnalysis);
       console.log('Sections parsées:', sections.length);
       
-      // Étape 6 : Extraire les références du rapport Perplexity
+      // Étape 7 : Extraire les références du rapport Perplexity
       const references = this.extractReferences(perplexityReport);
       console.log('Références extraites:', references.length);
       
@@ -414,61 +433,8 @@ Les 7 sections obligatoires sont :
     return references;
   }
 
-  async transcribeAudio(audioBlob: Blob): Promise<string> {
-    if (!this.openaiApiKey) {
-      throw new Error('Clé API OpenAI non configurée');
-    }
-
-    try {
-      if (this.isProduction) {
-        throw new Error('La transcription audio n\'est pas disponible en production (CORS). Utilisez le mode démo ou un backend.');
-      }
-      
-      // Créer un FormData pour envoyer le fichier audio
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'audio.webm');
-      formData.append('model', 'gpt-4o-transcribe');
-      formData.append('language', 'fr');
-      formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
-
-      const response = await axios.post(
-        'https://api.openai.com/v1/audio/transcriptions',
-        formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
-
-      return response.data.text || '';
-    } catch (error: any) {
-      console.error('Erreur de transcription:', error);
-      
-      if (error.message.includes('CORS') || error.message.includes('Network Error')) {
-        throw new Error('ERREUR CORS: La transcription audio nécessite un backend.');
-      }
-      
-      throw new Error('Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message));
-    }
-  }
-
-  // Méthode helper pour vérifier si le navigateur supporte l'enregistrement audio
-  static isAudioRecordingSupported(): boolean {
-    // Vérifier si on est côté client
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
-      return false;
-    }
-    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-  }
-
-  // Analyser une image avec o4-mini
-  private async analyzeImageWithO4Mini(imageBase64: string, imageType: string = 'medical'): Promise<string> {
-    if (!this.openaiApiKey) {
-      throw new Error('Clé API OpenAI non configurée');
-    }
-
+  // Analyser une image avec o3
+  private async analyzeImageWithO3(imageBase64: string, imageType: string = 'medical'): Promise<string> {
     const imageTypePrompts = {
       medical: "Analyse cette image médicale (radiographie, IRM, scanner, échographie, etc.) et décris précisément ce que tu observes.",
       biology: "Analyse ces résultats biologiques et identifie les valeurs anormales, en les comparant aux valeurs de référence.",
@@ -481,66 +447,126 @@ Les 7 sections obligatoires sont :
     Sois précis et méthodique. Liste toutes les anomalies observées et leur signification clinique potentielle.`;
 
     try {
-      if (this.isProduction) {
-        console.warn('⚠️ Analyse d\'image en production. CORS va bloquer la requête.');
-      }
-      
-      const response = await axios.post(
-        'https://api.openai.com/v1/responses',
-        {
-          model: 'o4-mini',
-          reasoning: { 
-            effort: 'high'
-          },
-          input: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'input_text',
-                  text: prompt
-                },
-                {
-                  type: 'input_image',
-                  source: {
-                    type: 'base64',
-                    media_type: 'image/jpeg',
-                    data: imageBase64
-                  }
-                }
-              ]
-            }
-          ],
-          max_output_tokens: 5000
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      // Gérer la réponse
-      let outputText = '';
-      
-      if (response.data.output_text) {
-        outputText = response.data.output_text;
-      } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
-        outputText = response.data.output[0].text;
+      if (this.useFirebaseFunctions) {
+        console.log('Analyse d\'image avec o3 via Firebase Functions...');
+        return await analyzeImageWithO3ViaFunction(prompt, imageBase64);
       } else {
-        throw new Error('Format de réponse non reconnu');
+        // Mode développement - appel direct
+        console.log('Analyse d\'image avec o3 (mode dev)...');
+        
+        const response = await axios.post(
+          'https://api.openai.com/v1/responses',
+          {
+            model: 'o3-2025-04-16',
+            reasoning: { 
+              effort: 'high'
+            },
+            input: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'input_text',
+                    text: prompt
+                  },
+                  {
+                    type: 'input_image',
+                    source: {
+                      type: 'base64',
+                      media_type: 'image/jpeg',
+                      data: imageBase64
+                    }
+                  }
+                ]
+              }
+            ],
+            max_output_tokens: 5000
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        // Gérer la réponse
+        let outputText = '';
+        
+        if (response.data.output_text) {
+          outputText = response.data.output_text;
+        } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
+          outputText = response.data.output[0].text;
+        } else {
+          throw new Error('Format de réponse non reconnu');
+        }
+        
+        return outputText;
       }
-      
-      return outputText;
     } catch (error: any) {
-      console.error('Erreur analyse image o4-mini:', error);
-      
-      if (error.message.includes('CORS') || error.message.includes('Network Error') || !error.response) {
-        throw new Error('ERREUR CORS: L\'analyse d\'image ne fonctionne qu\'en développement local ou avec un backend.');
-      }
-      
-      throw new Error('Erreur lors de l\'analyse de l\'image: ' + (error.response?.data?.error?.message || error.message));
+      console.error('Erreur analyse image o3:', error);
+      throw new Error('Erreur lors de l\'analyse de l\'image: ' + error.message);
     }
+  }
+
+  async transcribeAudio(audioBlob: Blob): Promise<string> {
+    try {
+      if (this.useFirebaseFunctions) {
+        console.log('Transcription audio via Firebase Functions...');
+        
+        // Convertir le blob en base64
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => {
+            const base64 = reader.result as string;
+            resolve(base64);
+          };
+          reader.onerror = reject;
+        });
+        reader.readAsDataURL(audioBlob);
+        const audioBase64 = await base64Promise;
+        
+        return await transcribeAudioViaFunction(audioBase64);
+      } else {
+        // Mode développement - appel direct
+        if (!this.openaiApiKey) {
+          throw new Error('Clé API OpenAI non configurée');
+        }
+        
+        console.log('Transcription audio directe (mode dev)...');
+        
+        // Créer un FormData pour envoyer le fichier audio
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'audio.webm');
+        formData.append('model', 'gpt-4o-transcribe');
+        formData.append('language', 'fr');
+        formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
+
+        const response = await axios.post(
+          'https://api.openai.com/v1/audio/transcriptions',
+          formData,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'multipart/form-data'
+            }
+          }
+        );
+
+        return response.data.text || '';
+      }
+    } catch (error: any) {
+      console.error('Erreur de transcription:', error);
+      throw new Error('Erreur lors de la transcription: ' + error.message);
+    }
+  }
+
+  // Méthode helper pour vérifier si le navigateur supporte l'enregistrement audio
+  static isAudioRecordingSupported(): boolean {
+    // Vérifier si on est côté client
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      return false;
+    }
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 } 
