@@ -1,13 +1,23 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "sonner";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthButton } from "@/components/AuthButton";
 
-const inter = Inter({ subsets: ["latin"] });
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 export const metadata: Metadata = {
-  title: "Clinical Case Analyzer - Analyse IA de cas cliniques",
-  description: "Analysez vos cas cliniques avec l'intelligence artificielle. Recherche académique approfondie et analyse structurée en 7 sections.",
+  title: "Analyseur de Cas Cliniques",
+  description: "Analyse de cas cliniques avec IA",
 };
 
 export default function RootLayout({
@@ -17,9 +27,19 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr">
-      <body className={inter.className}>
-        {children}
-        <Toaster position="top-right" />
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        <AuthProvider>
+          <nav className="border-b">
+            <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+              <h1 className="text-xl font-bold">Analyseur de Cas Cliniques</h1>
+              <AuthButton />
+            </div>
+          </nav>
+          {children}
+        </AuthProvider>
+        <Toaster />
       </body>
     </html>
   );

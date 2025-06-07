@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
@@ -14,6 +14,8 @@ import remarkGfm from 'remark-gfm'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import { useAudioRecorder } from "@/hooks/useAudioRecorder"
+import { useAuth } from "@/contexts/AuthContext"
+import { CreditsService } from "@/services/credits"
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -143,6 +145,9 @@ export default function DemoPage() {
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [isAudioSupported, setIsAudioSupported] = useState(false)
   const [uploadedImages, setUploadedImages] = useState<{ base64: string, type: string, name: string }[]>([])
+  
+  // Authentification
+  const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
   
   // Hook pour l'enregistrement audio
   const {
@@ -278,6 +283,19 @@ export default function DemoPage() {
       return
     }
 
+    // Vérifier l'authentification pour le mode réel
+    if (!isDemoMode) {
+      if (!user) {
+        toast.error("Veuillez vous connecter pour utiliser le mode réel")
+        return
+      }
+
+      if (!userCredits || userCredits.credits <= 0) {
+        toast.error("Vous n'avez plus de crédits disponibles")
+        return
+      }
+    }
+
     setIsAnalyzing(true)
     setProgressMessage("")
     setCurrentSections([])
@@ -300,8 +318,23 @@ export default function DemoPage() {
         return
       }
 
-      toast.info("Analyse en cours avec l'IA...")
-      
+      // Utiliser un crédit
+      try {
+        const creditUsed = await CreditsService.useCredit(user!.uid)
+        if (!creditUsed) {
+          toast.error("Impossible d'utiliser un crédit")
+          setIsAnalyzing(false)
+          return
+        }
+        
+        await refreshCredits() // Rafraîchir l'affichage des crédits
+        toast.info(`Analyse en cours... (${userCredits!.credits - 1} crédits restants)`)
+      } catch (error) {
+        toast.error("Erreur lors de l'utilisation du crédit")
+        setIsAnalyzing(false)
+        return
+      }
+
       try {
         const result = await aiService.analyzeClinicalCase(
           textContent,
@@ -452,7 +485,7 @@ export default function DemoPage() {
           <Link href="/">
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour
+              Accueil
             </Button>
           </Link>
         </div>
@@ -624,14 +657,26 @@ export default function DemoPage() {
                       {isDemoMode 
                         ? "Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités."
                         : hasApiKeys
-                        ? "Analyse réelle utilisant Perplexity Academic et OpenAI GPT-4 pour une analyse médicale approfondie."
+                        ? "Analyse réelle utilisant Perplexity Academic et OpenAI pour une analyse médicale approfondie."
                         : "Les clés API Perplexity et OpenAI doivent être configurées dans les secrets GitHub pour utiliser le mode réel."
                       }
                     </p>
                     {!isDemoMode && hasApiKeys && (
-                      <p className="mt-1 text-xs">
-                        Note : Les appels API se font directement depuis le navigateur.
-                      </p>
+                      <div className="mt-2 space-y-1">
+                        {user ? (
+                          <div className="flex items-center gap-2">
+                            <Coins className="h-4 w-4" />
+                            <span className="font-medium">
+                              Crédits disponibles: {userCredits?.credits || 0}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Lock className="h-4 w-4" />
+                            <span>Connexion requise pour le mode réel</span>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
