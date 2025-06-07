@@ -19,14 +19,25 @@ Error: Attempting to parse an unsupported color function "oklch"
 ### Statut
 Non critique - Aucune action requise
 
-## 2. Paramètre max_tokens avec le modèle o3-2025-04-16 (RÉSOLU)
+## 2. Erreurs API avec o3-2025-04-16 (RÉSOLU)
 
-### Description
-Le modèle o3-2025-04-16 nécessite l'utilisation de `max_completion_tokens` au lieu de `max_tokens`.
+### Problèmes rencontrés et solutions
+1. **"Unsupported parameter: 'max_tokens'"** → Utiliser `max_output_tokens`
+2. **"Unsupported value: 'temperature'"** → Retirer (o3 utilise toujours 1.0)
+3. **Mauvaise URL API** → Utiliser `/v1/responses` au lieu de `/v1/chat/completions`
 
-### Solution appliquée
-- ✅ Remplacé `max_tokens` par `max_completion_tokens` dans tous les appels API
-- ✅ Testé et vérifié avec succès
+### Structure correcte pour o3/o4-mini
+```javascript
+{
+  model: "o3-2025-04-16",
+  reasoning: { effort: "medium" },
+  input: [{ role: "user", content: "..." }],
+  max_output_tokens: 25000
+}
+```
+
+### Statut
+✅ RÉSOLU - L'API Responses est maintenant correctement implémentée
 
 ## 3. Avertissements de préchargement de polices
 

@@ -90,13 +90,26 @@ Ouvrez la console (F12) pour voir :
 
 ## Changements récents
 
-1. **Modèle OpenAI mis à jour** : `gpt-4-turbo-preview` → `o3-2025-04-16`
-   - ⚠️ Utilise `max_completion_tokens` au lieu de `max_tokens`
-2. **Nouvelle fonctionnalité** : Transcription audio pour dicter les cas cliniques
-   - Utilise l'API OpenAI Audio (modèle `gpt-4o-transcribe`)
-   - Bouton "Dicter" dans l'interface
-   - Support de l'enregistrement, pause, reprise et arrêt
-   - Transcription optimisée pour le français médical
+1. **Migration vers API Responses** : 
+   - o3-2025-04-16 utilise `/v1/responses` et non `/v1/chat/completions`
+   - Paramètres : `reasoning.effort`, `input` (pas `messages`), `max_output_tokens`
+   - ⚠️ Pas de `temperature` (toujours 1.0)
+
+2. **Analyse d'images avec o4-mini-2025-04-16** :
+   - Analyse automatique des images médicales uploadées
+   - Types détectés : biology, ecg, medical, other
+   - Les résultats sont envoyés à o3 avec les données Perplexity
+
+3. **Nouvelle architecture multi-modèles** :
+   ```
+   Texte → Perplexity Academic
+   Images → o4-mini → Analyses d'images
+   Tout → o3 → Analyse complète en 7 sections
+   ```
+
+4. **Transcription audio** :
+   - Modèle `gpt-4o-transcribe` pour la dictée
+   - Optimisé pour le français médical
 
 ## Configuration API
 
@@ -105,7 +118,8 @@ Ouvrez la console (F12) pour voir :
 - `NEXT_PUBLIC_PERPLEXITY_API_KEY`
 
 ### Modèles utilisés
-- OpenAI: `o3-2025-04-16` (analyse)
+- OpenAI o3: `o3-2025-04-16` (analyse principale)
+- OpenAI o4-mini: `o4-mini-2025-04-16` (analyse d'images)
 - OpenAI Audio: `gpt-4o-transcribe` (transcription)
 - Perplexity: `sonar-reasoning-pro` (recherche académique)
 
