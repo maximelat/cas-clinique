@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { useAudioRecorder } from "@/hooks/useAudioRecorder"
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -139,10 +140,87 @@ export default function DemoPage() {
   const [analysisData, setAnalysisData] = useState<any>(null)
   const [progressMessage, setProgressMessage] = useState("")
   const [currentSections, setCurrentSections] = useState<any[]>([])
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  
+  // Hook pour l'enregistrement audio
+  const {
+    isRecording,
+    isPaused,
+    recordingTime,
+    startRecording,
+    stopRecording,
+    pauseRecording,
+    resumeRecording,
+    error: recordingError
+  } = useAudioRecorder()
 
   // Vérifier si les clés API sont disponibles
   const aiService = new AIClientService()
   const hasApiKeys = aiService.hasApiKeys()
+
+  // Formater le temps d'enregistrement
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Gérer le début de l'enregistrement
+  const handleStartRecording = async () => {
+    try {
+      await startRecording()
+      toast.info("Enregistrement démarré. Parlez pour dicter votre cas clinique.")
+    } catch (error) {
+      toast.error("Impossible d'accéder au microphone")
+    }
+  }
+
+  // Gérer l'arrêt et la transcription
+  const handleStopRecording = async () => {
+    setIsTranscribing(true)
+    try {
+      const audioBlob = await stopRecording()
+      
+      if (!audioBlob) {
+        toast.error("Aucun enregistrement à transcrire")
+        return
+      }
+
+      if (isDemoMode) {
+        // En mode démo, simuler une transcription
+        toast.info("Transcription simulée en mode démo...")
+        setTimeout(() => {
+          const demoTranscription = "Patient de 65 ans, hypertendu connu depuis 10 ans, diabétique de type 2, se présente aux urgences pour douleur thoracique rétrosternale intense apparue brutalement il y a 2 heures, irradiant vers le bras gauche, accompagnée de sueurs et nausées."
+          setTextContent(demoTranscription)
+          setIsTranscribing(false)
+          toast.success("Transcription terminée (démo)")
+        }, 2000)
+      } else {
+        // Mode réel - utiliser l'API OpenAI
+        if (!hasApiKeys) {
+          toast.error("Les clés API ne sont pas configurées pour la transcription")
+          setIsTranscribing(false)
+          return
+        }
+
+        toast.info("Transcription en cours...")
+        
+        try {
+          const transcription = await aiService.transcribeAudio(audioBlob)
+          setTextContent(transcription)
+          toast.success("Transcription terminée")
+        } catch (error: any) {
+          toast.error(error.message || "Erreur lors de la transcription")
+          console.error("Erreur de transcription:", error)
+        }
+      }
+    } catch (error) {
+      toast.error("Erreur lors de l'arrêt de l'enregistrement")
+      console.error(error)
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
 
   const handleAnalyze = async () => {
     if (!textContent.trim()) {
@@ -360,14 +438,77 @@ export default function DemoPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <Label htmlFor="content">Cas clinique</Label>
+                <div className="flex justify-between items-center mb-2">
+                  <Label htmlFor="content">Cas clinique</Label>
+                  {AIClientService.isAudioRecordingSupported() && (
+                    <div className="flex items-center gap-2">
+                      {isRecording && (
+                        <span className="text-sm text-gray-600">
+                          {formatTime(recordingTime)}
+                        </span>
+                      )}
+                      {!isRecording ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleStartRecording}
+                          disabled={isTranscribing}
+                        >
+                          <Mic className="h-4 w-4 mr-2" />
+                          Dicter
+                        </Button>
+                      ) : (
+                        <div className="flex gap-2">
+                          {isPaused ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={resumeRecording}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={pauseRecording}
+                            >
+                              <Pause className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={handleStopRecording}
+                          >
+                            <MicOff className="h-4 w-4 mr-2" />
+                            Arrêter
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <textarea
                   id="content"
                   value={textContent}
                   onChange={(e) => setTextContent(e.target.value)}
                   placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
-                  className="w-full h-64 p-4 mt-2 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isRecording || isTranscribing}
                 />
+                {recordingError && (
+                  <p className="text-sm text-red-600 mt-2">{recordingError}</p>
+                )}
+                {isTranscribing && (
+                  <p className="text-sm text-gray-600 mt-2 animate-pulse">
+                    Transcription en cours...
+                  </p>
+                )}
               </div>
 
               <div className={`border rounded-lg p-4 ${isDemoMode ? 'bg-blue-50 border-blue-200' : hasApiKeys ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>

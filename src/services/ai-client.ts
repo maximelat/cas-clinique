@@ -135,7 +135,7 @@ export class AIClientService {
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: 'gpt-4-turbo-preview',
+          model: 'o3-2025-04-16',
           messages: [
             {
               role: 'system',
@@ -296,5 +296,46 @@ export class AIClientService {
     }
 
     return references;
+  }
+
+  async transcribeAudio(audioBlob: Blob): Promise<string> {
+    if (!this.openaiApiKey) {
+      throw new Error('Clé API OpenAI non configurée');
+    }
+
+    try {
+      // Créer un FormData pour envoyer le fichier audio
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'audio.webm');
+      formData.append('model', 'gpt-4o-transcribe');
+      formData.append('language', 'fr'); // Français
+      formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/audio/transcriptions',
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      );
+
+      return response.data.text;
+    } catch (error: any) {
+      console.error('Erreur de transcription:', error);
+      
+      if (error.message.includes('CORS') || error.message.includes('Network Error')) {
+        throw new Error('Erreur CORS avec la transcription. Pour la production, utilisez un backend sécurisé.');
+      }
+      
+      throw new Error('Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message));
+    }
+  }
+
+  // Méthode helper pour vérifier si le navigateur supporte l'enregistrement audio
+  static isAudioRecordingSupported(): boolean {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 } 
