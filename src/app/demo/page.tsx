@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -141,6 +141,7 @@ export default function DemoPage() {
   const [progressMessage, setProgressMessage] = useState("")
   const [currentSections, setCurrentSections] = useState<any[]>([])
   const [isTranscribing, setIsTranscribing] = useState(false)
+  const [isAudioSupported, setIsAudioSupported] = useState(false)
   
   // Hook pour l'enregistrement audio
   const {
@@ -157,6 +158,11 @@ export default function DemoPage() {
   // Vérifier si les clés API sont disponibles
   const aiService = new AIClientService()
   const hasApiKeys = aiService.hasApiKeys()
+
+  // Vérifier le support audio côté client seulement
+  useEffect(() => {
+    setIsAudioSupported(AIClientService.isAudioRecordingSupported())
+  }, [])
 
   // Formater le temps d'enregistrement
   const formatTime = (seconds: number) => {
@@ -440,7 +446,7 @@ export default function DemoPage() {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <Label htmlFor="content">Cas clinique</Label>
-                  {AIClientService.isAudioRecordingSupported() && (
+                  {isAudioSupported && (
                     <div className="flex items-center gap-2">
                       {isRecording && (
                         <span className="text-sm text-gray-600">

@@ -336,6 +336,10 @@ export class AIClientService {
 
   // Méthode helper pour vérifier si le navigateur supporte l'enregistrement audio
   static isAudioRecordingSupported(): boolean {
+    // Vérifier si on est côté client
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+      return false;
+    }
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 } 
