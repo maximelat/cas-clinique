@@ -377,29 +377,46 @@ function AnalysisView() {
               <CardTitle>Références bibliographiques</CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-3">
+              <ul className="space-y-4">
                 {analysis.references.map((ref: any) => (
-                  <li key={ref.label} className="flex items-start gap-2">
-                    <span className="text-gray-500">[{ref.label}]</span>
-                    <div className="flex-1">
-                      <p className="font-medium">{ref.title}</p>
-                      {ref.authors && (
-                        <p className="text-sm text-gray-600">{ref.authors}</p>
-                      )}
-                      {ref.journal && (
-                        <p className="text-sm text-gray-500 italic">{ref.journal}</p>
-                      )}
-                      {ref.year && (
-                        <span className="text-xs text-gray-500">({ref.year})</span>
-                      )}
-                      <a
-                        href={ref.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline block mt-1"
-                      >
-                        Voir la source →
-                      </a>
+                  <li key={ref.label} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
+                    <div className="flex items-start gap-3">
+                      <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                      <div className="flex-1">
+                        <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                        {ref.authors && (
+                          <p className="text-sm text-gray-700 mb-1">
+                            <span className="font-medium">Auteurs :</span> {ref.authors}
+                          </p>
+                        )}
+                        {ref.journal && (
+                          <p className="text-sm text-gray-600 italic mb-1">
+                            <span className="font-medium not-italic">Journal :</span> {ref.journal}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                          {ref.year && (
+                            <span className="bg-gray-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                          )}
+                          {ref.doi && (
+                            <span className="bg-gray-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
+                          )}
+                          {ref.pmid && (
+                            <span className="bg-gray-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
+                          )}
+                        </div>
+                        <a
+                          href={ref.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                        >
+                          Consulter la source
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -414,20 +431,40 @@ function AnalysisView() {
                 <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
               </CardHeader>
               <CardContent>
-                <ul className="space-y-3">
+                <ul className="space-y-4">
                   {analysis.rareDiseaseData.references.map((ref: any) => (
-                    <li key={`rare-${ref.label}`} className="flex items-start gap-2">
-                      <span className="text-purple-600">[{ref.label}]</span>
-                      <div className="flex-1">
-                        <p className="font-medium">{ref.title}</p>
-                        <a
-                          href={ref.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-purple-600 hover:underline block mt-1"
-                        >
-                          Voir la source →
-                        </a>
+                    <li key={`rare-${ref.label}`} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
+                      <div className="flex items-start gap-3">
+                        <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                        <div className="flex-1">
+                          <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                          {ref.authors && (
+                            <p className="text-sm text-gray-700 mb-1">
+                              <span className="font-medium">Auteurs :</span> {ref.authors}
+                            </p>
+                          )}
+                          {ref.journal && (
+                            <p className="text-sm text-gray-600 italic mb-1">
+                              <span className="font-medium not-italic">Journal :</span> {ref.journal}
+                            </p>
+                          )}
+                          {ref.year && (
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                              <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                            </div>
+                          )}
+                          <a
+                            href={ref.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
+                          >
+                            Consulter la source
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        </div>
                       </div>
                     </li>
                   ))}
