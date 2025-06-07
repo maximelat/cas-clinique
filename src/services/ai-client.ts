@@ -679,14 +679,19 @@ IMPORTANT:
 
   async transcribeAudio(audioBlob: Blob): Promise<string> {
     try {
+      console.log('Début transcription audio...');
+      console.log('Type du blob:', audioBlob.type);
+      console.log('Taille du blob:', audioBlob.size, 'bytes');
+      
       if (this.useFirebaseFunctions) {
-        console.log('Transcription audio via Firebase Functions...');
+        console.log('Utilisation de Firebase Functions pour la transcription');
         
         // Convertir le blob en base64
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve, reject) => {
           reader.onloadend = () => {
             const base64 = reader.result as string;
+            console.log('Base64 généré, début:', base64.substring(0, 100));
             resolve(base64);
           };
           reader.onerror = reject;
@@ -696,18 +701,22 @@ IMPORTANT:
         
         return await transcribeAudioViaFunction(audioBase64);
       } else {
-        // Mode développement - appel direct SIMPLIFIÉ
+        // Mode développement - appel direct
         if (!this.openaiApiKey) {
           throw new Error('Clé API OpenAI non configurée');
         }
         
-        console.log('Transcription audio simplifiée...');
+        console.log('Appel direct OpenAI (mode dev)');
         
-        // Simple FormData avec les paramètres essentiels
+        // Créer FormData exactement comme dans la documentation
         const formData = new FormData();
+        
+        // Ajouter le fichier avec un nom correct
         formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'whisper-1'); // Utiliser whisper-1 (plus robuste)
+        formData.append('model', 'whisper-1');
         formData.append('language', 'fr');
+        
+        console.log('Envoi à OpenAI...');
         
         const response = await axios.post(
           'https://api.openai.com/v1/audio/transcriptions',
@@ -715,16 +724,22 @@ IMPORTANT:
           {
             headers: {
               'Authorization': `Bearer ${this.openaiApiKey}`,
-              'Content-Type': 'multipart/form-data'
-            }
+              // Pas besoin de Content-Type, axios le gère automatiquement pour FormData
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity
           }
         );
 
-        return response.data.text || '';
+        console.log('Réponse reçue:', response.status);
+        const text = response.data.text || '';
+        console.log('Transcription terminée, longueur:', text.length);
+
+        return text;
       }
     } catch (error: any) {
-      console.error('Erreur de transcription:', error);
-      throw new Error('Erreur lors de la transcription: ' + error.message);
+      console.error('Erreur de transcription:', error.response?.data || error.message);
+      throw new Error('Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message));
     }
   }
 

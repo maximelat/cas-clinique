@@ -306,104 +306,68 @@ exports.transcribeAudio = functions
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
 
-      console.log('Transcription audio...');
+      console.log('Début transcription audio avec whisper-1...');
 
-      // Convertir base64 en Buffer
-      const base64Data = audioBase64.replace(/^data:audio\/\w+;base64,/, '');
-      const audioBuffer = Buffer.from(base64Data, 'base64');
-      console.log('Taille du buffer audio:', audioBuffer.length, 'bytes');
-
-      // Vérifier que le buffer n'est pas vide
-      if (audioBuffer.length < 100) {
-        throw new functions.https.HttpsError('invalid-argument', 'Fichier audio trop court ou vide');
-      }
-
-      // Créer FormData
+      // Utiliser directement whisper-1 qui est plus robuste
       const FormData = require('form-data');
       const formData = new FormData();
       
-      // Selon la doc OpenAI, on doit envoyer le fichier avec un nom approprié
+      // Extraire juste les données base64
+      const base64Data = audioBase64.split(',')[1] || audioBase64;
+      const audioBuffer = Buffer.from(base64Data, 'base64');
+      
+      console.log('Taille du buffer:', audioBuffer.length, 'bytes');
+      
+      // Ajouter le fichier - whisper-1 est moins strict sur le format
       formData.append('file', audioBuffer, {
         filename: 'audio.webm',
         contentType: 'audio/webm'
       });
       
-      // Essayer d'abord avec gpt-4o-transcribe (meilleure qualité)
-      let model = 'gpt-4o-transcribe';
-      let response_format = 'json'; // Obligatoire pour gpt-4o-transcribe
+      // Paramètres simples pour whisper-1
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'fr'); // Pour améliorer la reconnaissance en français
       
-      formData.append('model', model);
-      formData.append('language', 'fr');
-      formData.append('response_format', response_format);
+      console.log('Appel API OpenAI avec whisper-1...');
+      
+      const response = await axios.post(
+        'https://api.openai.com/v1/audio/transcriptions',
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            ...formData.getHeaders()
+          },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          timeout: 120000 // 2 minutes
+        }
+      );
 
-      console.log('Envoi à l\'API OpenAI avec', model);
+      console.log('Réponse reçue:', response.status);
+      
+      // Whisper retourne directement le texte dans response.data.text
+      const transcription = response.data.text || '';
+      console.log('Transcription réussie, longueur:', transcription.length);
+      console.log('Début du texte:', transcription.substring(0, 100));
 
-      try {
-        const response = await axios.post(
-          'https://api.openai.com/v1/audio/transcriptions',
-          formData,
-          {
-            headers: {
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-              ...formData.getHeaders()
-            },
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-            timeout: 120000 // 2 minutes timeout
-          }
-        );
-
-        console.log('Réponse reçue, status:', response.status);
-        const text = response.data.text || '';
-        console.log('Transcription terminée, longueur:', text.length);
-
-        return { text };
-        
-      } catch (error) {
-        // Si gpt-4o-transcribe échoue, essayer avec whisper-1
-        console.error('Erreur avec gpt-4o-transcribe, essai avec whisper-1:', error.response?.data || error.message);
-        
-        // Recréer le formData pour whisper-1
-        const formData2 = new FormData();
-        formData2.append('file', audioBuffer, {
-          filename: 'audio.webm',
-          contentType: 'audio/webm'
-        });
-        formData2.append('model', 'whisper-1');
-        formData2.append('language', 'fr');
-        // whisper-1 n'a pas besoin de response_format obligatoire
-
-        const response2 = await axios.post(
-          'https://api.openai.com/v1/audio/transcriptions',
-          formData2,
-          {
-            headers: {
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-              ...formData2.getHeaders()
-            },
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-            timeout: 120000
-          }
-        );
-
-        console.log('Réponse whisper-1 reçue, status:', response2.status);
-        const text = response2.data.text || '';
-        console.log('Transcription whisper-1 terminée, longueur:', text.length);
-
-        return { text };
-      }
+      return { text: transcription };
       
     } catch (error) {
-      console.error('Erreur transcription détaillée:', error.response?.data || error.message);
-      console.error('Status:', error.response?.status);
-      console.error('Headers de la réponse:', error.response?.headers);
+      console.error('=== ERREUR TRANSCRIPTION ===');
+      console.error('Message:', error.message);
+      console.error('Response data:', error.response?.data);
+      console.error('Response status:', error.response?.status);
       
-      // Si l'erreur indique un problème de format, donner plus de détails
-      if (error.response?.data?.error?.message?.includes('Invalid file format')) {
-        console.error('Problème de format de fichier détecté');
-        console.error('Taille du buffer:', data.audioBase64?.length);
-        console.error('Début du base64:', data.audioBase64?.substring(0, 100));
+      // Informations de debug supplémentaires
+      if (error.response?.data?.error) {
+        console.error('Erreur OpenAI:', error.response.data.error);
+      }
+      
+      // Si c'est une erreur de format, donner plus d'infos
+      if (error.response?.status === 400) {
+        console.error('Erreur 400 - Probablement un problème de format audio');
+        console.error('Taille base64 reçue:', data.audioBase64?.length);
       }
       
       throw new functions.https.HttpsError(
