@@ -732,7 +732,7 @@ IMPORTANT:
         // Créer un FormData pour envoyer le fichier audio
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'gpt-4o-transcribe');
+        formData.append('model', 'whisper-1');
         formData.append('language', 'fr');
         formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
 
@@ -762,5 +762,98 @@ IMPORTANT:
       return false;
     }
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  // Recherche de maladies rares avec sonar-deep-research
+  async searchRareDiseases(
+    clinicalCase: string, 
+    o3Analysis: string,
+    progressCallback?: (message: string) => void
+  ): Promise<{ disease: string, report: string, references: any[] }> {
+    if (!this.perplexityApiKey) {
+      throw new Error('Clé API Perplexity non configurée');
+    }
+
+    progressCallback?.('Recherche de maladies rares avec Perplexity Deep Research...');
+    
+    const prompt = `En te basant sur ce cas clinique et cette analyse médicale, recherche spécifiquement les MALADIES RARES qui pourraient correspondre aux symptômes et données présentés.
+
+CAS CLINIQUE INITIAL:
+${clinicalCase}
+
+ANALYSE MÉDICALE:
+${o3Analysis}
+
+INSTRUCTIONS SPÉCIFIQUES:
+1. Identifie UNIQUEMENT des maladies rares (prévalence < 1/2000)
+2. Pour chaque maladie rare identifiée, fournis :
+   - Nom de la maladie (avec code ORPHA si disponible)
+   - Prévalence exacte
+   - Critères diagnostiques qui correspondent au cas
+   - Examens spécifiques pour confirmer
+   - Traitements spécialisés disponibles
+   - Centres de référence en France
+3. Utilise UNIQUEMENT des sources de moins de 5 ans (2020-2025)
+4. Cite OBLIGATOIREMENT chaque affirmation avec [1], [2], etc.
+5. Privilégie Orphanet, GeneReviews, ERN (European Reference Networks)
+
+Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur les diagnostics communs.`;
+
+    try {
+      const response = await axios.post(
+        'https://api.perplexity.ai/chat/completions',
+        {
+          model: 'sonar-deep-research',
+          messages: [
+            {
+              role: 'system',
+              content: 'Tu es un expert en maladies rares. Fais une recherche approfondie dans les bases de données spécialisées (Orphanet, OMIM, GeneReviews) pour identifier des maladies rares correspondant au cas présenté. Cite toutes tes sources.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 8000,
+          search_domain_filter: ['orphanet.org', 'omim.org', 'ncbi.nlm.nih.gov', 'genereviews.org', 'ern-net.eu'],
+          search_recency_filter: 'month',
+          return_citations: true,
+          return_images: false,
+          search_recency_days: 1825 // 5 ans
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.perplexityApiKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log('Réponse Perplexity Deep Research complète:', response.data);
+      
+      const perplexityReport = {
+        answer: response.data.choices?.[0]?.message?.content || '',
+        citations: response.data.citations || []
+      };
+
+      // Extraire et analyser les références
+      const references = this.extractReferences(perplexityReport);
+      
+      // Parser le rapport pour identifier la maladie rare principale
+      const diseaseMatch = perplexityReport.answer.match(/(?:maladie rare principale|diagnostic principal)[\s:]*([^\n]+)/i);
+      const mainDisease = diseaseMatch ? diseaseMatch[1].trim() : 'Analyse des maladies rares';
+
+      progressCallback?.('Analyse des maladies rares terminée');
+
+      return {
+        disease: mainDisease,
+        report: perplexityReport.answer,
+        references: references
+      };
+    } catch (error: any) {
+      console.error('Erreur recherche maladies rares:', error);
+      throw new Error('Erreur lors de la recherche de maladies rares: ' + error.message);
+    }
   }
 } 

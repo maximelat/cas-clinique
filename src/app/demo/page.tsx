@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
@@ -24,7 +24,8 @@ const sectionTitles = {
   COMPLEMENTARY_EXAMS: "4. Examens complémentaires recommandés",
   THERAPEUTIC_DECISIONS: "5. Décisions thérapeutiques",
   PROGNOSIS_FOLLOWUP: "6. Pronostic & suivi",
-  PATIENT_EXPLANATIONS: "7. Explications au patient"
+  PATIENT_EXPLANATIONS: "7. Explications au patient",
+  RARE_DISEASES: "8. Recherche de maladies rares"
 }
 
 const demoSections = {
@@ -145,6 +146,9 @@ export default function DemoPage() {
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [isAudioSupported, setIsAudioSupported] = useState(false)
   const [uploadedImages, setUploadedImages] = useState<{ base64: string, type: string, name: string }[]>([])
+  const [rareDiseaseData, setRareDiseaseData] = useState<{ disease: string, report: string, references: any[] } | null>(null)
+  const [isSearchingRareDisease, setIsSearchingRareDisease] = useState(false)
+  const [showRareDiseaseSection, setShowRareDiseaseSection] = useState(false)
   
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -403,40 +407,100 @@ export default function DemoPage() {
 
   const exportAsPDF = async () => {
     const element = document.getElementById('analysis-results')
-    if (!element) return
+    if (!element) {
+      console.error('Element analysis-results non trouvé')
+      toast.error("Impossible de trouver le contenu à exporter")
+      return
+    }
 
     toast.info("Génération du PDF en cours...")
     
     try {
+      console.log('Début de la génération du canvas...')
+      
+      // Options améliorées pour html2canvas
       const canvas = await html2canvas(element, {
         scale: 2,
-        logging: false,
-        useCORS: true
+        logging: true, // Activer les logs pour debug
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
       })
       
+      console.log('Canvas généré:', canvas.width, 'x', canvas.height)
+      
       const imgData = canvas.toDataURL('image/png')
+      console.log('Image data générée, longueur:', imgData.length)
+      
       const pdf = new jsPDF('p', 'mm', 'a4')
-      const imgWidth = 210
-      const pageHeight = 297
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = pdfWidth
       const imgHeight = (canvas.height * imgWidth) / canvas.width
       let heightLeft = imgHeight
       let position = 0
 
+      // Ajouter la première page
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
+      heightLeft -= pdfHeight
 
+      // Ajouter les pages suivantes si nécessaire
       while (heightLeft >= 0) {
         position = heightLeft - imgHeight
         pdf.addPage()
         pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
+        heightLeft -= pdfHeight
       }
 
+      console.log('PDF généré, nombre de pages:', pdf.internal.pages.length - 1)
+      
       pdf.save('analyse-cas-clinique.pdf')
-      toast.success("PDF téléchargé")
-    } catch (error) {
-      toast.error("Erreur lors de la génération du PDF")
-      console.error(error)
+      toast.success("PDF téléchargé avec succès")
+    } catch (error: any) {
+      console.error('Erreur détaillée lors de la génération du PDF:', error)
+      toast.error(`Erreur: ${error.message || 'Impossible de générer le PDF'}`)
+    }
+  }
+
+  const searchRareDiseases = async () => {
+    if (!analysisData || analysisData.isDemo) {
+      toast.error("La recherche de maladies rares n'est disponible qu'en mode réel après analyse")
+      return
+    }
+
+    setIsSearchingRareDisease(true)
+    setProgressMessage("Recherche de maladies rares en cours...")
+
+    try {
+      // Récupérer le contenu de l'analyse o3
+      const o3Analysis = analysisData.sections.map((section: any) => 
+        `${sectionTitles[section.type as keyof typeof sectionTitles]}: ${section.content}`
+      ).join('\n\n')
+
+      const result = await aiService.searchRareDiseases(
+        textContent,
+        o3Analysis,
+        (message) => setProgressMessage(message)
+      )
+
+      setRareDiseaseData(result)
+      setShowRareDiseaseSection(true)
+      
+      // Ajouter la section aux sections actuelles
+      setCurrentSections(prev => [...prev, {
+        type: 'RARE_DISEASES',
+        content: result.report
+      }])
+
+      toast.success("Recherche de maladies rares terminée")
+    } catch (error: any) {
+      toast.error(error.message || "Erreur lors de la recherche de maladies rares")
+      console.error("Erreur:", error)
+    } finally {
+      setIsSearchingRareDisease(false)
+      setProgressMessage("")
     }
   }
 
@@ -751,12 +815,38 @@ export default function DemoPage() {
                     setAnalysisData(null)
                     setCurrentSections([])
                     setUploadedImages([])
+                    setRareDiseaseData(null)
+                    setShowRareDiseaseSection(false)
                   }}
                 >
                   Nouvelle analyse
                 </Button>
               </div>
             </div>
+            
+            {/* Bouton recherche maladies rares */}
+            {!analysisData?.isDemo && analysisData?.sections && !showRareDiseaseSection && (
+              <div className="mb-6 flex justify-center">
+                <Button
+                  onClick={searchRareDiseases}
+                  disabled={isSearchingRareDisease}
+                  variant="default"
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  {isSearchingRareDisease ? (
+                    <>
+                      <Microscope className="mr-2 h-4 w-4 animate-pulse" />
+                      Recherche en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Microscope className="mr-2 h-4 w-4" />
+                      Rechercher des maladies rares
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
 
             <Accordion type="single" collapsible className="w-full space-y-4" defaultValue="0">
               {analysisData?.isDemo ? (
@@ -797,46 +887,87 @@ export default function DemoPage() {
             )}
 
             {analysisData && (
-              <Card className="mt-8">
-                <CardHeader>
-                  <CardTitle>Références bibliographiques</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
-                      <li key={ref.label} className="flex items-start gap-2">
-                        <span className="text-gray-500">[{ref.label}]</span>
-                        <div className="flex-1">
-                          <p className="font-medium">{ref.title}</p>
-                          {ref.authors && (
-                            <p className="text-sm text-gray-600">{ref.authors}</p>
-                          )}
-                          {ref.journal && (
-                            <p className="text-sm text-gray-500 italic">{ref.journal}</p>
-                          )}
-                          {(ref.doi || ref.pmid) && (
-                            <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                              {ref.doi && <span>DOI: {ref.doi}</span>}
-                              {ref.pmid && <span>PMID: {ref.pmid}</span>}
+              <>
+                <Card className="mt-8">
+                  <CardHeader>
+                    <CardTitle>Références bibliographiques</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-3">
+                      {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
+                        <li key={ref.label} className="flex items-start gap-2">
+                          <span className="text-gray-500">[{ref.label}]</span>
+                          <div className="flex-1">
+                            <p className="font-medium">{ref.title}</p>
+                            {ref.authors && (
+                              <p className="text-sm text-gray-600">{ref.authors}</p>
+                            )}
+                            {ref.journal && (
+                              <p className="text-sm text-gray-500 italic">{ref.journal}</p>
+                            )}
+                            {(ref.doi || ref.pmid) && (
+                              <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                                {ref.doi && <span>DOI: {ref.doi}</span>}
+                                {ref.pmid && <span>PMID: {ref.pmid}</span>}
+                              </div>
+                            )}
+                            {ref.year && (
+                              <span className="text-xs text-gray-500">({ref.year})</span>
+                            )}
+                            <a
+                              href={ref.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-600 hover:underline block mt-1"
+                            >
+                              Voir la source →
+                            </a>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+
+                {/* Références pour les maladies rares */}
+                {rareDiseaseData && rareDiseaseData.references.length > 0 && (
+                  <Card className="mt-8">
+                    <CardHeader>
+                      <CardTitle>Références - Maladies rares</CardTitle>
+                      <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-3">
+                        {rareDiseaseData.references.map((ref: any) => (
+                          <li key={`rare-${ref.label}`} className="flex items-start gap-2">
+                            <span className="text-purple-600">[{ref.label}]</span>
+                            <div className="flex-1">
+                              <p className="font-medium">{ref.title}</p>
+                              {ref.authors && (
+                                <p className="text-sm text-gray-600">{ref.authors}</p>
+                              )}
+                              {ref.journal && (
+                                <p className="text-sm text-gray-500 italic">{ref.journal}</p>
+                              )}
+                              {ref.year && (
+                                <span className="text-xs text-gray-500">({ref.year})</span>
+                              )}
+                              <a
+                                href={ref.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-purple-600 hover:underline block mt-1"
+                              >
+                                Voir la source →
+                              </a>
                             </div>
-                          )}
-                          {ref.year && (
-                            <span className="text-xs text-gray-500">({ref.year})</span>
-                          )}
-                          <a
-                            href={ref.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-blue-600 hover:underline block mt-1"
-                          >
-                            Voir la source →
-                          </a>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
             )}
           </div>
         )}
