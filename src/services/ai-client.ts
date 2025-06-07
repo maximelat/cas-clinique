@@ -423,7 +423,7 @@ Les 7 sections obligatoires sont :
       const response = await axios.post(
         'https://api.openai.com/v1/responses',
         {
-          model: 'o4-mini-2025-04-16',
+          model: 'o4-mini',
           reasoning: { 
             effort: 'high' // High pour une analyse approfondie des images
           },
@@ -432,13 +432,15 @@ Les 7 sections obligatoires sont :
               role: 'user',
               content: [
                 {
-                  type: 'text',
+                  type: 'input_text',
                   text: prompt
                 },
                 {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:image/jpeg;base64,${imageBase64}`
+                  type: 'input_image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: imageBase64
                   }
                 }
               ]
