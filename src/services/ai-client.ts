@@ -13,11 +13,17 @@ interface SectionContent {
 export class AIClientService {
   private perplexityApiKey: string | undefined;
   private openaiApiKey: string | undefined;
+  private isProduction: boolean = false;
 
   constructor() {
     // Clés API exposées côté client - À utiliser uniquement pour des projets de démonstration
     this.perplexityApiKey = process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY;
     this.openaiApiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    
+    // Détecter si on est en production
+    if (typeof window !== 'undefined') {
+      this.isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    }
   }
 
   hasApiKeys(): boolean {
@@ -133,23 +139,35 @@ Les 7 sections obligatoires sont :
 7. PATIENT_EXPLANATIONS : Explications pour le patient (langage simple)`;
 
     try {
-      console.log('Appel API OpenAI o3 via route API...');
+      console.log('Appel API OpenAI o3 direct...');
       
-      // Utiliser la route API au lieu de l'appel direct
-      const response = await axios.post('/api/openai', {
-        action: 'analyze',
-        model: 'o3-2025-04-16',
-        reasoning: { 
-          effort: 'medium'
+      if (this.isProduction) {
+        console.warn('⚠️ Appel OpenAI en production détecté. CORS va probablement bloquer la requête.');
+        console.warn('Solutions: 1) Utilisez le mode démo, 2) Installez une extension CORS pour tester, 3) Déployez un backend');
+      }
+      
+      const response = await axios.post(
+        'https://api.openai.com/v1/responses',
+        {
+          model: 'o3-2025-04-16',
+          reasoning: { 
+            effort: 'medium'
+          },
+          input: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_output_tokens: 25000
         },
-        input: [
-          {
-            role: 'user',
-            content: prompt
+        {
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json'
           }
-        ],
-        max_output_tokens: 25000
-      });
+        }
+      );
 
       console.log('Réponse OpenAI reçue:', response.data);
       
@@ -173,11 +191,27 @@ Les 7 sections obligatoires sont :
       console.error('Erreur OpenAI détaillée:', error.response?.data || error);
       console.error('Status:', error.response?.status);
       
-      if (error.response?.data?.error) {
-        throw new Error('Erreur OpenAI: ' + error.response.data.error);
+      // Si c'est une erreur CORS
+      if (error.message.includes('CORS') || error.message.includes('Network Error') || !error.response) {
+        if (this.isProduction) {
+          throw new Error(`
+            ⚠️ ERREUR CORS EN PRODUCTION
+            
+            OpenAI bloque les appels depuis les navigateurs pour des raisons de sécurité.
+            
+            Solutions:
+            1. Utilisez le MODE DÉMO (recommandé)
+            2. Installez temporairement une extension Chrome "CORS Unblock"
+            3. Déployez un vrai backend (Node.js, Python, etc.)
+            
+            Cette limitation est normale et attendue en production.
+          `);
+        } else {
+          throw new Error('Erreur CORS avec OpenAI. Vérifiez votre configuration.');
+        }
       }
       
-      throw new Error('Erreur lors de l\'analyse OpenAI: ' + error.message);
+      throw new Error('Erreur lors de l\'analyse OpenAI: ' + (error.response?.data?.error?.message || error.message));
     }
   }
 
@@ -386,33 +420,37 @@ Les 7 sections obligatoires sont :
     }
 
     try {
-      // Convertir le blob en base64 pour l'envoyer via JSON
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onloadend = () => {
-          const base64 = reader.result as string;
-          resolve(base64);
-        };
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(audioBlob);
-      const audioBase64 = await base64Promise;
+      if (this.isProduction) {
+        throw new Error('La transcription audio n\'est pas disponible en production (CORS). Utilisez le mode démo ou un backend.');
+      }
+      
+      // Créer un FormData pour envoyer le fichier audio
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'audio.webm');
+      formData.append('model', 'gpt-4o-transcribe');
+      formData.append('language', 'fr');
+      formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
 
-      // Utiliser la route API
-      const response = await axios.post('/api/openai', {
-        action: 'transcribe',
-        audioBase64: audioBase64
-      });
+      const response = await axios.post(
+        'https://api.openai.com/v1/audio/transcriptions',
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      );
 
       return response.data.text || '';
     } catch (error: any) {
       console.error('Erreur de transcription:', error);
       
-      if (error.response?.data?.error) {
-        throw new Error('Erreur de transcription: ' + error.response.data.error);
+      if (error.message.includes('CORS') || error.message.includes('Network Error')) {
+        throw new Error('ERREUR CORS: La transcription audio nécessite un backend.');
       }
       
-      throw new Error('Erreur lors de la transcription: ' + error.message);
+      throw new Error('Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message));
     }
   }
 
@@ -443,29 +481,45 @@ Les 7 sections obligatoires sont :
     Sois précis et méthodique. Liste toutes les anomalies observées et leur signification clinique potentielle.`;
 
     try {
-      // Utiliser la route API au lieu de l'appel direct
-      const response = await axios.post('/api/openai', {
-        action: 'analyze-image',
-        input: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: prompt
-              },
-              {
-                type: 'input_image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: imageBase64
+      if (this.isProduction) {
+        console.warn('⚠️ Analyse d\'image en production. CORS va bloquer la requête.');
+      }
+      
+      const response = await axios.post(
+        'https://api.openai.com/v1/responses',
+        {
+          model: 'o4-mini',
+          reasoning: { 
+            effort: 'high'
+          },
+          input: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'input_text',
+                  text: prompt
+                },
+                {
+                  type: 'input_image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: imageBase64
+                  }
                 }
-              }
-            ]
+              ]
+            }
+          ],
+          max_output_tokens: 5000
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json'
           }
-        ]
-      });
+        }
+      );
 
       // Gérer la réponse
       let outputText = '';
@@ -475,14 +529,18 @@ Les 7 sections obligatoires sont :
       } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
         outputText = response.data.output[0].text;
       } else {
-        console.error('Format de réponse o4-mini non reconnu:', response.data);
         throw new Error('Format de réponse non reconnu');
       }
       
       return outputText;
     } catch (error: any) {
       console.error('Erreur analyse image o4-mini:', error);
-      throw new Error('Erreur lors de l\'analyse de l\'image: ' + (error.response?.data?.error || error.message));
+      
+      if (error.message.includes('CORS') || error.message.includes('Network Error') || !error.response) {
+        throw new Error('ERREUR CORS: L\'analyse d\'image ne fonctionne qu\'en développement local ou avec un backend.');
+      }
+      
+      throw new Error('Erreur lors de l\'analyse de l\'image: ' + (error.response?.data?.error?.message || error.message));
     }
   }
 } 
