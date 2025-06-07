@@ -53,6 +53,7 @@ jobs:
 
     - name: Deploy to OVH via FTP
       uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      continue-on-error: true
       with:
         server: ${{ secrets.SERVER }}
         username: ${{ secrets.FTP_USERNAME }}
