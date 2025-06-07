@@ -65,7 +65,7 @@ export function AuthButton() {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <a href="/admin" className="cursor-pointer">
+              <a href="/projet/clinical-case-analyzer/admin" className="cursor-pointer">
                 <User className="h-4 w-4 mr-2" />
                 Administration
               </a>
