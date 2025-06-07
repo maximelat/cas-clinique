@@ -1071,30 +1071,6 @@ export default function DemoPage() {
               </div>
             </div>
             
-            {/* Bouton recherche maladies rares */}
-            {!analysisData?.isDemo && analysisData?.sections && !showRareDiseaseSection && (
-              <div className="mb-6 flex justify-center">
-                <Button
-                  onClick={searchRareDiseases}
-                  disabled={isSearchingRareDisease}
-                  variant="default"
-                  className="bg-purple-600 hover:bg-purple-700"
-                >
-                  {isSearchingRareDisease ? (
-                    <>
-                      <Microscope className="mr-2 h-4 w-4 animate-pulse" />
-                      Recherche en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Microscope className="mr-2 h-4 w-4" />
-                      Rechercher des maladies rares
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
-
             <Accordion type="single" collapsible className="w-full space-y-4" defaultValue="0">
               {analysisData?.isDemo ? (
                 // Mode démo - afficher les sections prédéfinies
