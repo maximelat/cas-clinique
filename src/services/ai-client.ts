@@ -22,7 +22,7 @@ export class AIClientService {
   private openaiApiKey: string | undefined;
   private isProduction: boolean = false;
   private useFirebaseFunctions: boolean = false;
-  private transcriptionModel: 'whisper-1' | 'gpt-4o-transcribe' = 'gpt-4o-transcribe';
+
 
   constructor() {
     // Clés API exposées côté client - À utiliser uniquement pour des projets de démonstration
@@ -126,55 +126,56 @@ export class AIClientService {
   }
 
   private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
-    // Utilise le modèle o3-2025-04-16 (modèle de raisonnement)
-    // Pour o3, on donne des instructions de haut niveau et on laisse le modèle raisonner
-    const prompt = `Tu es un médecin expert. Analyse ce cas clinique en profondeur.
+    try {
+      const prompt = `Cas clinique: ${clinicalCase}
 
-CAS CLINIQUE :
-${clinicalCase}
-
-DONNÉES DE RECHERCHE ET ANALYSES :
 ${perplexityDataProcessed}
 
-OBJECTIF :
-Produis une analyse médicale complète structurée en exactement 7 sections. Pour chaque section, raisonne en profondeur et cite les sources [1], [2], etc.
+Analyse ce cas clinique en utilisant EXACTEMENT ce format avec ces 7 sections OBLIGATOIRES. IMPORTANT: Commence chaque section par "## SECTION_NAME:" sur une nouvelle ligne.
 
-Les 7 sections requises (utilise ces titres exacts) :
-1. ## CLINICAL_CONTEXT: (contexte clinique et résumé)
-2. ## KEY_DATA: (données cliniques importantes)
-3. ## DIAGNOSTIC_HYPOTHESES: (hypothèses diagnostiques avec raisonnement)
-4. ## COMPLEMENTARY_EXAMS: (examens recommandés avec justification)
-5. ## THERAPEUTIC_DECISIONS: (décisions thérapeutiques basées sur les guidelines)
-6. ## PROGNOSIS_FOLLOWUP: (pronostic et plan de suivi)
-7. ## PATIENT_EXPLANATIONS: (explications simples pour le patient)
+## CLINICAL_CONTEXT:
+Résume le contexte clinique du patient.
 
-Assure-toi d'intégrer toutes les informations pertinentes des sources dans ton analyse.`;
+## KEY_DATA:
+Identifie les données clés importantes du cas.
 
-    try {
+## DIAGNOSTIC_HYPOTHESES:
+Liste les hypothèses diagnostiques principales et différentielles.
+
+## COMPLEMENTARY_EXAMS:
+Recommande les examens complémentaires nécessaires.
+
+## THERAPEUTIC_DECISIONS:
+Propose les décisions thérapeutiques appropriées.
+
+## PROGNOSIS_FOLLOWUP:
+Évalue le pronostic et le plan de suivi.
+
+## PATIENT_EXPLANATIONS:
+Formule les explications à donner au patient.
+
+RÈGLES IMPÉRATIVES:
+1. Utilise EXACTEMENT le format "## SECTION_NAME:" pour chaque section
+2. NE PAS numéroter les sections (pas de "1.", "2.", etc.)
+3. Cite TOUTES les références avec [1], [2], etc.
+4. Si des images sont mentionnées, intègre leurs résultats dans les sections appropriées
+5. Assure-toi que CHAQUE section est présente et bien formatée`;
+
       if (this.useFirebaseFunctions) {
-        console.log('Utilisation de Firebase Functions pour o3...');
-        console.log('Longueur du prompt o3:', prompt.length);
-        const result = await analyzeWithO3ViaFunction(prompt);
-        console.log('Réponse Firebase o3 reçue, longueur:', result?.length || 0);
-        return result;
+        console.log('Analyse avec o3 via Firebase Functions...');
+        const { analyzeWithO3ViaFunction } = await import('@/lib/firebase-functions');
+        return await analyzeWithO3ViaFunction(prompt);
       } else {
-        // Mode développement - appel direct à l'API Responses
-        console.log('Appel API o3 Responses direct (mode dev)...');
+        // Mode développement - appel direct o3
+        console.log('Appel API o3 direct (mode dev)...');
         
         const response = await axios.post(
           'https://api.openai.com/v1/responses',
           {
             model: 'o3-2025-04-16',
-            reasoning: { 
-              effort: 'medium'
-            },
-            input: [
-              {
-                role: 'user',
-                content: prompt
-              }
-            ],
-            max_output_tokens: 25000
+            prompt: prompt,
+            max_output_tokens: 10000,
+            temperature: 0.3
           },
           {
             headers: {
@@ -184,8 +185,8 @@ Assure-toi d'intégrer toutes les informations pertinentes des sources dans ton 
           }
         );
 
-        // L'API Responses retourne output_text directement
-        const outputText = response.data.output_text || '';
+        // L'API Responses retourne la structure correcte
+        const outputText = response.data.output[1].content[0].text || '';
         console.log('Réponse o3 dev, usage:', response.data.usage);
         
         return outputText;
@@ -519,124 +520,96 @@ IMPORTANT:
 
   private extractReferences(perplexityReport: PerplexityResponse): any[] {
     const references: any[] = [];
-    console.log('Extraction des références, citations brutes:', perplexityReport.citations);
+    console.log('Extraction des références...');
 
-    // Parser les citations de Perplexity si elles sont disponibles
-    if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
-      perplexityReport.citations.forEach((citation: any, index: number) => {
-        // Si c'est une simple URL string
-        if (typeof citation === 'string') {
-          // Essayer d'extraire un titre depuis l'URL
-          let title = `Source ${index + 1}`;
-          try {
-            const url = new URL(citation);
-            const pathname = url.pathname.split('/').filter(p => p);
-            if (pathname.length > 0) {
-              title = pathname[pathname.length - 1]
-                .replace(/-/g, ' ')
-                .replace(/_/g, ' ')
-                .replace(/\.pdf$/i, '')
-                .replace(/\.html?$/i, '');
-            }
-          } catch (e) {
-            // Garder le titre par défaut si l'URL est invalide
-          }
-          
-          references.push({
-            label: String(index + 1),
-            title: title,
-            url: citation,
-            authors: '',
-            year: null,
-            journal: ''
-          });
-        } 
-        // Si c'est un objet structuré
-        else if (typeof citation === 'object' && citation !== null) {
-          // Log pour débugger la structure
-          console.log(`Citation ${index + 1} structure:`, citation);
-          
-          const label = citation.number || citation.id || String(index + 1);
-          const title = citation.title || citation.name || citation.text || 
-                       citation.snippet || `Source ${label}`;
-          const url = citation.url || citation.link || citation.href || '#';
-          
-          references.push({
-            label: String(label),
-            title: title,
-            url: url,
-            authors: citation.authors?.join?.(', ') || citation.author || '',
-            year: citation.year || (citation.date ? new Date(citation.date).getFullYear() : null),
-            doi: citation.doi || '',
-            pmid: citation.pmid || '',
-            journal: citation.journal || citation.source || citation.publisher || ''
-          });
-        }
-      });
-    }
-
-    // Si pas de citations structurées, essayer d'extraire du texte
-    if (references.length === 0 && perplexityReport.answer) {
-      // Pattern amélioré pour extraire les références avec leurs URLs du texte Perplexity
-      // Format: [1] titre (URL)
-      const referencePattern = /\[(\d+)\]\s*(?:\[([^\]]+)\]\s*)?\(([^)]+)\)|### \*\*Sources\*\*[\s\S]*?\[(\d+)\]\s*\[([^\]]+)\]\(([^)]+)\)/g;
-      
+    // D'abord essayer d'extraire depuis la section Sources du texte
+    const sourcesMatch = perplexityReport.answer.match(/###\s*\*?\*?Sources?\*?\*?:?\s*\n([\s\S]*?)(?=###|$)/i);
+    
+    if (sourcesMatch) {
+      // Pattern pour extraire chaque source de la section Sources
+      const sourcePattern = /\[(\d+)\]\s*(?:\[([^\]]+)\])?\s*\(([^)]+)\)/g;
       let match;
-      while ((match = referencePattern.exec(perplexityReport.answer)) !== null) {
-        const num = match[1] || match[4];
-        const title = match[2] || match[5] || `Source ${num}`;
-        const url = match[3] || match[6];
-        
-        if (num && url) {
-          references.push({
-            label: num,
-            title: title.trim(),
-            url: url.trim(),
-            authors: '',
-            year: null,
-            journal: ''
-          });
-        }
-      }
       
-      // Si toujours pas de références, chercher juste les numéros de citation
-      if (references.length === 0) {
-        const citationNumbersRegex = /\[(\d+)\]/g;
-        const citationNumbers = new Set<string>();
+      while ((match = sourcePattern.exec(sourcesMatch[1])) !== null) {
+        const num = match[1];
+        const title = match[2] || `Source ${num}`;
+        const url = match[3];
         
-        while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
-          citationNumbers.add(match[1]);
-        }
-        
-        // Pour chaque numéro, essayer de trouver l'URL correspondante dans la section Sources
-        const sourcesSection = perplexityReport.answer.match(/### \*\*Sources\*\*[\s\S]*$/);
-        
-        Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
-          let title = `Source ${num}`;
-          let url = '#';
-          
-          // Chercher l'URL dans la section sources si elle existe
-          if (sourcesSection) {
-            const sourcePattern = new RegExp(`\\[${num}\\]\\s*\\[([^\\]]+)\\]\\(([^)]+)\\)`, 'g');
-            const sourceMatch = sourcePattern.exec(sourcesSection[0]);
-            if (sourceMatch) {
-              title = sourceMatch[1] || title;
-              url = sourceMatch[2] || url;
-            }
-          }
-          
-          references.push({
-            label: num,
-            title: title.trim(),
-            url: url.trim(),
-            authors: '',
-            year: null,
-            journal: ''
-          });
+        references.push({
+          label: num,
+          title: title.trim(),
+          url: url.trim(),
+          authors: '',
+          year: null,
+          journal: ''
         });
       }
     }
-
+    
+    // Si on n'a pas trouvé de section Sources, chercher les citations inline
+    if (references.length === 0 && perplexityReport.answer) {
+      // Extraire tous les numéros de citation utilisés dans le texte
+      const citationNumbersRegex = /\[(\d+)\]/g;
+      const citationNumbers = new Set<string>();
+      let match;
+      
+      while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
+        citationNumbers.add(match[1]);
+      }
+      
+      // Pour chaque numéro, créer une référence
+      Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
+        references.push({
+          label: num,
+          title: `Source ${num}`,
+          url: '#',
+          authors: '',
+          year: null,
+          journal: ''
+        });
+      });
+    }
+    
+    // Si on a des citations dans le format API Perplexity
+    if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
+      perplexityReport.citations.forEach((citation: any, index: number) => {
+        const refIndex = references.findIndex(ref => ref.label === String(index + 1));
+        
+        if (typeof citation === 'string') {
+          // URL simple
+          if (refIndex >= 0) {
+            references[refIndex].url = citation;
+          } else {
+            references.push({
+              label: String(index + 1),
+              title: `Source ${index + 1}`,
+              url: citation,
+              authors: '',
+              year: null,
+              journal: ''
+            });
+          }
+        } else if (typeof citation === 'object' && citation !== null) {
+          // Objet structuré
+          const newRef = {
+            label: String(index + 1),
+            title: citation.title || citation.name || citation.text || `Source ${index + 1}`,
+            url: citation.url || citation.link || '#',
+            authors: citation.authors?.join?.(', ') || citation.author || '',
+            year: citation.year || null,
+            journal: citation.journal || citation.source || ''
+          };
+          
+          if (refIndex >= 0) {
+            references[refIndex] = { ...references[refIndex], ...newRef };
+          } else {
+            references.push(newRef);
+          }
+        }
+      });
+    }
+    
+    console.log(`${references.length} références extraites`);
     return references;
   }
 
@@ -723,34 +696,19 @@ IMPORTANT:
         
         return await transcribeAudioViaFunction(audioBase64);
       } else {
-        // Mode développement - appel direct
+        // Mode développement - appel direct SIMPLIFIÉ
         if (!this.openaiApiKey) {
           throw new Error('Clé API OpenAI non configurée');
         }
         
-        console.log('Transcription audio directe (mode dev)...');
-        console.log('Taille du blob audio:', audioBlob.size, 'bytes');
-        console.log('Type du blob:', audioBlob.type);
+        console.log('Transcription audio simplifiée...');
         
-        // Créer un FormData pour envoyer le fichier audio
+        // Simple FormData avec les paramètres essentiels
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', this.transcriptionModel);
+        formData.append('model', 'gpt-4o-transcribe'); // Toujours utiliser gpt-4o-transcribe
         formData.append('language', 'fr');
-        formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
-        
-        // response_format: json est obligatoire pour gpt-4o-transcribe
-        formData.append('response_format', 'json');
-        
-        // Temperature est supportée pour tous les modèles
-        formData.append('temperature', '0.2');
-        
-        // Optionnel : chunking_strategy pour gpt-4o-transcribe
-        if (this.transcriptionModel !== 'whisper-1') {
-          formData.append('chunking_strategy', 'auto');
-        }
-
-        console.log('Envoi à l\'API de transcription avec modèle:', this.transcriptionModel);
+        formData.append('response_format', 'json'); // Obligatoire pour gpt-4o-transcribe
         
         const response = await axios.post(
           'https://api.openai.com/v1/audio/transcriptions',
@@ -763,15 +721,7 @@ IMPORTANT:
           }
         );
 
-        console.log('Réponse de transcription, status:', response.status);
-        console.log('Données reçues:', response.data);
-        
-        const transcription = response.data.text || '';
-        if (!transcription) {
-          console.error('ATTENTION: Transcription vide reçue');
-        }
-        
-        return transcription;
+        return response.data.text || '';
       }
     } catch (error: any) {
       console.error('Erreur de transcription:', error);
@@ -788,11 +738,7 @@ IMPORTANT:
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 
-  // Méthode pour changer le modèle de transcription
-  setTranscriptionModel(model: 'whisper-1' | 'gpt-4o-transcribe') {
-    console.log('Changement du modèle de transcription:', this.transcriptionModel, '->', model);
-    this.transcriptionModel = model;
-  }
+
 
   // Recherche de maladies rares avec sonar-deep-research
   async searchRareDiseases(
