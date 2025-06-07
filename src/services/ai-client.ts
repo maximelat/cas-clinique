@@ -13,7 +13,6 @@ interface SectionContent {
 export class AIClientService {
   private perplexityApiKey: string | undefined;
   private openaiApiKey: string | undefined;
-  private corsProxy: string = 'https://cors-anywhere.herokuapp.com/';
 
   constructor() {
     // Clés API exposées côté client - À utiliser uniquement pour des projets de démonstration
@@ -66,6 +65,9 @@ export class AIClientService {
       // Extraire la réponse et les citations
       const messageContent = response.data.choices[0].message.content;
       
+      // Nettoyer le contenu en retirant les balises <think>...</think>
+      const cleanContent = messageContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      
       // Les citations peuvent être dans différents formats selon la réponse
       let citations = [];
       
@@ -80,7 +82,7 @@ export class AIClientService {
       // Sinon, essayer d'extraire les URLs du texte
       else {
         const urlRegex = /\[(\d+)\]\s*(https?:\/\/[^\s\)]+)/g;
-        const matches = [...messageContent.matchAll(urlRegex)];
+        const matches = [...cleanContent.matchAll(urlRegex)];
         citations = matches.map((match, index) => ({
           number: match[1],
           url: match[2],
@@ -89,7 +91,7 @@ export class AIClientService {
       }
 
       return {
-        answer: messageContent,
+        answer: cleanContent,
         citations: citations
       };
     } catch (error: any) {
@@ -130,11 +132,10 @@ export class AIClientService {
     const userPrompt = `CAS CLINIQUE:\n${caseText}\n\nRECHERCHE ACADÉMIQUE:\n${perplexityReport}`;
 
     try {
-      // Pour OpenAI, on peut essayer d'utiliser un proxy CORS si nécessaire
       const response = await axios.post(
-        `${this.corsProxy}https://api.openai.com/v1/chat/completions`,
+        'https://api.openai.com/v1/chat/completions',
         {
-          model: 'o3',
+          model: 'gpt-4-turbo-preview',
           messages: [
             {
               role: 'system',
@@ -160,40 +161,12 @@ export class AIClientService {
     } catch (error: any) {
       console.error('Erreur OpenAI:', error);
       
-      // Si le proxy CORS échoue, essayer sans
-      if (error.message.includes('cors')) {
-        try {
-          const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            {
-              model: 'gpt-4-turbo-preview', // Utiliser gpt-4-turbo-preview si o3 n'est pas disponible
-              messages: [
-                {
-                  role: 'system',
-                  content: systemPrompt
-                },
-                {
-                  role: 'user',
-                  content: userPrompt
-                }
-              ],
-              temperature: 0.3,
-              max_tokens: 1500
-            },
-            {
-              headers: {
-                'Authorization': `Bearer ${this.openaiApiKey}`,
-                'Content-Type': 'application/json'
-              }
-            }
-          );
-          return response.data.choices[0].message.content;
-        } catch (retryError: any) {
-          throw new Error('Erreur lors de l\'analyse OpenAI: ' + retryError.message);
-        }
+      // Si c'est une erreur CORS, suggérer d'utiliser un backend
+      if (error.message.includes('CORS') || error.message.includes('Network Error')) {
+        throw new Error('Erreur CORS avec OpenAI. Pour la production, utilisez un backend sécurisé (voir SECURE-OPTIONS.md)');
       }
       
-      throw new Error('Erreur lors de l\'analyse OpenAI: ' + error.message);
+      throw new Error('Erreur lors de l\'analyse OpenAI: ' + (error.response?.data?.error?.message || error.message));
     }
   }
 
@@ -266,66 +239,60 @@ export class AIClientService {
     // Parser les citations de Perplexity si elles sont disponibles
     if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
       perplexityReport.citations.forEach((citation: any, index: number) => {
-        // Gérer différents formats de citations
-        const label = citation.number || String(index + 1);
-        const title = citation.title || citation.name || citation.text || `Source ${label}`;
-        const url = citation.url || citation.link || '#';
-        
-        references.push({
-          label: label,
-          title: title,
-          url: url,
-          authors: citation.authors?.join?.(', ') || citation.author || '',
-          year: citation.year || citation.date ? new Date(citation.date).getFullYear() : null,
-          doi: citation.doi || '',
-          pmid: citation.pmid || '',
-          journal: citation.journal || citation.source || ''
-        });
+        // Si c'est une simple URL string
+        if (typeof citation === 'string') {
+          references.push({
+            label: String(index + 1),
+            title: `Source ${index + 1}`,
+            url: citation,
+            authors: '',
+            year: null,
+            journal: ''
+          });
+        } 
+        // Si c'est un objet structuré
+        else if (typeof citation === 'object') {
+          const label = citation.number || String(index + 1);
+          const title = citation.title || citation.name || citation.text || `Source ${label}`;
+          const url = citation.url || citation.link || citation;
+          
+          references.push({
+            label: label,
+            title: title,
+            url: url,
+            authors: citation.authors?.join?.(', ') || citation.author || '',
+            year: citation.year || citation.date ? new Date(citation.date).getFullYear() : null,
+            doi: citation.doi || '',
+            pmid: citation.pmid || '',
+            journal: citation.journal || citation.source || ''
+          });
+        }
       });
     }
 
     // Si pas de citations structurées, essayer d'extraire du texte
     if (references.length === 0 && perplexityReport.answer) {
-      // Rechercher des patterns de citations dans le texte
-      // Pattern: [1] https://... ou [1]: https://...
-      const citationRegex = /\[(\d+)\][\s:]*([^\s\[]+(?:\s+[^\s\[]+)*?)(?=\s*(?:\[|$))/g;
-      const urlRegex = /https?:\/\/[^\s\)]+/;
+      // Rechercher des patterns de citations dans le texte nettoyé
+      // Pattern: [1][5][9] dans le texte
+      const citationNumbersRegex = /\[(\d+)\]/g;
+      const citationNumbers = new Set<string>();
       
-      const matches = [...perplexityReport.answer.matchAll(citationRegex)];
-      
-      matches.forEach((match) => {
-        const label = match[1];
-        const textAfter = match[2];
-        const urlMatch = textAfter.match(urlRegex);
-        
-        if (urlMatch) {
-          references.push({
-            label: label,
-            title: `Source ${label}`,
-            url: urlMatch[0],
-            authors: '',
-            year: null,
-            journal: ''
-          });
-        }
-      });
-
-      // Si toujours rien, chercher juste les URLs
-      if (references.length === 0) {
-        const urlRegex = /https?:\/\/[^\s\)]+/g;
-        const urls = perplexityReport.answer.match(urlRegex) || [];
-        
-        urls.forEach((url, index) => {
-          references.push({
-            label: String(index + 1),
-            title: `Source ${index + 1}`,
-            url: url,
-            authors: '',
-            year: null,
-            journal: ''
-          });
-        });
+      let match;
+      while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
+        citationNumbers.add(match[1]);
       }
+      
+      // Créer des références pour chaque numéro trouvé
+      Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
+        references.push({
+          label: num,
+          title: `Source ${num}`,
+          url: '#', // URL placeholder
+          authors: '',
+          year: null,
+          journal: ''
+        });
+      });
     }
 
     return references;
