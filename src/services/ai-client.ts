@@ -11,54 +11,24 @@ interface SectionContent {
 }
 
 export class AIClientService {
-  private perplexityApiKey: string | undefined;
-  private openaiApiKey: string | undefined;
+  private baseUrl: string;
 
   constructor() {
-    // En production, ces clés seront exposées côté client - À UTILISER AVEC PRUDENCE
-    // Pour une vraie application, utilisez un backend sécurisé
-    this.perplexityApiKey = process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY;
-    this.openaiApiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    // Utiliser l'URL de base de l'application
+    this.baseUrl = '/api/analyze';
   }
 
   hasApiKeys(): boolean {
-    return !!(this.perplexityApiKey && this.openaiApiKey);
+    // Les clés sont vérifiées côté serveur maintenant
+    return true;
   }
 
   async searchWithPerplexity(query: string): Promise<PerplexityResponse> {
-    if (!this.perplexityApiKey) {
-      throw new Error('Clé API Perplexity non configurée');
-    }
-
     try {
-      const response = await axios.post(
-        'https://api.perplexity.ai/chat/completions',
-        {
-          model: 'sonar-reasoning-pro',
-          messages: [
-            {
-              role: 'system',
-              content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni en te concentrant sur les publications médicales récentes, les guidelines et les études cliniques. Fournis des réponses détaillées avec les sources.'
-            },
-            {
-              role: 'user',
-              content: query
-            }
-          ],
-          stream: false,
-          search_mode: 'academic',
-          web_search_options: {
-            search_context_size: 'high'
-          }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.perplexityApiKey}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        }
-      );
+      const response = await axios.post(this.baseUrl, {
+        action: 'perplexity',
+        data: { query }
+      });
 
       console.log('Réponse Perplexity complète:', response.data);
 
@@ -96,15 +66,11 @@ export class AIClientService {
       if (error.response?.status === 400) {
         throw new Error('Erreur de configuration Perplexity. Vérifiez votre clé API.');
       }
-      throw new Error('Erreur lors de la recherche Perplexity: ' + (error.response?.data?.error?.message || error.message));
+      throw new Error('Erreur lors de la recherche Perplexity: ' + (error.response?.data?.error || error.message));
     }
   }
 
   async analyzeWithOpenAI(caseText: string, perplexityReport: string, sectionType: string): Promise<string> {
-    if (!this.openaiApiKey) {
-      throw new Error('Clé API OpenAI non configurée');
-    }
-
     const sectionPrompts = {
       CLINICAL_CONTEXT: "Analyse et rédige le contexte clinique de ce cas. Inclus l'anamnèse, les antécédents pertinents et la présentation clinique actuelle. Base-toi sur les informations de la recherche académique pour enrichir ton analyse.",
       KEY_DATA: "Identifie et structure les données clés du cas : facteurs de risque, signes vitaux, résultats d'examens, valeurs biologiques importantes. Mets en perspective avec les valeurs de référence issues de la littérature.",
@@ -116,14 +82,7 @@ export class AIClientService {
     };
 
     try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-4-turbo-preview',
-          messages: [
-            {
-              role: 'system',
-              content: `Tu es un médecin expert spécialisé dans l'analyse de cas cliniques. 
+      const systemPrompt = `Tu es un médecin expert spécialisé dans l'analyse de cas cliniques. 
               Tu as accès à une recherche académique approfondie sur ce cas.
               ${sectionPrompts[sectionType as keyof typeof sectionPrompts]}
               
@@ -132,23 +91,14 @@ export class AIClientService {
               - Cite les sources pertinentes en utilisant [num] quand tu fais référence à des études ou guidelines
               - Sois précis, structuré et evidence-based
               - Adapte le niveau de détail technique selon la section
-              - Utilise le formatage Markdown pour structurer ta réponse (titres, listes, gras, etc.)`
-            },
-            {
-              role: 'user',
-              content: `CAS CLINIQUE:\n${caseText}\n\nRECHERCHE ACADÉMIQUE:\n${perplexityReport}`
-            }
-          ],
-          temperature: 0.3,
-          max_tokens: 1500
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+              - Utilise le formatage Markdown pour structurer ta réponse (titres, listes, gras, etc.)`;
+
+      const userPrompt = `CAS CLINIQUE:\n${caseText}\n\nRECHERCHE ACADÉMIQUE:\n${perplexityReport}`;
+
+      const response = await axios.post(this.baseUrl, {
+        action: 'openai',
+        data: { systemPrompt, userPrompt }
+      });
 
       return response.data.choices[0].message.content;
     } catch (error: any) {

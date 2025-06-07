@@ -1,63 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AIService } from '@/services/ai';
+import axios from 'axios';
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const { caseText, useRealAPI } = await req.json();
+    const { action, data } = await request.json();
 
-    if (!caseText) {
-      return NextResponse.json(
-        { error: 'Le contenu du cas est requis' },
-        { status: 400 }
+    if (action === 'perplexity') {
+      const response = await axios.post(
+        'https://api.perplexity.ai/chat/completions',
+        {
+          model: 'sonar-reasoning-pro',
+          messages: [
+            {
+              role: 'system',
+              content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni en te concentrant sur les publications médicales récentes, les guidelines et les études cliniques. Fournis des réponses détaillées avec les sources.'
+            },
+            {
+              role: 'user',
+              content: data.query
+            }
+          ],
+          stream: false,
+          search_mode: 'academic',
+          web_search_options: {
+            search_context_size: 'high'
+          }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        }
       );
+
+      return NextResponse.json(response.data);
     }
 
-    // Mode démo
-    if (!useRealAPI) {
-      // Retourner les données de démo après un délai simulé
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      return NextResponse.json({
-        success: true,
-        isDemo: true,
-        message: 'Analyse simulée terminée'
-      });
-    }
-
-    // Mode réel avec APIs
-    const perplexityApiKey = process.env.PERPLEXITY_API_KEY;
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-
-    if (!perplexityApiKey || !openaiApiKey) {
-      return NextResponse.json(
-        { error: 'Les clés API ne sont pas configurées' },
-        { status: 500 }
+    if (action === 'openai') {
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4-turbo-preview',
+          messages: [
+            {
+              role: 'system',
+              content: data.systemPrompt
+            },
+            {
+              role: 'user',
+              content: data.userPrompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 1500
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
       );
+
+      return NextResponse.json(response.data);
     }
 
-    const aiService = new AIService(perplexityApiKey, openaiApiKey);
-    
-    try {
-      const result = await aiService.analyzeClinicalCase(caseText);
-      
-      return NextResponse.json({
-        success: true,
-        isDemo: false,
-        data: result
-      });
-    } catch (aiError: any) {
-      console.error('Erreur AI:', aiError);
-      return NextResponse.json(
-        { error: `Erreur lors de l'analyse: ${aiError.message}` },
-        { status: 500 }
-      );
-    }
-
-  } catch (error) {
-    console.error('Erreur générale:', error);
+    return NextResponse.json({ error: 'Action non valide' }, { status: 400 });
+  } catch (error: any) {
+    console.error('Erreur API:', error.response?.data || error.message);
     return NextResponse.json(
-      { error: 'Erreur lors du traitement de la requête' },
-      { status: 500 }
+      { error: error.response?.data?.error?.message || error.message },
+      { status: error.response?.status || 500 }
     );
   }
 } 
