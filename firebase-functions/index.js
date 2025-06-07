@@ -25,18 +25,18 @@ exports.analyzeWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
       }
 
-      console.log('Appel OpenAI avec GPT-4o (o3 pas encore disponible)...');
+      console.log('Appel OpenAI avec o3-2025-04-16...');
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: 'gpt-4o',
+          model: 'o3-2025-04-16',
           messages: [
             {
               role: 'user',
               content: prompt
             }
           ],
-          max_tokens: 8000,
+          max_tokens: 25000,
           temperature: 0.3
         },
         {
@@ -48,11 +48,11 @@ exports.analyzeWithO3 = functions
       );
 
       const text = response.data.choices?.[0]?.message?.content || '';
-      console.log('Réponse GPT-4o reçue, longueur:', text.length);
+      console.log('Réponse o3 reçue, longueur:', text.length);
       
       return { text };
     } catch (error) {
-      console.error('Erreur GPT-4o détaillée:', error.response?.data || error.message);
+      console.error('Erreur o3 détaillée:', error.response?.data || error.message);
       console.error('Status:', error.response?.status);
       console.error('Config:', { 
         hasKey: !!OPENAI_API_KEY, 
@@ -60,7 +60,7 @@ exports.analyzeWithO3 = functions
       });
       throw new functions.https.HttpsError(
         'internal', 
-        'Erreur lors de l\'analyse GPT-4o: ' + (error.response?.data?.error?.message || error.message)
+        'Erreur lors de l\'analyse o3: ' + (error.response?.data?.error?.message || error.message)
       );
     }
   });
@@ -77,11 +77,11 @@ exports.analyzeImageWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt et image requis');
       }
 
-      console.log('Appel OpenAI Vision avec GPT-4o (o3 pas encore disponible)...');
+      console.log('Appel OpenAI Vision avec o3-2025-04-16...');
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: 'gpt-4o',
+          model: 'o3-2025-04-16',
           messages: [
             {
               role: 'user',
@@ -99,7 +99,7 @@ exports.analyzeImageWithO3 = functions
               ]
             }
           ],
-          max_tokens: 4000
+          max_tokens: 5000
         },
         {
           headers: {
@@ -110,7 +110,7 @@ exports.analyzeImageWithO3 = functions
       );
 
       const text = response.data.choices?.[0]?.message?.content || '';
-      console.log('Réponse GPT-4o Vision reçue, longueur:', text.length);
+      console.log('Réponse o3 Vision reçue, longueur:', text.length);
       
       return { text };
     } catch (error) {

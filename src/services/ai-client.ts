@@ -125,7 +125,7 @@ export class AIClientService {
   }
 
   private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
-    // Note: Utilise GPT-4o car o3 n'est pas encore disponible publiquement
+    // Utilise le modèle o3-2025-04-16 pour l'analyse principale
     const prompt = `Tu es un médecin expert. Analyse ce cas clinique en te basant sur les données de recherche académique fournies.
 
 CAS CLINIQUE :
