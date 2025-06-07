@@ -91,6 +91,7 @@ Ouvrez la console (F12) pour voir :
 ## Changements récents
 
 1. **Modèle OpenAI mis à jour** : `gpt-4-turbo-preview` → `o3-2025-04-16`
+   - ⚠️ Utilise `max_completion_tokens` au lieu de `max_tokens`
 2. **Nouvelle fonctionnalité** : Transcription audio pour dicter les cas cliniques
    - Utilise l'API OpenAI Audio (modèle `gpt-4o-transcribe`)
    - Bouton "Dicter" dans l'interface
