@@ -25,19 +25,19 @@ exports.analyzeWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
       }
 
-      console.log('Appel OpenAI avec o3-2025-04-16...');
+      console.log('Appel OpenAI avec o3-2025-04-16 (Responses API)...');
       const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
+        'https://api.openai.com/v1/responses',
         {
           model: 'o3-2025-04-16',
-          messages: [
+          reasoning: { effort: 'medium' },
+          input: [
             {
               role: 'user',
               content: prompt
             }
           ],
-          max_tokens: 25000,
-          temperature: 0.3
+          max_output_tokens: 25000
         },
         {
           headers: {
@@ -47,8 +47,9 @@ exports.analyzeWithO3 = functions
         }
       );
 
-      const text = response.data.choices?.[0]?.message?.content || '';
+      const text = response.data.output_text || '';
       console.log('Réponse o3 reçue, longueur:', text.length);
+      console.log('Usage:', response.data.usage);
       
       return { text };
     } catch (error) {
@@ -56,8 +57,24 @@ exports.analyzeWithO3 = functions
       console.error('Status:', error.response?.status);
       console.error('Config:', { 
         hasKey: !!OPENAI_API_KEY, 
-        keyLength: OPENAI_API_KEY?.length 
+        keyLength: OPENAI_API_KEY?.length,
+        model: 'o3-2025-04-16',
+        endpoint: '/v1/responses'
       });
+      
+      // Gérer spécifiquement les erreurs de l'API Responses
+      if (error.response?.data?.error) {
+        const apiError = error.response.data.error;
+        console.error('Erreur API Responses:', apiError);
+        
+        if (apiError.message?.includes('max_tokens')) {
+          throw new functions.https.HttpsError(
+            'invalid-argument', 
+            'Erreur de paramètre: utilisez max_output_tokens au lieu de max_tokens'
+          );
+        }
+      }
+      
       throw new functions.https.HttpsError(
         'internal', 
         'Erreur lors de l\'analyse o3: ' + (error.response?.data?.error?.message || error.message)
@@ -77,29 +94,32 @@ exports.analyzeImageWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Prompt et image requis');
       }
 
-      console.log('Appel OpenAI Vision avec o3-2025-04-16...');
+      console.log('Appel OpenAI Vision avec o3-2025-04-16 (Responses API)...');
       const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
+        'https://api.openai.com/v1/responses',
         {
           model: 'o3-2025-04-16',
-          messages: [
+          reasoning: { effort: 'high' }, // High effort pour l'analyse d'images
+          input: [
             {
               role: 'user',
               content: [
                 {
-                  type: 'text',
+                  type: 'input_text',
                   text: prompt
                 },
                 {
-                  type: 'image_url',
-                  image_url: {
-                    url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+                  type: 'input_image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
                   }
                 }
               ]
             }
           ],
-          max_tokens: 5000
+          max_output_tokens: 5000
         },
         {
           headers: {
@@ -109,8 +129,9 @@ exports.analyzeImageWithO3 = functions
         }
       );
 
-      const text = response.data.choices?.[0]?.message?.content || '';
+      const text = response.data.output_text || '';
       console.log('Réponse o3 Vision reçue, longueur:', text.length);
+      console.log('Usage Vision:', response.data.usage);
       
       return { text };
     } catch (error) {

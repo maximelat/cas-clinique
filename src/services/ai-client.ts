@@ -125,44 +125,29 @@ export class AIClientService {
   }
 
   private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
-    // Utilise le modèle o3-2025-04-16 pour l'analyse principale
-    const prompt = `Tu es un médecin expert. Analyse ce cas clinique en te basant sur les données de recherche académique fournies.
+    // Utilise le modèle o3-2025-04-16 (modèle de raisonnement)
+    // Pour o3, on donne des instructions de haut niveau et on laisse le modèle raisonner
+    const prompt = `Tu es un médecin expert. Analyse ce cas clinique en profondeur.
 
 CAS CLINIQUE :
 ${clinicalCase}
 
-DONNÉES COMPLÈTES FOURNIES :
+DONNÉES DE RECHERCHE ET ANALYSES :
 ${perplexityDataProcessed}
 
-INSTRUCTIONS IMPORTANTES :
-Tu DOIS structurer ta réponse EXACTEMENT selon le format suivant. Chaque section doit commencer par son titre exact en majuscules suivi de deux points et d'un saut de ligne.
+OBJECTIF :
+Produis une analyse médicale complète structurée en exactement 7 sections. Pour chaque section, raisonne en profondeur et cite les sources [1], [2], etc.
 
-## CLINICAL_CONTEXT:
-[Écris ici le contexte clinique complet et le résumé du cas. Cite les sources pertinentes avec [1], [2], etc.]
+Les 7 sections requises (utilise ces titres exacts) :
+1. ## CLINICAL_CONTEXT: (contexte clinique et résumé)
+2. ## KEY_DATA: (données cliniques importantes)
+3. ## DIAGNOSTIC_HYPOTHESES: (hypothèses diagnostiques avec raisonnement)
+4. ## COMPLEMENTARY_EXAMS: (examens recommandés avec justification)
+5. ## THERAPEUTIC_DECISIONS: (décisions thérapeutiques basées sur les guidelines)
+6. ## PROGNOSIS_FOLLOWUP: (pronostic et plan de suivi)
+7. ## PATIENT_EXPLANATIONS: (explications simples pour le patient)
 
-## KEY_DATA:
-[Écris ici toutes les données cliniques importantes : antécédents, symptômes actuels, signes vitaux, résultats d'examens déjà effectués. Sois exhaustif et cite les sources.]
-
-## DIAGNOSTIC_HYPOTHESES:
-[Liste et détaille toutes les hypothèses diagnostiques différentielles. Explique le raisonnement pour chaque hypothèse en citant les sources médicales.]
-
-## COMPLEMENTARY_EXAMS:
-[Liste tous les examens complémentaires recommandés avec leur justification. Explique ce que chaque examen pourrait révéler. Cite les recommandations des sources.]
-
-## THERAPEUTIC_DECISIONS:
-[Détaille les décisions thérapeutiques, les traitements recommandés, les posologies, la durée. Base-toi sur les guidelines citées dans les sources.]
-
-## PROGNOSIS_FOLLOWUP:
-[Explique le pronostic attendu et le plan de suivi recommandé. Inclus les signes d'alerte et les consultations de suivi nécessaires.]
-
-## PATIENT_EXPLANATIONS:
-[Rédige des explications claires et simples pour le patient, en langage non médical. Explique le diagnostic, le traitement et les précautions à prendre.]
-
-RAPPEL : 
-- Chaque section DOIT commencer par son titre exact en majuscules suivi de deux points
-- Cite TOUJOURS les sources entre crochets [1], [2], etc.
-- Sois exhaustif et précis dans chaque section
-- N'oublie AUCUNE section`;
+Assure-toi d'intégrer toutes les informations pertinentes des sources dans ton analyse.`;
 
     try {
       if (this.useFirebaseFunctions) {
@@ -172,8 +157,8 @@ RAPPEL :
         console.log('Réponse Firebase o3 reçue, longueur:', result?.length || 0);
         return result;
       } else {
-        // Mode développement - appel direct
-        console.log('Appel API OpenAI o3 direct (mode dev)...');
+        // Mode développement - appel direct à l'API Responses
+        console.log('Appel API o3 Responses direct (mode dev)...');
         
         const response = await axios.post(
           'https://api.openai.com/v1/responses',
@@ -198,18 +183,9 @@ RAPPEL :
           }
         );
 
-        // Gérer différents formats de réponse possibles
-        let outputText = '';
-        
-        if (response.data.output_text) {
-          outputText = response.data.output_text;
-        } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
-          outputText = response.data.output[0].text;
-        } else if (response.data.choices && response.data.choices[0]?.message?.content) {
-          outputText = response.data.choices[0].message.content;
-        } else {
-          throw new Error('Format de réponse OpenAI non reconnu');
-        }
+        // L'API Responses retourne output_text directement
+        const outputText = response.data.output_text || '';
+        console.log('Réponse o3 dev, usage:', response.data.usage);
         
         return outputText;
       }
@@ -638,8 +614,8 @@ IMPORTANT:
         console.log('Analyse d\'image avec o3 via Firebase Functions...');
         return await analyzeImageWithO3ViaFunction(prompt, imageBase64);
       } else {
-        // Mode développement - appel direct
-        console.log('Analyse d\'image avec o3 (mode dev)...');
+        // Mode développement - appel direct à l'API Responses
+        console.log('Analyse d\'image avec o3 Responses API (mode dev)...');
         
         const response = await axios.post(
           'https://api.openai.com/v1/responses',
@@ -661,7 +637,7 @@ IMPORTANT:
                     source: {
                       type: 'base64',
                       media_type: 'image/jpeg',
-                      data: imageBase64
+                      data: imageBase64.replace(/^data:image\/\w+;base64,/, '')
                     }
                   }
                 ]
@@ -677,16 +653,9 @@ IMPORTANT:
           }
         );
 
-        // Gérer la réponse
-        let outputText = '';
-        
-        if (response.data.output_text) {
-          outputText = response.data.output_text;
-        } else if (response.data.output && Array.isArray(response.data.output) && response.data.output[0]?.text) {
-          outputText = response.data.output[0].text;
-        } else {
-          throw new Error('Format de réponse non reconnu');
-        }
+        // L'API Responses retourne output_text directement
+        const outputText = response.data.output_text || '';
+        console.log('Réponse o3 Vision dev, usage:', response.data.usage);
         
         return outputText;
       }
