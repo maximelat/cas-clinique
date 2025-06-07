@@ -111,11 +111,28 @@ Ouvrez la console (F12) pour voir :
    - Modèle `gpt-4o-transcribe` pour la dictée
    - Optimisé pour le français médical
 
+5. **Authentification Google SSO et crédits** :
+   - Connexion avec compte Google
+   - 3 crédits gratuits à l'inscription
+   - 1 crédit par analyse en mode réel
+   - Interface admin pour maxime.latry@gmail.com
+
 ## Configuration API
 
 ### Variables d'environnement (GitHub Secrets)
+
+#### APIs IA
 - `NEXT_PUBLIC_OPENAI_API_KEY`
 - `NEXT_PUBLIC_PERPLEXITY_API_KEY`
+
+#### Firebase
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_APPID`
+- `NEXT_PUBLIC_FIREBASE_MEASUREMENTID`
 
 ### Modèles utilisés
 - OpenAI o3: `o3-2025-04-16` (analyse principale)
