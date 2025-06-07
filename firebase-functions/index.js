@@ -313,15 +313,28 @@ exports.transcribeAudio = functions
       const audioBuffer = Buffer.from(base64Data, 'base64');
       console.log('Taille du buffer audio:', audioBuffer.length, 'bytes');
 
-      // Créer FormData pour whisper-1 (plus robuste avec webm)
+      // Vérifier que le buffer n'est pas vide
+      if (audioBuffer.length < 100) {
+        throw new functions.https.HttpsError('invalid-argument', 'Fichier audio trop court ou vide');
+      }
+
+      // Créer FormData pour whisper-1
       const FormData = require('form-data');
       const formData = new FormData();
+      
+      // Essayer différents formats si webm échoue
+      let filename = 'audio.webm';
+      let contentType = 'audio/webm';
+      
+      // Ajouter le fichier avec le bon type MIME
       formData.append('file', audioBuffer, {
-        filename: 'audio.webm',
-        contentType: 'audio/webm'
+        filename: filename,
+        contentType: contentType,
+        knownLength: audioBuffer.length
       });
-      formData.append('model', 'whisper-1'); // Utiliser whisper-1 qui est plus robuste
+      formData.append('model', 'whisper-1');
       formData.append('language', 'fr');
+      formData.append('temperature', '0.2');
 
       console.log('Envoi à l\'API OpenAI (whisper-1)...');
 
@@ -334,7 +347,8 @@ exports.transcribeAudio = functions
             ...formData.getHeaders()
           },
           maxBodyLength: Infinity,
-          maxContentLength: Infinity
+          maxContentLength: Infinity,
+          timeout: 120000 // 2 minutes timeout
         }
       );
 
@@ -346,11 +360,14 @@ exports.transcribeAudio = functions
     } catch (error) {
       console.error('Erreur transcription détaillée:', error.response?.data || error.message);
       console.error('Status:', error.response?.status);
-      console.error('Config utilisée:', {
-        hasKey: !!OPENAI_API_KEY,
-        keyLength: OPENAI_API_KEY?.length,
-        model: 'whisper-1'
-      });
+      console.error('Headers de la réponse:', error.response?.headers);
+      
+      // Si l'erreur indique un problème de format, donner plus de détails
+      if (error.response?.data?.error?.message?.includes('Invalid file format')) {
+        console.error('Problème de format de fichier détecté');
+        console.error('Taille du buffer:', data.audioBase64?.length);
+        console.error('Début du base64:', data.audioBase64?.substring(0, 100));
+      }
       
       throw new functions.https.HttpsError(
         'internal', 

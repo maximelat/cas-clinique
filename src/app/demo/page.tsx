@@ -412,10 +412,10 @@ export default function DemoPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'rapport-perplexity.txt'
+    a.download = 'rapport-recherche.txt'
     a.click()
     URL.revokeObjectURL(url)
-    toast.success("Rapport Perplexity téléchargé")
+    toast.success("Rapport de recherche téléchargé")
   }
 
   const exportAsText = () => {
@@ -973,8 +973,8 @@ export default function DemoPage() {
                       {isDemoMode 
                         ? "Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités."
                         : hasApiKeys
-                        ? "Analyse réelle utilisant Perplexity Academic et OpenAI pour une analyse médicale approfondie."
-                        : "Les clés API Perplexity et OpenAI doivent être configurées dans les secrets GitHub pour utiliser le mode réel."
+                        ? "Analyse réelle utilisant l'intelligence artificielle pour une analyse médicale approfondie."
+                        : "Le système n'est pas configuré pour utiliser le mode réel."
                       }
                     </p>
                     {!isDemoMode && hasApiKeys && (
@@ -1054,7 +1054,7 @@ export default function DemoPage() {
                     onClick={downloadPerplexityReport}
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Rapport Perplexity
+                    Rapport de recherche
                   </Button>
                 )}
                 <Button
@@ -1125,6 +1125,30 @@ export default function DemoPage() {
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-6">
                       {renderContentWithReferences(section.content, analysisData?.references || [])}
+                      
+                      {/* Bouton recherche maladies rares dans la section 7 */}
+                      {section.type === 'PATIENT_EXPLANATIONS' && !analysisData?.isDemo && !showRareDiseaseSection && (
+                        <div className="mt-6 pt-6 border-t flex justify-center">
+                          <Button
+                            onClick={searchRareDiseases}
+                            disabled={isSearchingRareDisease}
+                            variant="default"
+                            className="bg-purple-600 hover:bg-purple-700"
+                          >
+                            {isSearchingRareDisease ? (
+                              <>
+                                <Microscope className="mr-2 h-4 w-4 animate-pulse" />
+                                Recherche en cours...
+                              </>
+                            ) : (
+                              <>
+                                <Microscope className="mr-2 h-4 w-4" />
+                                Rechercher des maladies rares
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 ))
