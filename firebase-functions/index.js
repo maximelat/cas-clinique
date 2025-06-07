@@ -1,5 +1,13 @@
 const functions = require('firebase-functions');
 const axios = require('axios');
+const cors = require('cors')({ 
+  origin: [
+    'https://latry.consulting',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000'
+  ]
+});
 
 // Configuration
 const OPENAI_API_KEY = functions.config().openai?.key || process.env.OPENAI_API_KEY;
@@ -9,6 +17,7 @@ exports.analyzeWithO3 = functions
   .region('europe-west1')
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onCall(async (data, context) => {
+    // CORS est géré automatiquement par onCall
     try {
       const { prompt } = data;
       
@@ -122,6 +131,11 @@ exports.analyzePerplexityWithGPT4Mini = functions
         throw new functions.https.HttpsError('invalid-argument', 'Données Perplexity requises');
       }
 
+      if (!OPENAI_API_KEY) {
+        console.error('Clé OpenAI non configurée');
+        throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
+      }
+
       const prompt = `Analyse ces données de recherche académique et extrais les points clés, les références importantes et les conclusions principales. Sois concis mais exhaustif.
 
 DONNÉES DE RECHERCHE:
@@ -151,10 +165,12 @@ ${perplexityData}`;
       const text = response.data.choices?.[0]?.message?.content || '';
       return { text };
     } catch (error) {
-      console.error('Erreur GPT-4o-mini:', error);
+      console.error('Erreur GPT-4o-mini détaillée:', error.response?.data || error.message);
+      console.error('Status:', error.response?.status);
+      console.error('Headers:', error.response?.headers);
       throw new functions.https.HttpsError(
         'internal', 
-        'Erreur lors de l\'analyse Perplexity: ' + error.message
+        'Erreur lors de l\'analyse Perplexity: ' + (error.response?.data?.error?.message || error.message)
       );
     }
   });
