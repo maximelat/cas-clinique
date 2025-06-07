@@ -1,12 +1,10 @@
 # Corrections finales apportées
 
-## 1. ✅ Correction de la transcription audio
+## 1. ✅ Transcription audio
 
-**Problème** : La transcription utilisait le modèle `gpt-4o-transcribe` qui n'existe pas.
-
-**Solution** :
-- Remplacé par `whisper-1` dans `src/services/ai-client.ts`
-- Firebase Functions utilise déjà le bon modèle
+**Modèle utilisé** : `gpt-4o-transcribe` 
+- Confirmé comme étant le bon modèle pour la transcription
+- Utilisé dans `src/services/ai-client.ts` et Firebase Functions
 
 ## 2. ✅ Amélioration de l'export PDF
 

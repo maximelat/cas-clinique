@@ -732,7 +732,7 @@ IMPORTANT:
         // Créer un FormData pour envoyer le fichier audio
         const formData = new FormData();
         formData.append('file', audioBlob, 'audio.webm');
-        formData.append('model', 'whisper-1');
+        formData.append('model', 'gpt-4o-transcribe');
         formData.append('language', 'fr');
         formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
 

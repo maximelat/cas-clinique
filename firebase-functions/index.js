@@ -312,7 +312,7 @@ exports.transcribeAudio = functions
         filename: 'audio.webm',
         contentType: 'audio/webm'
       });
-      formData.append('model', 'whisper-1');
+      formData.append('model', 'gpt-4o-transcribe');
       formData.append('language', 'fr');
       formData.append('prompt', 'Transcription d\'un cas clinique médical en français avec termes médicaux.');
 
