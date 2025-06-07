@@ -124,7 +124,7 @@ export class AIClientService {
     }
   }
 
-  private async analyzeWithOpenAI(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
+  private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
     const prompt = `Tu es un médecin expert. Analyse ce cas clinique en te basant sur les données de recherche académique fournies.
 
 CAS CLINIQUE :
@@ -218,43 +218,16 @@ Les 7 sections obligatoires sont :
       const perplexityReport = await this.searchWithPerplexity(caseText);
       console.log('Recherche Perplexity terminée, rapport:', perplexityReport);
       
-      // Étape 2 : Analyser les données Perplexity avec GPT-4o-mini
-      progressCallback?.('Analyse des données de recherche...');
-      console.log('Analyse des données Perplexity avec GPT-4o-mini...');
-      let perplexityDataProcessed = perplexityReport.answer;
-      
-      if (this.useFirebaseFunctions) {
-        perplexityDataProcessed = await analyzePerplexityWithGPT4MiniViaFunction(perplexityReport.answer);
-      } else if (this.openaiApiKey) {
-        // En dev, utiliser GPT-4o-mini directement
-        const gptResponse = await axios.post(
-          'https://api.openai.com/v1/chat/completions',
-          {
-            model: 'gpt-4o-mini-2024-07-18',
-            messages: [
-              {
-                role: 'user',
-                content: `Analyse ces données de recherche académique et extrais les points clés, les références importantes et les conclusions principales. Sois concis mais exhaustif.\n\nDONNÉES DE RECHERCHE:\n${perplexityReport.answer}`
-              }
-            ],
-            max_tokens: 4000,
-            temperature: 0.3
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${this.openaiApiKey}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        perplexityDataProcessed = gptResponse.data.choices?.[0]?.message?.content || perplexityReport.answer;
-      }
-      console.log('Analyse GPT-4o-mini terminée');
+      // Étape 2 : Analyser les liens/références avec GPT-4o
+      progressCallback?.('Analyse des références avec GPT-4o...');
+      console.log('Analyse des liens avec GPT-4o...');
+      const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
+      console.log('Analyse GPT-4o terminée');
       
       // Étape 3 : Analyser les images avec o3 si présentes
       let imageAnalyses = '';
       if (images && images.length > 0) {
-        progressCallback?.('Analyse des images médicales...');
+        progressCallback?.('Analyse des images médicales avec o3...');
         console.log(`Analyse de ${images.length} images avec o3...`);
         for (let i = 0; i < images.length; i++) {
           progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
@@ -264,24 +237,20 @@ Les 7 sections obligatoires sont :
         console.log('Analyse des images terminée');
       }
 
-      // Étape 4 : Construire le prompt complet pour o3
-      const completeData = perplexityDataProcessed + (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
-      console.log('Données complètes préparées, longueur:', completeData.length);
+      // Étape 4 : Analyser avec o3 le cas clinique + rapport Perplexity + analyse des liens + images
+      progressCallback?.('Analyse médicale complète avec o3...');
+      console.log('Début analyse principale avec o3...');
+      const completeData = `RAPPORT DE RECHERCHE ACADÉMIQUE:\n${perplexityReport.answer}\n\n` +
+                          `ANALYSE DES RÉFÉRENCES ET LIENS:\n${referencesAnalysis.analysis}` +
+                          (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
       
-      // Étape 5 : Analyser avec o3 toutes les sections en une fois
-      progressCallback?.('Analyse médicale complète en cours...');
-      console.log('Début analyse finale avec o3...');
-      const fullAnalysis = await this.analyzeWithOpenAI(completeData, caseText);
-      console.log('Analyse o3 terminée, longueur de la réponse:', fullAnalysis.length);
+      const fullAnalysis = await this.analyzeWithO3(completeData, caseText);
+      console.log('Analyse o3 terminée');
       
-      // Étape 6 : Parser la réponse pour extraire les sections
+      // Étape 5 : Parser la réponse pour extraire les sections
       console.log('Parsing des sections...');
       const sections = this.parseSections(fullAnalysis);
       console.log('Sections parsées:', sections.length);
-      
-      // Étape 7 : Extraire les références du rapport Perplexity
-      const references = this.extractReferences(perplexityReport);
-      console.log('Références extraites:', references.length);
       
       // Appeler le callback pour chaque section
       sections.forEach((section, index) => {
@@ -290,7 +259,7 @@ Les 7 sections obligatoires sont :
       
       return {
         sections,
-        references,
+        references: referencesAnalysis.references,
         perplexityReport
       };
     } catch (error: any) {
@@ -366,6 +335,102 @@ Les 7 sections obligatoires sont :
     }
     
     return sections;
+  }
+
+  private async analyzeReferencesWithGPT4(perplexityReport: PerplexityResponse): Promise<{ analysis: string, references: any[] }> {
+    try {
+      // D'abord extraire les références brutes
+      const rawReferences = this.extractReferences(perplexityReport);
+      
+      // Si pas de références, retourner vide
+      if (rawReferences.length === 0) {
+        return {
+          analysis: "Aucune référence trouvée dans le rapport.",
+          references: []
+        };
+      }
+      
+      // Préparer le prompt pour GPT-4o
+      const prompt = `Analyse ces références et liens issus d'une recherche médicale. Pour chaque référence, extrais et structure les informations importantes (titre, auteurs, journal, année, points clés).
+
+RAPPORT DE RECHERCHE:
+${perplexityReport.answer}
+
+RÉFÉRENCES EXTRAITES:
+${rawReferences.map((ref, i) => `[${ref.label}] ${ref.url}`).join('\n')}
+
+Instructions:
+- Identifie le contenu de chaque lien/référence
+- Extrais les informations bibliographiques quand disponibles
+- Résume les points clés de chaque source
+- Évalue la qualité et la pertinence des sources
+- Structure ta réponse de manière claire`;
+
+      if (this.useFirebaseFunctions) {
+        console.log('Analyse des références avec GPT-4o via Firebase Functions...');
+        // TODO: Créer une fonction Firebase pour GPT-4o
+        const analysis = await this.callGPT4ViaFirebase(prompt);
+        return {
+          analysis,
+          references: rawReferences
+        };
+      } else {
+        // Mode développement - appel direct GPT-4o
+        console.log('Appel API GPT-4o direct (mode dev)...');
+        
+        const response = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            max_tokens: 4000,
+            temperature: 0.3
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const analysis = response.data.choices?.[0]?.message?.content || '';
+        
+        // Enrichir les références avec l'analyse
+        const enrichedReferences = this.enrichReferencesFromAnalysis(rawReferences, analysis);
+        
+        return {
+          analysis,
+          references: enrichedReferences
+        };
+      }
+    } catch (error: any) {
+      console.error('Erreur analyse références GPT-4o:', error);
+      // En cas d'erreur, retourner les références brutes
+      return {
+        analysis: "Erreur lors de l'analyse des références.",
+        references: this.extractReferences(perplexityReport)
+      };
+    }
+  }
+
+  private async callGPT4ViaFirebase(prompt: string): Promise<string> {
+    const { analyzeReferencesWithGPT4ViaFunction } = await import('@/lib/firebase-functions');
+    return await analyzeReferencesWithGPT4ViaFunction(prompt);
+  }
+
+  private enrichReferencesFromAnalysis(references: any[], analysis: string): any[] {
+    // Enrichir les références avec les informations extraites de l'analyse
+    // Cette méthode pourrait parser l'analyse GPT-4o pour extraire des métadonnées supplémentaires
+    return references.map(ref => ({
+      ...ref,
+      analyzed: true
+    }));
   }
 
   private extractReferences(perplexityReport: PerplexityResponse): any[] {

@@ -175,6 +175,55 @@ ${perplexityData}`;
     }
   });
 
+// Fonction pour analyser les références avec GPT-4o
+exports.analyzeReferencesWithGPT4 = functions
+  .region('europe-west1')
+  .runWith({ timeoutSeconds: 300 })
+  .https.onCall(async (data, context) => {
+    try {
+      const { prompt } = data;
+      
+      if (!prompt) {
+        throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
+      }
+
+      if (!OPENAI_API_KEY) {
+        console.error('Clé OpenAI non configurée');
+        throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
+      }
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: 4000,
+          temperature: 0.3
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const text = response.data.choices?.[0]?.message?.content || '';
+      return { text };
+    } catch (error) {
+      console.error('Erreur GPT-4o détaillée:', error.response?.data || error.message);
+      throw new functions.https.HttpsError(
+        'internal', 
+        'Erreur lors de l\'analyse GPT-4o: ' + (error.response?.data?.error?.message || error.message)
+      );
+    }
+  });
+
 // Fonction pour transcrire l'audio
 exports.transcribeAudio = functions
   .region('europe-west1')

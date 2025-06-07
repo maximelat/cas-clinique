@@ -107,6 +107,29 @@ export async function analyzePerplexityWithGPT4MiniViaFunction(perplexityData: s
   }
 }
 
+export async function analyzeReferencesWithGPT4ViaFunction(prompt: string): Promise<string> {
+  const functions = getFunctionsInstance();
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
+  const analyzeRefs = httpsCallable<{ prompt: string }, { text: string; error?: string }>(
+    functions, 
+    'analyzeReferencesWithGPT4'
+  );
+
+  try {
+    const result = await analyzeRefs({ prompt });
+    if (result.data.error) {
+      throw new Error(result.data.error);
+    }
+    return result.data.text;
+  } catch (error: any) {
+    console.error('Erreur Firebase Function GPT-4o:', error);
+    throw new Error('Erreur lors de l\'analyse GPT-4o: ' + error.message);
+  }
+}
+
 export async function transcribeAudioViaFunction(audioBase64: string): Promise<string> {
   const functions = getFunctionsInstance();
   if (!functions) {
