@@ -387,7 +387,16 @@ INSTRUCTIONS :
 4. examensComplementaires : Biologie, imagerie, ECG, etc.
 5. contextePatient : Âge, sexe, profession, mode de vie
 
-Si une information n'est pas disponible, indique "Non précisé".`;
+IMPORTANT : Chaque valeur dans le JSON doit être une STRING simple (pas d'objet, pas de tableau). Si une information n'est pas disponible, utilise la string "Non précisé".
+
+Exemple de format attendu :
+{
+  "anamnese": "Douleur thoracique depuis 2h...",
+  "antecedents": "HTA, diabète...",
+  "examenClinique": "PA 140/90...",
+  "examensComplementaires": "ECG normal...",
+  "contextePatient": "65 ans, homme..."
+}`;
 
         const response = await axios.post(
           'https://api.openai.com/v1/chat/completions',
@@ -415,7 +424,18 @@ Si une information n'est pas disponible, indique "Non précisé".`;
           }
         )
 
-        structuredData = JSON.parse(response.data.choices[0].message.content)
+        const rawData = JSON.parse(response.data.choices[0].message.content)
+        console.log('Données extraites automatiquement:', rawData)
+        
+        // S'assurer que toutes les valeurs sont des strings
+        structuredData = {
+          anamnese: typeof rawData.anamnese === 'string' ? rawData.anamnese : JSON.stringify(rawData.anamnese || 'Non précisé'),
+          antecedents: typeof rawData.antecedents === 'string' ? rawData.antecedents : JSON.stringify(rawData.antecedents || 'Non précisé'),
+          examenClinique: typeof rawData.examenClinique === 'string' ? rawData.examenClinique : JSON.stringify(rawData.examenClinique || 'Non précisé'),
+          examensComplementaires: typeof rawData.examensComplementaires === 'string' ? rawData.examensComplementaires : JSON.stringify(rawData.examensComplementaires || 'Non précisé'),
+          contextePatient: typeof rawData.contextePatient === 'string' ? rawData.contextePatient : JSON.stringify(rawData.contextePatient || 'Non précisé')
+        }
+        
         setStructuredForm(structuredData)
         
         // Ajouter à la chaîne de requêtes
@@ -1164,7 +1184,16 @@ INSTRUCTIONS :
 4. examensComplementaires : Biologie, imagerie, ECG, etc.
 5. contextePatient : Âge, sexe, profession, mode de vie
 
-Si une information n'est pas disponible, indique "Non précisé".`;
+IMPORTANT : Chaque valeur dans le JSON doit être une STRING simple (pas d'objet, pas de tableau). Si une information n'est pas disponible, utilise la string "Non précisé".
+
+Exemple de format attendu :
+{
+  "anamnese": "Douleur thoracique depuis 2h...",
+  "antecedents": "HTA, diabète...",
+  "examenClinique": "PA 140/90...",
+  "examensComplementaires": "ECG normal...",
+  "contextePatient": "65 ans, homme..."
+}`;
 
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
@@ -1173,7 +1202,7 @@ Si une information n'est pas disponible, indique "Non précisé".`;
           messages: [
             {
               role: 'system',
-              content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide.'
+              content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide. IMPORTANT : Toutes les valeurs doivent être des STRINGS simples, pas d\'objets ni de tableaux.'
             },
             {
               role: 'user',
@@ -1193,7 +1222,18 @@ Si une information n'est pas disponible, indique "Non précisé".`;
       )
 
       const extractedData = JSON.parse(response.data.choices[0].message.content)
-      setStructuredForm(extractedData)
+      console.log('Données extraites par GPT-4o-mini:', extractedData)
+      
+      // S'assurer que toutes les valeurs sont des strings
+      const cleanedData = {
+        anamnese: typeof extractedData.anamnese === 'string' ? extractedData.anamnese : JSON.stringify(extractedData.anamnese || 'Non précisé'),
+        antecedents: typeof extractedData.antecedents === 'string' ? extractedData.antecedents : JSON.stringify(extractedData.antecedents || 'Non précisé'),
+        examenClinique: typeof extractedData.examenClinique === 'string' ? extractedData.examenClinique : JSON.stringify(extractedData.examenClinique || 'Non précisé'),
+        examensComplementaires: typeof extractedData.examensComplementaires === 'string' ? extractedData.examensComplementaires : JSON.stringify(extractedData.examensComplementaires || 'Non précisé'),
+        contextePatient: typeof extractedData.contextePatient === 'string' ? extractedData.contextePatient : JSON.stringify(extractedData.contextePatient || 'Non précisé')
+      }
+      
+      setStructuredForm(cleanedData)
       toast.success("Informations extraites avec succès")
       
     } catch (error: any) {
@@ -1229,7 +1269,18 @@ Si une information n'est pas disponible, indique "Non précisé".`;
           )
 
           const extractedData = JSON.parse(response.data.choices[0].message.content)
-          setStructuredForm(extractedData)
+          console.log('Données extraites par GPT-4o-mini (fallback):', extractedData)
+          
+          // S'assurer que toutes les valeurs sont des strings
+          const cleanedData = {
+            anamnese: typeof extractedData.anamnese === 'string' ? extractedData.anamnese : JSON.stringify(extractedData.anamnese || 'Non précisé'),
+            antecedents: typeof extractedData.antecedents === 'string' ? extractedData.antecedents : JSON.stringify(extractedData.antecedents || 'Non précisé'),
+            examenClinique: typeof extractedData.examenClinique === 'string' ? extractedData.examenClinique : JSON.stringify(extractedData.examenClinique || 'Non précisé'),
+            examensComplementaires: typeof extractedData.examensComplementaires === 'string' ? extractedData.examensComplementaires : JSON.stringify(extractedData.examensComplementaires || 'Non précisé'),
+            contextePatient: typeof extractedData.contextePatient === 'string' ? extractedData.contextePatient : JSON.stringify(extractedData.contextePatient || 'Non précisé')
+          }
+          
+          setStructuredForm(cleanedData)
           toast.success("Informations extraites avec succès (gpt-4o-mini)")
         } catch (fallbackError) {
           toast.error("Erreur lors de l'extraction des informations")
