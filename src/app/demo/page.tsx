@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History, Settings, ChevronRight, ChevronDown, Camera, Info, Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, CircleCheck, Eye } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
@@ -18,6 +18,9 @@ import { useAuth } from "@/contexts/AuthContext"
 import { CreditsService } from "@/services/credits"
 import { HistoryService } from "@/services/history"
 import { useSearchParams } from 'next/navigation'
+import axios from 'axios'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -156,6 +159,17 @@ function DemoPageContent() {
   
   // Ajout d'un state pour l'historique des analyses
   const [analysisHistory, setAnalysisHistory] = useState<any[]>([])
+  
+  // Nouveau : state pour le formulaire structuré
+  const [structuredForm, setStructuredForm] = useState({
+    anamnese: '',
+    antecedents: '',
+    examenClinique: '',
+    examensComplementaires: '',
+    contextePatient: ''
+  })
+  const [isExtractingForm, setIsExtractingForm] = useState(false)
+  const [showStructuredForm, setShowStructuredForm] = useState(false)
   
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -357,12 +371,77 @@ function DemoPageContent() {
     setCurrentSections([])
     const startTime = Date.now()
     
+    // Extraire automatiquement les données structurées si pas déjà fait
+    let structuredData = null;
+    if (!showStructuredForm && !isDemoMode) {
+      setProgressMessage("Extraction des informations structurées...")
+      try {
+        const prompt = `Analyse ce cas clinique et extrais les informations selon ces catégories. Réponds UNIQUEMENT en JSON avec ces clés exactes : anamnese, antecedents, examenClinique, examensComplementaires, contextePatient.
+
+CAS CLINIQUE :
+${textContent}
+
+INSTRUCTIONS :
+1. anamnese : Symptômes principaux, chronologie, évolution
+2. antecedents : Médicaux, chirurgicaux, familiaux, traitements actuels
+3. examenClinique : Constantes vitales, examen physique par systèmes
+4. examensComplementaires : Biologie, imagerie, ECG, etc.
+5. contextePatient : Âge, sexe, profession, mode de vie
+
+Si une information n'est pas disponible, indique "Non précisé".`;
+
+        const response = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 2000
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${aiService.getOpenAIApiKey()}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        )
+
+        structuredData = JSON.parse(response.data.choices[0].message.content)
+        setStructuredForm(structuredData)
+        
+        // Ajouter à la chaîne de requêtes
+        if (user?.email === 'maxime.latry@gmail.com') {
+          aiService.addToRequestChain({
+            timestamp: new Date().toISOString(),
+            model: 'gpt-4o-mini',
+            requestType: 'structured_extraction',
+            request: prompt,
+            response: structuredData
+          })
+        }
+      } catch (error) {
+        console.error('Erreur extraction:', error)
+        // Continuer sans extraction structurée
+      }
+    }
+    
     // Sauvegarder la requête dans l'historique
     const currentRequest = {
       timestamp: new Date().toISOString(),
       query: textContent,
       images: uploadedImages,
-      mode: isDemoMode ? 'demo' : 'real'
+      mode: isDemoMode ? 'demo' : 'real',
+      structuredData: structuredData || structuredForm
     };
     
     if (isDemoMode) {
@@ -412,8 +491,38 @@ function DemoPageContent() {
       }
 
       try {
+        // Réinitialiser la chaîne de requêtes pour maxime.latry@gmail.com
+        if (user?.email === 'maxime.latry@gmail.com') {
+          aiService.clearRequestChain();
+        }
+        
+        // Préparer le texte enrichi avec les données structurées si disponibles
+        let enrichedText = textContent;
+        if (structuredData || (showStructuredForm && structuredForm)) {
+          const formData = structuredData || structuredForm;
+          enrichedText = `CAS CLINIQUE STRUCTURÉ :
+
+CONTEXTE PATIENT:
+${formData.contextePatient || 'Non précisé'}
+
+ANAMNÈSE:
+${formData.anamnese || 'Non précisé'}
+
+ANTÉCÉDENTS:
+${formData.antecedents || 'Non précisé'}
+
+EXAMEN CLINIQUE:
+${formData.examenClinique || 'Non précisé'}
+
+EXAMENS COMPLÉMENTAIRES:
+${formData.examensComplementaires || 'Non précisé'}
+
+CAS CLINIQUE ORIGINAL:
+${textContent}`;
+        }
+        
         const result = await aiService.analyzeClinicalCase(
-          textContent,
+          enrichedText,
           (message) => setProgressMessage(message),
           (section, index, total) => {
             // Afficher les sections au fur et à mesure
@@ -438,10 +547,12 @@ function DemoPageContent() {
           date: new Date().toISOString(),
           isDemo: false,
           caseText: textContent,
+          structuredData: structuredData || (showStructuredForm ? structuredForm : null),
           sections: result.sections,
           references: result.references,
           perplexityReport: result.perplexityReport,
-          images: uploadedImages.length > 0 ? uploadedImages : undefined
+          images: uploadedImages.length > 0 ? uploadedImages : undefined,
+          requestChain: user?.email === 'maxime.latry@gmail.com' ? aiService.getRequestChain() : undefined
         }
         
         setAnalysisData(analysisData)
@@ -1003,6 +1114,158 @@ function DemoPageContent() {
     )
   }
 
+  // Fonction pour extraire les informations structurées avec GPT-4.1-mini
+  const extractStructuredData = async () => {
+    if (!textContent.trim()) {
+      toast.error("Veuillez d'abord entrer un cas clinique")
+      return
+    }
+
+    if (isDemoMode) {
+      // En mode démo, simuler l'extraction
+      toast.info("Extraction simulée en mode démo...")
+      setIsExtractingForm(true)
+      
+      setTimeout(() => {
+        setStructuredForm({
+          anamnese: "Douleur thoracique oppressive rétrosternale survenue au repos il y a 2 heures, irradiant vers le bras gauche, accompagnée de sueurs profuses et de nausées.",
+          antecedents: "HTA traitée par IEC, dyslipidémie sous statine, tabagisme sevré il y a 5 ans (40 PA). Pas d'antécédent coronarien personnel, mais père décédé d'IDM à 58 ans.",
+          examenClinique: "PA 145/90 mmHg, FC 95/min, SpO2 96% AA. Patient en sueurs, douloureux.",
+          examensComplementaires: "ECG : sus-décalage ST en V1-V4 de 3mm. Troponine T hs : 450 ng/L (N<14).",
+          contextePatient: "Patient de 65 ans, profession non précisée."
+        })
+        setShowStructuredForm(true)
+        setIsExtractingForm(false)
+        toast.success("Extraction terminée (démo)")
+      }, 2000)
+      
+      return
+    }
+
+    // Mode réel - appeler GPT-4.1-mini
+    setIsExtractingForm(true)
+    
+    try {
+      const prompt = `Analyse ce cas clinique et extrais les informations selon ces catégories. Réponds UNIQUEMENT en JSON avec ces clés exactes : anamnese, antecedents, examenClinique, examensComplementaires, contextePatient.
+
+CAS CLINIQUE :
+${textContent}
+
+INSTRUCTIONS :
+1. anamnese : Symptômes principaux, chronologie, évolution
+2. antecedents : Médicaux, chirurgicaux, familiaux, traitements actuels
+3. examenClinique : Constantes vitales, examen physique par systèmes
+4. examensComplementaires : Biologie, imagerie, ECG, etc.
+5. contextePatient : Âge, sexe, profession, mode de vie
+
+Si une information n'est pas disponible, indique "Non précisé".`;
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4.1-mini-2025-04-14',
+          messages: [
+            {
+              role: 'system',
+              content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_tokens: 2000
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${aiService.getOpenAIApiKey()}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+
+      const extractedData = JSON.parse(response.data.choices[0].message.content)
+      setStructuredForm(extractedData)
+      setShowStructuredForm(true)
+      toast.success("Informations extraites avec succès")
+      
+    } catch (error: any) {
+      console.error('Erreur extraction GPT-4.1-mini:', error)
+      
+      // Fallback sur gpt-4o-mini si gpt-4.1-mini n'est pas disponible
+      if (error.response?.data?.error?.code === 'model_not_found') {
+        try {
+          const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+              model: 'gpt-4o-mini',
+              messages: [
+                {
+                  role: 'system',
+                  content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide.'
+                },
+                {
+                  role: 'user',
+                  content: prompt
+                }
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.3,
+              max_tokens: 2000
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${aiService.getOpenAIApiKey()}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          )
+
+          const extractedData = JSON.parse(response.data.choices[0].message.content)
+          setStructuredForm(extractedData)
+          setShowStructuredForm(true)
+          toast.success("Informations extraites avec succès (gpt-4o-mini)")
+        } catch (fallbackError) {
+          toast.error("Erreur lors de l'extraction des informations")
+        }
+      } else {
+        toast.error("Erreur lors de l'extraction des informations")
+      }
+    } finally {
+      setIsExtractingForm(false)
+    }
+  }
+
+  // Fonction pour mettre à jour le texte principal avec le formulaire
+  const updateFromStructuredForm = () => {
+    let updatedText = "";
+    
+    if (structuredForm.contextePatient) {
+      updatedText += `CONTEXTE PATIENT:\n${structuredForm.contextePatient}\n\n`;
+    }
+    
+    if (structuredForm.anamnese) {
+      updatedText += `ANAMNÈSE:\n${structuredForm.anamnese}\n\n`;
+    }
+    
+    if (structuredForm.antecedents) {
+      updatedText += `ANTÉCÉDENTS:\n${structuredForm.antecedents}\n\n`;
+    }
+    
+    if (structuredForm.examenClinique) {
+      updatedText += `EXAMEN CLINIQUE:\n${structuredForm.examenClinique}\n\n`;
+    }
+    
+    if (structuredForm.examensComplementaires) {
+      updatedText += `EXAMENS COMPLÉMENTAIRES:\n${structuredForm.examensComplementaires}`;
+    }
+    
+    setTextContent(updatedText.trim());
+    toast.success("Cas clinique mis à jour avec les données structurées");
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
       <div className="container mx-auto px-4 pt-8">
@@ -1162,7 +1425,115 @@ function DemoPageContent() {
                     <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
                   </div>
                 )}
+                
+                {/* Bouton pour extraire les données structurées */}
+                {textContent.trim() && !isDemoMode && hasApiKeys && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={extractStructuredData}
+                    disabled={isExtractingForm}
+                    className="mt-2"
+                  >
+                    {isExtractingForm ? (
+                      <>
+                        <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                        Extraction en cours...
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="mr-2 h-4 w-4" />
+                        Extraire les informations structurées
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
+
+              {/* Formulaire structuré */}
+              {showStructuredForm && (
+                <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-semibold text-lg">Informations structurées</h3>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={updateFromStructuredForm}
+                      >
+                        Appliquer au cas clinique
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowStructuredForm(false)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="contextePatient" className="text-sm font-medium">Contexte patient</Label>
+                      <textarea
+                        id="contextePatient"
+                        value={structuredForm.contextePatient}
+                        onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
+                        placeholder="Âge, sexe, profession, mode de vie..."
+                        className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="anamnese" className="text-sm font-medium">Anamnèse</Label>
+                      <textarea
+                        id="anamnese"
+                        value={structuredForm.anamnese}
+                        onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
+                        placeholder="Symptômes principaux, chronologie, évolution..."
+                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="antecedents" className="text-sm font-medium">Antécédents</Label>
+                      <textarea
+                        id="antecedents"
+                        value={structuredForm.antecedents}
+                        onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
+                        placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
+                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="examenClinique" className="text-sm font-medium">Examen clinique</Label>
+                      <textarea
+                        id="examenClinique"
+                        value={structuredForm.examenClinique}
+                        onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
+                        placeholder="Constantes, examen physique par systèmes..."
+                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
+                      />
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="examensComplementaires" className="text-sm font-medium">Examens complémentaires</Label>
+                      <textarea
+                        id="examensComplementaires"
+                        value={structuredForm.examensComplementaires}
+                        onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
+                        placeholder="Biologie, imagerie, ECG, etc..."
+                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Upload d'images */}
               <div className="space-y-4">
@@ -1509,8 +1880,8 @@ function DemoPageContent() {
                               <div className="flex-1">
                                 <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
                                 {ref.authors && (
-                                  <p className="text-sm text-gray-700 mb-1">
-                                    <span className="font-medium">Auteurs :</span> {ref.authors}
+                                  <p className="text-xs text-gray-600 mb-1">
+                                    {ref.authors}
                                   </p>
                                 )}
                                 {ref.journal && (
@@ -1518,11 +1889,17 @@ function DemoPageContent() {
                                     <span className="font-medium not-italic">Journal :</span> {ref.journal}
                                   </p>
                                 )}
-                                {ref.year && (
-                                  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                                  {ref.year && (
                                     <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
-                                  </div>
-                                )}
+                                  )}
+                                  {ref.doi && (
+                                    <span className="bg-purple-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
+                                  )}
+                                  {ref.pmid && (
+                                    <span className="bg-purple-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
+                                  )}
+                                </div>
                                 <a
                                   href={ref.url}
                                   target="_blank"

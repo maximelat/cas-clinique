@@ -65,8 +65,29 @@ export class AIClientService {
     this.requestChain = [];
   }
 
+  // Ajouter un élément à la chaîne de requêtes
+  addToRequestChain(entry: {
+    timestamp: string;
+    model: string;
+    requestType: string;
+    request: string;
+    response?: any;
+  }) {
+    this.requestChain.push({
+      timestamp: entry.timestamp,
+      model: entry.model,
+      type: entry.requestType,
+      request: entry.request,
+      response: entry.response || ''
+    });
+  }
+
   hasApiKeys(): boolean {
-    return !!(this.perplexityApiKey && (this.openaiApiKey || this.useFirebaseFunctions));
+    return !!this.perplexityApiKey && !!this.openaiApiKey;
+  }
+
+  getOpenAIApiKey(): string | undefined {
+    return this.openaiApiKey;
   }
 
   async searchWithPerplexity(query: string): Promise<PerplexityResponse> {
@@ -320,7 +341,7 @@ RÈGLES IMPÉRATIVES:
         sections,
         references: referencesAnalysis.references,
         perplexityReport,
-        requestChain: this.getRequestChain()
+        requestChain: this.requestChain.length > 0 ? this.getRequestChain() : undefined
       };
     } catch (error: any) {
       console.error('Erreur complète dans analyzeClinicalCase:', error);
