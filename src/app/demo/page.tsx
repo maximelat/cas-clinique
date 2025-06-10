@@ -169,7 +169,6 @@ function DemoPageContent() {
     contextePatient: ''
   })
   const [isExtractingForm, setIsExtractingForm] = useState(false)
-  const [showStructuredForm, setShowStructuredForm] = useState(false)
   
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -373,7 +372,7 @@ function DemoPageContent() {
     
     // Extraire automatiquement les données structurées si pas déjà fait
     let structuredData = null;
-    if (!showStructuredForm && !isDemoMode) {
+    if (!structuredForm.anamnese && !isDemoMode && hasApiKeys) {
       setProgressMessage("Extraction des informations structurées...")
       try {
         const prompt = `Analyse ce cas clinique et extrais les informations selon ces catégories. Réponds UNIQUEMENT en JSON avec ces clés exactes : anamnese, antecedents, examenClinique, examensComplementaires, contextePatient.
@@ -498,24 +497,32 @@ Si une information n'est pas disponible, indique "Non précisé".`;
         
         // Préparer le texte enrichi avec les données structurées si disponibles
         let enrichedText = textContent;
-        if (structuredData || (showStructuredForm && structuredForm)) {
+        if (structuredData || structuredForm.anamnese || structuredForm.antecedents || structuredForm.examenClinique) {
           const formData = structuredData || structuredForm;
+          
+          // S'assurer que les données sont des strings et non des objets
+          const contexte = typeof formData.contextePatient === 'string' ? formData.contextePatient : (formData.contextePatient || 'Non précisé');
+          const anamnese = typeof formData.anamnese === 'string' ? formData.anamnese : (formData.anamnese || 'Non précisé');
+          const antecedents = typeof formData.antecedents === 'string' ? formData.antecedents : (formData.antecedents || 'Non précisé');
+          const examen = typeof formData.examenClinique === 'string' ? formData.examenClinique : (formData.examenClinique || 'Non précisé');
+          const examens = typeof formData.examensComplementaires === 'string' ? formData.examensComplementaires : (formData.examensComplementaires || 'Non précisé');
+          
           enrichedText = `CAS CLINIQUE STRUCTURÉ :
 
 CONTEXTE PATIENT:
-${formData.contextePatient || 'Non précisé'}
+${contexte}
 
 ANAMNÈSE:
-${formData.anamnese || 'Non précisé'}
+${anamnese}
 
 ANTÉCÉDENTS:
-${formData.antecedents || 'Non précisé'}
+${antecedents}
 
 EXAMEN CLINIQUE:
-${formData.examenClinique || 'Non précisé'}
+${examen}
 
 EXAMENS COMPLÉMENTAIRES:
-${formData.examensComplementaires || 'Non précisé'}
+${examens}
 
 CAS CLINIQUE ORIGINAL:
 ${textContent}`;
@@ -547,7 +554,7 @@ ${textContent}`;
           date: new Date().toISOString(),
           isDemo: false,
           caseText: textContent,
-          structuredData: structuredData || (showStructuredForm ? structuredForm : null),
+          structuredData: structuredData || (structuredForm.anamnese ? structuredForm : null),
           sections: result.sections,
           references: result.references,
           perplexityReport: result.perplexityReport,
@@ -1134,7 +1141,6 @@ ${textContent}`;
           examensComplementaires: "ECG : sus-décalage ST en V1-V4 de 3mm. Troponine T hs : 450 ng/L (N<14).",
           contextePatient: "Patient de 65 ans, profession non précisée."
         })
-        setShowStructuredForm(true)
         setIsExtractingForm(false)
         toast.success("Extraction terminée (démo)")
       }, 2000)
@@ -1188,7 +1194,6 @@ Si une information n'est pas disponible, indique "Non précisé".`;
 
       const extractedData = JSON.parse(response.data.choices[0].message.content)
       setStructuredForm(extractedData)
-      setShowStructuredForm(true)
       toast.success("Informations extraites avec succès")
       
     } catch (error: any) {
@@ -1225,7 +1230,6 @@ Si une information n'est pas disponible, indique "Non précisé".`;
 
           const extractedData = JSON.parse(response.data.choices[0].message.content)
           setStructuredForm(extractedData)
-          setShowStructuredForm(true)
           toast.success("Informations extraites avec succès (gpt-4o-mini)")
         } catch (fallbackError) {
           toast.error("Erreur lors de l'extraction des informations")
@@ -1426,114 +1430,138 @@ Si une information n'est pas disponible, indique "Non précisé".`;
                   </div>
                 )}
                 
-                {/* Bouton pour extraire les données structurées */}
-                {textContent.trim() && !isDemoMode && hasApiKeys && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={extractStructuredData}
-                    disabled={isExtractingForm}
-                    className="mt-2"
-                  >
-                    {isExtractingForm ? (
-                      <>
-                        <Brain className="mr-2 h-4 w-4 animate-pulse" />
-                        Extraction en cours...
-                      </>
-                    ) : (
-                      <>
-                        <Brain className="mr-2 h-4 w-4" />
-                        Extraire les informations structurées
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
+                            </div>
 
-              {/* Formulaire structuré */}
-              {showStructuredForm && (
-                <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="font-semibold text-lg">Informations structurées</h3>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={updateFromStructuredForm}
-                      >
-                        Appliquer au cas clinique
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowStructuredForm(false)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+            {/* Formulaire structuré dans un accordéon */}
+            {!isDemoMode && hasApiKeys && (
+              <Accordion type="single" collapsible className="mt-4 border rounded-lg">
+                <AccordionItem value="structured-form" className="border-0">
+                  <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white rounded-lg shadow-sm">
+                        <FileText className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div className="text-left">
+                        <h3 className="font-semibold text-gray-900">Formulaire structuré</h3>
+                        <p className="text-sm text-gray-600">Organisez les informations du cas clinique</p>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div>
-                      <Label htmlFor="contextePatient" className="text-sm font-medium">Contexte patient</Label>
-                      <textarea
-                        id="contextePatient"
-                        value={structuredForm.contextePatient}
-                        onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
-                        placeholder="Âge, sexe, profession, mode de vie..."
-                        className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none"
-                      />
+                  </AccordionTrigger>
+                  <AccordionContent className="px-4 pb-4 pt-2">
+                    <div className="space-y-4">
+                      {/* Boutons d'action */}
+                      <div className="flex gap-2 justify-end">
+                        {textContent.trim() && (
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={extractStructuredData}
+                            disabled={isExtractingForm}
+                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                          >
+                            {isExtractingForm ? (
+                              <>
+                                <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                                Extraction en cours...
+                              </>
+                            ) : (
+                              <>
+                                <Brain className="mr-2 h-4 w-4" />
+                                Extraire automatiquement
+                              </>
+                            )}
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={updateFromStructuredForm}
+                          disabled={!structuredForm.anamnese && !structuredForm.antecedents && !structuredForm.examenClinique}
+                        >
+                          <Copy className="mr-2 h-4 w-4" />
+                          Appliquer au cas
+                        </Button>
+                      </div>
+                      
+                      {/* Champs du formulaire */}
+                      <div className="space-y-3 bg-white p-4 rounded-lg border">
+                        <div>
+                          <Label htmlFor="contextePatient" className="text-sm font-medium flex items-center gap-2">
+                            <Users className="h-4 w-4 text-gray-500" />
+                            Contexte patient
+                          </Label>
+                          <textarea
+                            id="contextePatient"
+                            value={structuredForm.contextePatient}
+                            onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
+                            placeholder="Âge, sexe, profession, mode de vie..."
+                            className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label htmlFor="anamnese" className="text-sm font-medium flex items-center gap-2">
+                            <History className="h-4 w-4 text-gray-500" />
+                            Anamnèse
+                          </Label>
+                          <textarea
+                            id="anamnese"
+                            value={structuredForm.anamnese}
+                            onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
+                            placeholder="Symptômes principaux, chronologie, évolution..."
+                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label htmlFor="antecedents" className="text-sm font-medium flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-gray-500" />
+                            Antécédents
+                          </Label>
+                          <textarea
+                            id="antecedents"
+                            value={structuredForm.antecedents}
+                            onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
+                            placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
+                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label htmlFor="examenClinique" className="text-sm font-medium flex items-center gap-2">
+                            <Search className="h-4 w-4 text-gray-500" />
+                            Examen clinique
+                          </Label>
+                          <textarea
+                            id="examenClinique"
+                            value={structuredForm.examenClinique}
+                            onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
+                            placeholder="Constantes, examen physique par systèmes..."
+                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        
+                        <div>
+                          <Label htmlFor="examensComplementaires" className="text-sm font-medium flex items-center gap-2">
+                            <Microscope className="h-4 w-4 text-gray-500" />
+                            Examens complémentaires
+                          </Label>
+                          <textarea
+                            id="examensComplementaires"
+                            value={structuredForm.examensComplementaires}
+                            onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
+                            placeholder="Biologie, imagerie, ECG, etc..."
+                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    
-                    <div>
-                      <Label htmlFor="anamnese" className="text-sm font-medium">Anamnèse</Label>
-                      <textarea
-                        id="anamnese"
-                        value={structuredForm.anamnese}
-                        onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
-                        placeholder="Symptômes principaux, chronologie, évolution..."
-                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="antecedents" className="text-sm font-medium">Antécédents</Label>
-                      <textarea
-                        id="antecedents"
-                        value={structuredForm.antecedents}
-                        onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
-                        placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
-                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="examenClinique" className="text-sm font-medium">Examen clinique</Label>
-                      <textarea
-                        id="examenClinique"
-                        value={structuredForm.examenClinique}
-                        onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
-                        placeholder="Constantes, examen physique par systèmes..."
-                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="examensComplementaires" className="text-sm font-medium">Examens complémentaires</Label>
-                      <textarea
-                        id="examensComplementaires"
-                        value={structuredForm.examensComplementaires}
-                        onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
-                        placeholder="Biologie, imagerie, ECG, etc..."
-                        className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            )}
 
               {/* Upload d'images */}
               <div className="space-y-4">
