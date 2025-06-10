@@ -154,6 +154,9 @@ function DemoPageContent() {
   const [showRareDiseaseSection, setShowRareDiseaseSection] = useState(false)
   const [showDemoInfo, setShowDemoInfo] = useState(false)
   
+  // Ajout d'un state pour l'historique des analyses
+  const [analysisHistory, setAnalysisHistory] = useState<any[]>([])
+  
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
   
@@ -354,13 +357,33 @@ function DemoPageContent() {
     setCurrentSections([])
     const startTime = Date.now()
     
+    // Sauvegarder la requête dans l'historique
+    const currentRequest = {
+      timestamp: new Date().toISOString(),
+      query: textContent,
+      images: uploadedImages,
+      mode: isDemoMode ? 'demo' : 'real'
+    };
+    
     if (isDemoMode) {
       toast.info("Analyse en mode démonstration...")
       // Mode démo - afficher les données prédéfinies après un délai
       setTimeout(() => {
         setIsAnalyzing(false)
         setShowResults(true)
-        setAnalysisData({ isDemo: true })
+        const demoResult = { 
+          isDemo: true,
+          sections: Object.entries(demoSections).map(([key, content]) => ({ type: key, content })),
+          references: demoReferences
+        };
+        setAnalysisData(demoResult)
+        
+        // Ajouter à l'historique
+        setAnalysisHistory(prev => [...prev, {
+          ...currentRequest,
+          result: demoResult
+        }]);
+        
         toast.success("Analyse simulée terminée !")
       }, 3000)
     } else {
@@ -422,6 +445,12 @@ function DemoPageContent() {
         }
         
         setAnalysisData(analysisData)
+        
+        // Ajouter à l'historique
+        setAnalysisHistory(prev => [...prev, {
+          ...currentRequest,
+          result: analysisData
+        }]);
         
         // Sauvegarder dans l'historique
         try {
@@ -833,10 +862,82 @@ function DemoPageContent() {
     }
   }
 
-  const renderContentWithReferences = (content: string, references: any[]) => {
-    // Remplacer les [num] par des liens cliquables dans le Markdown
-    let processedContent = content
+  // Fonction pour exporter tout l'historique (uniquement pour maxime.latry@gmail.com)
+  const exportAllHistory = () => {
+    if (analysisHistory.length === 0) {
+      toast.error("Aucune analyse dans l'historique")
+      return
+    }
 
+    let fullContent = "=== HISTORIQUE COMPLET DES ANALYSES ===\n";
+    fullContent += `Exporté le : ${new Date().toLocaleString('fr-FR')}\n`;
+    fullContent += `Utilisateur : ${user?.email}\n`;
+    fullContent += `Nombre total d'analyses : ${analysisHistory.length}\n`;
+    fullContent += "=======================================\n\n";
+
+    analysisHistory.forEach((item, index) => {
+      fullContent += `\n--- ANALYSE ${index + 1} ---\n`;
+      fullContent += `Date : ${new Date(item.timestamp).toLocaleString('fr-FR')}\n`;
+      fullContent += `Mode : ${item.mode}\n`;
+      fullContent += `Images : ${item.images?.length || 0}\n\n`;
+      
+      fullContent += "REQUÊTE :\n";
+      fullContent += item.query + "\n\n";
+      
+      if (item.result) {
+        fullContent += "RÉSULTAT :\n";
+        
+        // Sections
+        item.result.sections?.forEach((section: any) => {
+          const title = sectionTitles[section.type as keyof typeof sectionTitles] || section.type;
+          fullContent += `\n${title}\n`;
+          fullContent += "-".repeat(title.length) + "\n";
+          fullContent += section.content + "\n";
+        });
+        
+        // Références
+        if (item.result.references?.length > 0) {
+          fullContent += "\nRÉFÉRENCES BIBLIOGRAPHIQUES :\n";
+          item.result.references.forEach((ref: any) => {
+            fullContent += `\n[${ref.label}] ${ref.title}\n`;
+            if (ref.authors) fullContent += `Auteurs : ${ref.authors}\n`;
+            if (ref.journal) fullContent += `Journal : ${ref.journal}\n`;
+            if (ref.year) fullContent += `Année : ${ref.year}\n`;
+            if (ref.url) fullContent += `URL : ${ref.url}\n`;
+          });
+        }
+      }
+      
+      fullContent += "\n" + "=".repeat(50) + "\n";
+    });
+
+    // Télécharger le fichier
+    const blob = new Blob([fullContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `historique-complet-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success("Historique complet exporté !");
+  };
+
+  const renderContentWithReferences = (content: string, references: any[]) => {
+    // D'abord, formater les références isolées (format "Références : 1234567890")
+    let processedContent = content;
+    
+    // Pattern pour détecter "Références : " suivi de chiffres
+    const referencePattern = /Références?\s*:\s*(\d+(?:\d+)*)/gi;
+    processedContent = processedContent.replace(referencePattern, (match, nums) => {
+      // Séparer les chiffres et les formatter entre crochets
+      const refNumbers = nums.match(/\d+/g) || [];
+      return `Références : ${refNumbers.map((n: string) => `[${n}]`).join(', ')}`;
+    });
+
+    // Ensuite, remplacer les [num] par des liens cliquables dans le Markdown
     references.forEach(ref => {
       const pattern = new RegExp(`\\[${ref.label}\\]`, 'g')
       processedContent = processedContent.replace(pattern, `[${ref.label}](${ref.url})`)
@@ -1163,6 +1264,18 @@ function DemoPageContent() {
                 )}
               </div>
               <div className="flex gap-2">
+                {/* Bouton Export All pour maxime.latry@gmail.com uniquement */}
+                {user?.email === 'maxime.latry@gmail.com' && analysisHistory.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportAllHistory}
+                    className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-300"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Export All ({analysisHistory.length})
+                  </Button>
+                )}
                 {!analysisData?.isDemo && analysisData?.perplexityReport && (
                   <Button
                     variant="outline"
