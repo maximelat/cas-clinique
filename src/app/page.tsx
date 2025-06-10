@@ -89,7 +89,7 @@ export default function HomePage() {
                 if (user) {
                   router.push('/demo?mode=real');
                 } else {
-                  router.push('/admin'); // page de connexion
+                  router.push('/auth');
                 }
               }}
             >

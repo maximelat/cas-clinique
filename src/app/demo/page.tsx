@@ -885,8 +885,14 @@ function DemoPageContent() {
 
         {/* Bannière orange MODE DÉMO */}
         {isDemoMode && (
-          <div className="bg-orange-500 text-white p-3 text-center font-bold text-lg tracking-wider mb-6 rounded-lg shadow-lg">
-            MODE DÉMO
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 max-w-4xl mx-auto">
+            <div className="flex">
+              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 text-orange-600" />
+              <div className="text-sm text-orange-800">
+                <p className="font-medium mb-1">Mode démonstration activé</p>
+                <p>Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités.</p>
+              </div>
+            </div>
           </div>
         )}
 
