@@ -17,6 +17,7 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder"
 import { useAuth } from "@/contexts/AuthContext"
 import { CreditsService } from "@/services/credits"
 import { HistoryService } from "@/services/history"
+import { useSearchParams } from 'next/navigation'
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -150,6 +151,7 @@ export default function DemoPage() {
   const [rareDiseaseData, setRareDiseaseData] = useState<{ disease: string, report: string, references: any[] } | null>(null)
   const [isSearchingRareDisease, setIsSearchingRareDisease] = useState(false)
   const [showRareDiseaseSection, setShowRareDiseaseSection] = useState(false)
+  const [showDemoInfo, setShowDemoInfo] = useState(false)
   
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -174,6 +176,41 @@ export default function DemoPage() {
   useEffect(() => {
     setIsAudioSupported(AIClientService.isAudioRecordingSupported())
   }, [])
+
+  // Affichage de la popup au premier usage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (isDemoMode && !localStorage.getItem('demoInfoShown')) {
+        setShowDemoInfo(true)
+        localStorage.setItem('demoInfoShown', '1')
+      }
+    }
+  }, [isDemoMode])
+
+  // Mode réel par défaut si connecté
+  useEffect(() => {
+    if (user && isDemoMode) setIsDemoMode(false)
+    if (!user && !isDemoMode) setIsDemoMode(true)
+  }, [user])
+
+  // Préremplissage et blocage du champ en mode démo
+  useEffect(() => {
+    if (isDemoMode) {
+      setTextContent(demoSections.CLINICAL_CONTEXT)
+    } else {
+      setTextContent("")
+    }
+  }, [isDemoMode])
+
+  const searchParams = useSearchParams ? useSearchParams() : null;
+
+  useEffect(() => {
+    if (searchParams) {
+      const mode = searchParams.get('mode');
+      if (mode === 'real' && isDemoMode) setIsDemoMode(false);
+      if (mode === 'demo' && !isDemoMode) setIsDemoMode(true);
+    }
+  }, [searchParams]);
 
   // Gérer l'upload d'images
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -845,6 +882,21 @@ export default function DemoPage() {
           </div>
         </div>
 
+        {/* Bannière orange MODE DÉMO */}
+        {isDemoMode && (
+          <div style={{background:'#FFA500',color:'#fff',padding:'10px',textAlign:'center',fontWeight:'bold',fontSize:'18px',letterSpacing:'2px'}}>MODE DÉMO</div>
+        )}
+        {/* Popup d'information au premier usage */}
+        {showDemoInfo && (
+          <div style={{position:'fixed',top:0,left:0,width:'100vw',height:'100vh',background:'rgba(0,0,0,0.3)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <div style={{background:'#fff',padding:'32px',borderRadius:'12px',maxWidth:'400px',boxShadow:'0 2px 16px #0002',textAlign:'center'}}>
+              <h2 style={{color:'#FFA500',fontWeight:'bold',fontSize:'22px',marginBottom:'12px'}}>Mode Démo</h2>
+              <p>Vous utilisez le mode démonstration. Les données sont préremplies et non modifiables. Pour utiliser vos propres cas, connectez-vous.</p>
+              <button style={{marginTop:'18px',background:'#FFA500',color:'#fff',border:'none',borderRadius:'6px',padding:'10px 24px',fontWeight:'bold',fontSize:'16px',cursor:'pointer'}} onClick={()=>setShowDemoInfo(false)}>OK</button>
+            </div>
+          </div>
+        )}
+
         {!showResults ? (
           <Card>
             <CardHeader>
@@ -867,9 +919,9 @@ export default function DemoPage() {
                     className="p-1"
                   >
                     {isDemoMode ? (
-                      <ToggleLeft className="h-6 w-6 text-gray-500" />
-                    ) : (
                       <ToggleRight className="h-6 w-6 text-blue-600" />
+                    ) : (
+                      <ToggleLeft className="h-6 w-6 text-gray-500" />
                     )}
                   </Button>
                 </div>
@@ -938,7 +990,7 @@ export default function DemoPage() {
                   onChange={(e) => setTextContent(e.target.value)}
                   placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
                   className="w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={isRecording || isTranscribing}
+                  disabled={isRecording || isTranscribing || isDemoMode}
                 />
                 {recordingError && (
                   <p className="text-sm text-red-600 mt-2">{recordingError}</p>
@@ -947,6 +999,11 @@ export default function DemoPage() {
                   <p className="text-sm text-gray-600 mt-2 animate-pulse">
                     Transcription en cours...
                   </p>
+                )}
+                {!isDemoMode && !user && (
+                  <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
+                    <Lock className="h-4 w-4" /> Connexion requise pour utiliser la fonctionnalité avec vos données
+                  </div>
                 )}
               </div>
 

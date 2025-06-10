@@ -3,8 +3,13 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Brain, Search, FileText, Image, Shield, Clock, ChevronRight, Sparkles, UserCheck, Stethoscope } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export default function HomePage() {
+  const { user } = useAuth ? useAuth() : { user: null };
+  const router = useRouter ? useRouter() : null;
+
   const features = [
     {
       icon: <Search className="h-6 w-6" />,
@@ -77,16 +82,27 @@ export default function HomePage() {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-            <Link href="/demo">
-              <Button size="lg" className="text-lg px-8 py-6 bg-blue-600 hover:bg-blue-700 shadow-xl">
-                Essayer gratuitement <ChevronRight className="ml-2 h-5 w-5" />
-              </Button>
-            </Link>
-            <Link href="/demo">
-              <Button size="lg" variant="outline" className="text-lg px-8 py-6 border-2">
-                <Stethoscope className="mr-2 h-5 w-5" /> Mode Démo
-              </Button>
-            </Link>
+            <Button
+              size="lg"
+              className="text-lg px-8 py-6 bg-blue-600 hover:bg-blue-700 shadow-xl"
+              onClick={() => {
+                if (user) {
+                  router && router.push('/demo?mode=real');
+                } else {
+                  router && router.push('/admin'); // ou '/login' selon la page de connexion
+                }
+              }}
+            >
+              Essayer gratuitement <ChevronRight className="ml-2 h-5 w-5" />
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="text-lg px-8 py-6 border-2"
+              onClick={() => router && router.push('/demo?mode=demo')}
+            >
+              <Stethoscope className="mr-2 h-5 w-5" /> Mode Démo
+            </Button>
           </div>
           
           <p className="text-gray-500">
