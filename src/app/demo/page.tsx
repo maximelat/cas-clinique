@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History, Settings, ChevronRight, ChevronDown, Camera, Info, Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, CircleCheck, Eye } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History, Settings, ChevronRight, ChevronDown, Camera, Info, Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, CircleCheck, Eye, Plus, RefreshCw, GitBranch } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
@@ -169,6 +169,15 @@ function DemoPageContent() {
     contextePatient: ''
   })
   const [isExtractingForm, setIsExtractingForm] = useState(false)
+  
+  // Nouveaux états pour le système de retour et amélioration
+  const [isEditingSection, setIsEditingSection] = useState<{ [key: string]: boolean }>({})
+  const [additionalInfo, setAdditionalInfo] = useState<{ [key: string]: string }>({})
+  const [isReanalyzing, setIsReanalyzing] = useState(false)
+  const [analysisVersions, setAnalysisVersions] = useState<any[]>([])
+  const [currentVersion, setCurrentVersion] = useState(0)
+  const [showVersionComparison, setShowVersionComparison] = useState(false)
+  const [caseTitle, setCaseTitle] = useState<string>("")
   
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -570,11 +579,12 @@ ${textContent}`;
         
         const analysisData = {
           id: analysisId,
-          title: analysisTitle,
           date: new Date().toISOString(),
+          title: analysisTitle,
           isDemo: false,
           caseText: textContent,
-          structuredData: structuredData || (structuredForm.anamnese ? structuredForm : null),
+          structuredData: structuredForm.anamnese || structuredForm.antecedents || structuredForm.examenClinique
+            ? structuredForm : null,
           sections: result.sections,
           references: result.references,
           perplexityReport: result.perplexityReport,
@@ -583,6 +593,13 @@ ${textContent}`;
         }
         
         setAnalysisData(analysisData)
+        
+        // Générer le titre du cas clinique avec GPT-4o-mini
+        generateCaseTitle(textContent).then((generatedTitle) => {
+          if (caseTitle && caseTitle !== "Cas clinique") {
+            setAnalysisData(prev => ({ ...prev, title: caseTitle }))
+          }
+        })
         
         // Ajouter à l'historique
         setAnalysisHistory(prev => [...prev, {
@@ -1321,6 +1338,215 @@ Exemple de format attendu :
     toast.success("Cas clinique mis à jour avec les données structurées");
   }
 
+  // Nouvelles fonctions pour le système de retour et amélioration
+  const generateCaseTitle = async (caseText: string) => {
+    if (isDemoMode) {
+      setCaseTitle("Syndrome coronarien aigu ST+ chez patient de 65 ans");
+      return;
+    }
+
+    try {
+      const prompt = `Génère un titre court et descriptif (max 50 caractères) pour ce cas clinique:\n\n${caseText.substring(0, 500)}`;
+      
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'Tu es un assistant médical. Génère uniquement un titre court et descriptif pour le cas clinique. Maximum 50 caractères.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 100
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${aiService.getOpenAIApiKey()}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+
+      const title = response.data.choices[0].message.content.trim();
+      setCaseTitle(title);
+    } catch (error) {
+      console.error('Erreur génération titre:', error);
+      setCaseTitle("Cas clinique");
+    }
+  }
+
+  const handleAddInformation = (sectionType: string) => {
+    setIsEditingSection({ ...isEditingSection, [sectionType]: true });
+  }
+
+  const handleCancelEdit = (sectionType: string) => {
+    setIsEditingSection({ ...isEditingSection, [sectionType]: false });
+    setAdditionalInfo({ ...additionalInfo, [sectionType]: '' });
+  }
+
+  const handleSaveAdditionalInfo = async (sectionType: string) => {
+    const info = additionalInfo[sectionType];
+    if (!info?.trim()) {
+      toast.error("Veuillez ajouter des informations");
+      return;
+    }
+
+    setIsEditingSection({ ...isEditingSection, [sectionType]: false });
+    setIsReanalyzing(true);
+    setProgressMessage("Amélioration de l'analyse en cours...");
+
+    try {
+      // Sauvegarder la version actuelle
+      const currentAnalysis = {
+        ...analysisData,
+        version: currentVersion,
+        timestamp: new Date().toISOString()
+      };
+      setAnalysisVersions([...analysisVersions, currentAnalysis]);
+
+      // Préparer le contexte pour la ré-analyse
+      const currentSection = analysisData.sections.find((s: any) => s.type === sectionType);
+      const allSections = analysisData.sections.map((s: any) => 
+        `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`
+      ).join('\n\n');
+
+      const prompt = `Tu as analysé ce cas clinique et produit l'analyse suivante:
+
+CAS CLINIQUE ORIGINAL:
+${analysisData.caseText}
+
+ANALYSE COMPLÈTE:
+${allSections}
+
+RÉFÉRENCES DISPONIBLES:
+${analysisData.references.map((ref: any) => `[${ref.label}] ${ref.title} - ${ref.url}`).join('\n')}
+
+L'utilisateur a ajouté ces INFORMATIONS COMPLÉMENTAIRES pour la section "${sectionTitles[sectionType as keyof typeof sectionTitles]}":
+${info}
+
+INSTRUCTIONS:
+1. Intègre ces nouvelles informations dans la section spécifiée
+2. Ajuste si nécessaire les autres sections qui pourraient être impactées
+3. Utilise EXACTEMENT le même format que l'analyse originale
+4. Conserve toutes les références [X] existantes
+5. Retourne UNIQUEMENT le contenu amélioré de la section, sans répéter le titre`;
+
+      // Appeler o3 pour améliorer l'analyse
+      const response = await aiService.improveAnalysisWithO3(prompt);
+      
+      // Mettre à jour la section
+      const updatedSections = analysisData.sections.map((section: any) => {
+        if (section.type === sectionType) {
+          return { ...section, content: response };
+        }
+        return section;
+      });
+
+      // Créer la nouvelle version
+      const newAnalysisData = {
+        ...analysisData,
+        sections: updatedSections,
+        lastModified: new Date().toISOString(),
+        modificationHistory: [
+          ...(analysisData.modificationHistory || []),
+          {
+            sectionType,
+            additionalInfo: info,
+            timestamp: new Date().toISOString(),
+            version: currentVersion + 1
+          }
+        ]
+      };
+
+      setAnalysisData(newAnalysisData);
+      setCurrentVersion(currentVersion + 1);
+      setAdditionalInfo({ ...additionalInfo, [sectionType]: '' });
+      
+      toast.success("Section améliorée avec succès !");
+    } catch (error) {
+      console.error('Erreur amélioration:', error);
+      toast.error("Erreur lors de l'amélioration de l'analyse");
+    } finally {
+      setIsReanalyzing(false);
+      setProgressMessage("");
+    }
+  }
+
+  const handleDeepReanalysis = async () => {
+    if (!user || userCredits?.credits <= 0) {
+      toast.error("Crédits insuffisants pour une analyse approfondie");
+      return;
+    }
+
+    setIsReanalyzing(true);
+    setProgressMessage("Nouvelle recherche approfondie en cours...");
+
+    try {
+      // Utiliser un crédit
+      await CreditsService.useCredit(user.uid);
+      await refreshCredits();
+
+      // Construire le nouveau contexte avec toutes les modifications
+      let enrichedContext = analysisData.caseText;
+      if (analysisData.modificationHistory?.length > 0) {
+        enrichedContext += "\n\nINFORMATIONS COMPLÉMENTAIRES AJOUTÉES:\n";
+        analysisData.modificationHistory.forEach((mod: any) => {
+          enrichedContext += `- ${sectionTitles[mod.sectionType as keyof typeof sectionTitles]}: ${mod.additionalInfo}\n`;
+        });
+      }
+
+      // Relancer une analyse complète
+      const result = await aiService.analyzeClinicalCase(
+        enrichedContext,
+        (message) => setProgressMessage(message),
+        (section, index, total) => {
+          setCurrentSections(prev => [...prev, section]);
+        },
+        analysisData.images
+      );
+
+      // Sauvegarder l'ancienne version
+      const currentAnalysis = {
+        ...analysisData,
+        version: currentVersion,
+        timestamp: new Date().toISOString()
+      };
+      setAnalysisVersions([...analysisVersions, currentAnalysis]);
+
+      // Mettre à jour avec la nouvelle analyse
+      const newAnalysisData = {
+        ...result,
+        id: analysisData.id,
+        title: analysisData.title,
+        caseText: enrichedContext,
+        version: currentVersion + 1,
+        isDeepReanalysis: true,
+        previousVersions: analysisVersions.length + 1
+      };
+
+      setAnalysisData(newAnalysisData);
+      setCurrentVersion(currentVersion + 1);
+      
+      toast.success("Analyse approfondie terminée !");
+    } catch (error) {
+      console.error('Erreur analyse approfondie:', error);
+      toast.error("Erreur lors de l'analyse approfondie");
+    } finally {
+      setIsReanalyzing(false);
+      setProgressMessage("");
+    }
+  }
+
+  const toggleVersionComparison = () => {
+    setShowVersionComparison(!showVersionComparison);
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
       <div className="container mx-auto px-4 pt-8">
@@ -1827,6 +2053,47 @@ Exemple de format attendu :
               </div>
             </div>
             
+            {/* Indicateur de ré-analyse en cours */}
+            {isReanalyzing && progressMessage && (
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 text-blue-700">
+                  <RefreshCw className="h-5 w-5 animate-spin" />
+                  <span className="font-medium">{progressMessage}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Comparaison des versions */}
+            {showVersionComparison && analysisVersions.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Historique des versions</CardTitle>
+                  <CardDescription>
+                    Version actuelle: {currentVersion + 1} | {analysisVersions.length} version(s) précédente(s)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {analysisVersions.map((version, idx) => (
+                      <div key={idx} className="p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">Version {version.version + 1}</span>
+                          <span className="text-sm text-gray-500">
+                            {new Date(version.timestamp).toLocaleString('fr-FR')}
+                          </span>
+                        </div>
+                        {version.modificationHistory?.slice(-1).map((mod: any, i: number) => (
+                          <p key={i} className="text-sm text-gray-600 mt-1">
+                            Modification: {sectionTitles[mod.sectionType as keyof typeof sectionTitles]}
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            
             <Accordion type="single" collapsible className="w-full space-y-4" defaultValue="0">
               {analysisData?.isDemo ? (
                 // Mode démo - afficher les sections prédéfinies
@@ -1843,7 +2110,7 @@ Exemple de format attendu :
                   </AccordionItem>
                 ))
               ) : (
-                // Mode réel - afficher les sections au fur et à mesure
+                // Mode réel - afficher les sections au fur et à mesure avec bouton d'ajout
                 (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((section: any, index: number) => (
                   <AccordionItem key={index} value={String(index)} className="border rounded-lg">
                     <AccordionTrigger className="px-6 hover:no-underline">
@@ -1852,7 +2119,58 @@ Exemple de format attendu :
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-6">
-                      {renderContentWithReferences(section.content, analysisData?.references || [])}
+                      {/* Contenu de la section */}
+                      <div className="mb-4">
+                        {renderContentWithReferences(section.content, analysisData?.references || [])}
+                      </div>
+                      
+                      {/* Zone d'édition pour ajouter des informations */}
+                      {isEditingSection[section.type] ? (
+                        <div className="mt-4 space-y-3 border-t pt-4">
+                          <Label className="text-sm font-medium flex items-center gap-2">
+                            <Plus className="h-4 w-4" />
+                            Ajouter des informations complémentaires
+                          </Label>
+                          <textarea
+                            value={additionalInfo[section.type] || ''}
+                            onChange={(e) => setAdditionalInfo({
+                              ...additionalInfo,
+                              [section.type]: e.target.value
+                            })}
+                            placeholder="Ex: Le patient présente également une toux sèche depuis 3 jours..."
+                            className="w-full p-3 border rounded-lg resize-none h-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleSaveAdditionalInfo(section.type)}
+                              disabled={!additionalInfo[section.type]?.trim() || isReanalyzing}
+                            >
+                              Améliorer l'analyse
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCancelEdit(section.type)}
+                            >
+                              Annuler
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-4 border-t pt-4">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleAddInformation(section.type)}
+                            disabled={isReanalyzing}
+                            className="w-full"
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Ajouter des informations
+                          </Button>
+                        </div>
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 ))

@@ -875,8 +875,6 @@ RÈGLES IMPORTANTES:
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 
-
-
   // Recherche de maladies rares avec sonar-deep-research
   async searchRareDiseases(
     clinicalCase: string, 
@@ -970,6 +968,63 @@ Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur le
     } catch (error: any) {
       console.error('Erreur recherche maladies rares:', error);
       throw new Error('Erreur lors de la recherche de maladies rares: ' + error.message);
+    }
+  }
+
+  // Nouvelle méthode pour améliorer l'analyse avec o3
+  async improveAnalysisWithO3(prompt: string): Promise<string> {
+    try {
+      console.log('Amélioration de l\'analyse avec o3...');
+      
+      // Sauvegarder la requête
+      this.requestChain.push({
+        timestamp: new Date().toISOString(),
+        model: 'OpenAI o3',
+        type: 'Amélioration d\'analyse',
+        request: prompt,
+        response: ''
+      });
+
+      if (this.useFirebaseFunctions) {
+        console.log('Amélioration avec o3 via Firebase Functions...');
+        const { analyzeWithO3ViaFunction } = await import('@/lib/firebase-functions');
+        const response = await analyzeWithO3ViaFunction(prompt);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = response;
+        
+        return response;
+      } else {
+        // Mode développement - appel direct o3
+        console.log('Appel API o3 direct pour amélioration (mode dev)...');
+        
+        const response = await axios.post(
+          'https://api.openai.com/v1/responses',
+          {
+            model: 'o3-2025-04-16',
+            prompt: prompt,
+            max_output_tokens: 5000,
+            temperature: 0.3
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const outputText = response.data.output[1].content[0].text || '';
+        console.log('Réponse o3 amélioration, usage:', response.data.usage);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
+        
+        return outputText;
+      }
+    } catch (error: any) {
+      console.error('Erreur amélioration o3:', error);
+      throw new Error('Erreur lors de l\'amélioration avec o3: ' + error.message);
     }
   }
 } 
