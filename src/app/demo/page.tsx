@@ -597,7 +597,7 @@ ${textContent}`;
         // Générer le titre du cas clinique avec GPT-4o-mini
         generateCaseTitle(textContent).then((generatedTitle) => {
           if (caseTitle && caseTitle !== "Cas clinique") {
-            setAnalysisData(prev => ({ ...prev, title: caseTitle }))
+            setAnalysisData((prev: any) => ({ ...prev, title: caseTitle }))
           }
         })
         
@@ -1479,7 +1479,7 @@ INSTRUCTIONS:
   }
 
   const handleDeepReanalysis = async () => {
-    if (!user || userCredits?.credits <= 0) {
+    if (!user || !userCredits || (userCredits.credits ?? 0) <= 0) {
       toast.error("Crédits insuffisants pour une analyse approfondie");
       return;
     }
