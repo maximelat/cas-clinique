@@ -10,6 +10,11 @@ import {
 interface PerplexityResponse {
   citations: any[];
   answer: string;
+  search_results?: Array<{
+    title: string;
+    url: string;
+    date?: string;
+  }>;
 }
 
 interface SectionContent {
@@ -90,31 +95,26 @@ export class AIClientService {
       // Nettoyer le contenu en retirant les balises <think>...</think>
       const cleanContent = messageContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
       
-      // Les citations peuvent être dans différents formats selon la réponse
-      let citations = [];
+      // Récupérer les données de recherche
+      const citations = response.data.citations || [];
+      const search_results = response.data.search_results || [];
       
-      // Vérifier d'abord si les citations sont directement dans la réponse
-      if (response.data.citations) {
-        citations = response.data.citations;
-      } 
-      // Sinon, vérifier dans le message
-      else if (response.data.choices[0].message.citations) {
-        citations = response.data.choices[0].message.citations;
-      }
-      // Sinon, essayer d'extraire les URLs du texte
-      else {
-        const urlRegex = /\[(\d+)\]\s*(https?:\/\/[^\s\)]+)/g;
-        const matches = [...cleanContent.matchAll(urlRegex)];
-        citations = matches.map((match, index) => ({
-          number: match[1],
-          url: match[2],
-          title: `Source ${match[1]}`
-        }));
-      }
+      console.log('Citations Perplexity:', citations);
+      console.log('Search Results Perplexity:', search_results);
+      
+      // Créer un mapping entre les citations et search_results
+      const enhancedSearchResults = search_results.map((result: any, index: number) => {
+        return {
+          ...result,
+          citation_index: index,
+          url: result.url || (citations[index] ? citations[index] : '')
+        };
+      });
 
       return {
         answer: cleanContent,
-        citations: citations
+        citations: citations,
+        search_results: enhancedSearchResults.length > 0 ? enhancedSearchResults : search_results
       };
     } catch (error: any) {
       console.error('Erreur Perplexity détaillée:', error.response?.data || error.message);
@@ -373,34 +373,43 @@ RÈGLES IMPÉRATIVES:
       }
       
       // Préparer le prompt pour GPT-4o
-      const prompt = `Analyse ces références et liens issus d'une recherche médicale. Pour chaque référence, structure EXACTEMENT selon ce format :
+      const prompt = `Analyse ces références médicales issues de Perplexity. IMPORTANT: Les titres et URLs sont DÉJÀ fournis ci-dessous, utilise-les directement.
 
-RAPPORT DE RECHERCHE:
+RAPPORT DE RECHERCHE PERPLEXITY:
 ${perplexityReport.answer}
 
-RÉFÉRENCES À ANALYSER:
-${rawReferences.map((ref, i) => `[${ref.label}] ${ref.url}`).join('\n')}
+RÉFÉRENCES FOURNIES PAR PERPLEXITY:
+${rawReferences.map((ref, i) => {
+  let refLine = `[${ref.label}] `;
+  if (ref.title && ref.title !== `Source ${ref.label}`) {
+    refLine += `TITRE: "${ref.title}" `;
+  }
+  refLine += `URL: ${ref.url}`;
+  if (ref.date) {
+    refLine += ` DATE: ${ref.date}`;
+  }
+  return refLine;
+}).join('\n')}
 
-FORMAT DE RÉPONSE OBLIGATOIRE pour chaque référence :
+INSTRUCTIONS POUR L'ANALYSE:
+Pour chaque référence ci-dessus, formate EXACTEMENT selon ce modèle:
 
-[1] "Titre complet de l'article"
-Auteurs: Nom A, Nom B, et al.
-Journal: Nom du journal, année
+[1] "Utilise le titre fourni ci-dessus"
+URL: Reprends l'URL fournie
+Auteurs: Extrais depuis l'URL si possible (ex: PMC -> chercher les auteurs typiques)
+Journal: Déduis depuis l'URL (ex: PMC -> journal médical, Orphanet -> base de données maladies rares)
+Année: Utilise la date fournie ou déduis depuis l'URL si possible
 Points clés: 
-- Point important 1
-- Point important 2
-Pertinence: Haute/Moyenne/Faible - Explication
+- Résume le lien avec le cas clinique
+- Point pertinent extrait du rapport Perplexity
+Pertinence: Haute/Moyenne/Faible - Justification basée sur le cas
 
-[2] "Titre du deuxième article"
-Auteurs: ...
-(même format)
-
-IMPORTANT:
-- Commence chaque référence par son numéro entre crochets [1], [2], etc.
-- Mets le titre entre guillemets
-- Si une information n'est pas disponible, écris "Non disponible"
-- Résume en 2-3 points clés maximum par référence
-- Évalue la pertinence pour ce cas clinique spécifique`;
+RÈGLES IMPORTANTES:
+1. NE JAMAIS écrire "Non disponible" pour le titre ou l'URL car ils sont fournis
+2. Utilise EXACTEMENT les titres fournis entre guillemets
+3. Pour les auteurs/journal, déduis depuis l'URL si pas d'info (ex: pmc.ncbi.nlm.nih.gov = article PMC)
+4. Base tes points clés sur le contenu du rapport Perplexity
+5. Évalue la pertinence en fonction du cas clinique analysé`;
 
       if (this.useFirebaseFunctions) {
         console.log('Analyse des références avec GPT-4o via Firebase Functions...');
@@ -521,92 +530,99 @@ IMPORTANT:
   private extractReferences(perplexityReport: PerplexityResponse): any[] {
     const references: any[] = [];
     console.log('Extraction des références...');
+    console.log('Citations disponibles:', perplexityReport.citations?.length || 0);
+    console.log('Search results disponibles:', perplexityReport.search_results?.length || 0);
 
-    // D'abord essayer d'extraire depuis la section Sources du texte
-    const sourcesMatch = perplexityReport.answer.match(/###\s*\*?\*?Sources?\*?\*?:?\s*\n([\s\S]*?)(?=###|$)/i);
-    
-    if (sourcesMatch) {
-      // Pattern pour extraire chaque source de la section Sources
-      const sourcePattern = /\[(\d+)\]\s*(?:\[([^\]]+)\])?\s*\(([^)]+)\)/g;
-      let match;
-      
-      while ((match = sourcePattern.exec(sourcesMatch[1])) !== null) {
-        const num = match[1];
-        const title = match[2] || `Source ${num}`;
-        const url = match[3];
-        
+    // Utiliser search_results en priorité s'ils existent
+    if (perplexityReport.search_results && perplexityReport.search_results.length > 0) {
+      perplexityReport.search_results.forEach((result, index) => {
         references.push({
-          label: num,
-          title: title.trim(),
-          url: url.trim(),
+          label: String(index + 1),
+          title: result.title || `Source ${index + 1}`,
+          url: result.url,
           authors: '',
-          year: null,
-          journal: ''
-        });
-      }
-    }
-    
-    // Si on n'a pas trouvé de section Sources, chercher les citations inline
-    if (references.length === 0 && perplexityReport.answer) {
-      // Extraire tous les numéros de citation utilisés dans le texte
-      const citationNumbersRegex = /\[(\d+)\]/g;
-      const citationNumbers = new Set<string>();
-      let match;
-      
-      while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
-        citationNumbers.add(match[1]);
-      }
-      
-      // Pour chaque numéro, créer une référence
-      Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
-        references.push({
-          label: num,
-          title: `Source ${num}`,
-          url: '#',
-          authors: '',
-          year: null,
-          journal: ''
+          year: result.date ? new Date(result.date).getFullYear() : null,
+          journal: '',
+          date: result.date
         });
       });
     }
-    
-    // Si on a des citations dans le format API Perplexity
-    if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
-      perplexityReport.citations.forEach((citation: any, index: number) => {
-        const refIndex = references.findIndex(ref => ref.label === String(index + 1));
+    // Si pas de search_results, utiliser citations et extraire depuis le texte
+    else {
+      // D'abord essayer d'extraire depuis la section Sources du texte
+      const sourcesMatch = perplexityReport.answer.match(/###\s*\*?\*?Sources?\*?\*?:?\s*\n([\s\S]*?)(?=###|$)/i);
+      
+      if (sourcesMatch) {
+        // Pattern pour extraire chaque source de la section Sources
+        const sourcePattern = /\[(\d+)\]\s*(?:\[([^\]]+)\])?\s*\(([^)]+)\)/g;
+        let match;
         
-        if (typeof citation === 'string') {
-          // URL simple
-          if (refIndex >= 0) {
-            references[refIndex].url = citation;
-          } else {
+        while ((match = sourcePattern.exec(sourcesMatch[1])) !== null) {
+          const num = match[1];
+          const title = match[2] || `Source ${num}`;
+          const url = match[3];
+          
+          references.push({
+            label: num,
+            title: title.trim(),
+            url: url.trim(),
+            authors: '',
+            year: null,
+            journal: ''
+          });
+        }
+      }
+      
+      // Si on n'a pas trouvé de section Sources, utiliser les citations
+      if (references.length === 0 && perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
+        perplexityReport.citations.forEach((citation, index) => {
+          const refLabel = String(index + 1);
+          
+          if (typeof citation === 'string') {
+            // URL simple
             references.push({
-              label: String(index + 1),
-              title: `Source ${index + 1}`,
+              label: refLabel,
+              title: `Source ${refLabel}`,
               url: citation,
               authors: '',
               year: null,
               journal: ''
             });
+          } else if (typeof citation === 'object' && citation !== null) {
+            // Objet structuré
+            references.push({
+              label: refLabel,
+              title: citation.title || citation.name || citation.text || `Source ${refLabel}`,
+              url: citation.url || citation.link || citation || '#',
+              authors: citation.authors?.join?.(', ') || citation.author || '',
+              year: citation.year || citation.date ? new Date(citation.date).getFullYear() : null,
+              journal: citation.journal || citation.source || ''
+            });
           }
-        } else if (typeof citation === 'object' && citation !== null) {
-          // Objet structuré
-          const newRef = {
-            label: String(index + 1),
-            title: citation.title || citation.name || citation.text || `Source ${index + 1}`,
-            url: citation.url || citation.link || '#',
-            authors: citation.authors?.join?.(', ') || citation.author || '',
-            year: citation.year || null,
-            journal: citation.journal || citation.source || ''
-          };
-          
-          if (refIndex >= 0) {
-            references[refIndex] = { ...references[refIndex], ...newRef };
-          } else {
-            references.push(newRef);
-          }
+        });
+      }
+      
+      // En dernier recours, extraire les numéros de citation du texte
+      if (references.length === 0 && perplexityReport.answer) {
+        const citationNumbersRegex = /\[(\d+)\]/g;
+        const citationNumbers = new Set<string>();
+        let match;
+        
+        while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
+          citationNumbers.add(match[1]);
         }
-      });
+        
+        Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
+          references.push({
+            label: num,
+            title: `Source ${num}`,
+            url: '#',
+            authors: '',
+            year: null,
+            journal: ''
+          });
+        });
+      }
     }
     
     console.log(`${references.length} références extraites`);

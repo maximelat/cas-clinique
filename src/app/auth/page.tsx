@@ -21,7 +21,7 @@ export default function AuthPage() {
 
   const features = [
     "3 analyses gratuites à l'inscription",
-    "Analyses par IA médicale avancée (o3 & o4-mini)",
+    "Analyses par IA médicale avancée avec rasionnement",
     "Rapport complet avec références scientifiques",
     "Sauvegarde de vos analyses dans l'historique",
     "Export PDF et partage des résultats"
