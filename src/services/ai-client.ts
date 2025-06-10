@@ -27,7 +27,15 @@ export class AIClientService {
   private openaiApiKey: string | undefined;
   private isProduction: boolean = false;
   private useFirebaseFunctions: boolean = false;
-
+  
+  // Nouveau : stockage de la chaîne de requêtes/réponses
+  private requestChain: Array<{
+    timestamp: string;
+    model: string;
+    type: string;
+    request: string;
+    response: string;
+  }> = [];
 
   constructor() {
     // Clés API exposées côté client - À utiliser uniquement pour des projets de démonstration
@@ -47,6 +55,16 @@ export class AIClientService {
     }
   }
 
+  // Méthode pour récupérer la chaîne de requêtes
+  getRequestChain() {
+    return [...this.requestChain];
+  }
+
+  // Méthode pour réinitialiser la chaîne
+  clearRequestChain() {
+    this.requestChain = [];
+  }
+
   hasApiKeys(): boolean {
     return !!(this.perplexityApiKey && (this.openaiApiKey || this.useFirebaseFunctions));
   }
@@ -56,28 +74,39 @@ export class AIClientService {
       throw new Error('Clé API Perplexity non configurée');
     }
 
+    const requestData = {
+      model: 'sonar-reasoning-pro',
+      messages: [
+        {
+          role: 'system',
+          content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni. INSTRUCTIONS IMPORTANTES: 1) Concentre-toi UNIQUEMENT sur les publications médicales datant de moins de 5 ans (2020-2025), les guidelines récentes et les études cliniques actuelles. 2) Pour CHAQUE affirmation, cite OBLIGATOIREMENT la source avec [1], [2], etc. 3) Fournis l\'URL complète de chaque source citée. 4) Structure ta réponse de manière claire avec des sections bien définies.'
+        },
+        {
+          role: 'user',
+          content: query
+        }
+      ],
+      stream: false,
+      search_mode: 'academic',
+      web_search_options: {
+        search_context_size: 'high'
+      }
+    };
+
     try {
+      // Sauvegarder la requête
+      this.requestChain.push({
+        timestamp: new Date().toISOString(),
+        model: 'Perplexity sonar-reasoning-pro',
+        type: 'Recherche académique',
+        request: JSON.stringify(requestData, null, 2),
+        response: '' // Sera mis à jour après la réponse
+      });
+
       // Utiliser l'API Perplexity directement sans proxy (ils supportent CORS)
       const response = await axios.post(
         'https://api.perplexity.ai/chat/completions',
-        {
-          model: 'sonar-reasoning-pro',
-          messages: [
-            {
-              role: 'system',
-              content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni. INSTRUCTIONS IMPORTANTES: 1) Concentre-toi UNIQUEMENT sur les publications médicales datant de moins de 5 ans (2020-2025), les guidelines récentes et les études cliniques actuelles. 2) Pour CHAQUE affirmation, cite OBLIGATOIREMENT la source avec [1], [2], etc. 3) Fournis l\'URL complète de chaque source citée. 4) Structure ta réponse de manière claire avec des sections bien définies.'
-            },
-            {
-              role: 'user',
-              content: query
-            }
-          ],
-          stream: false,
-          search_mode: 'academic',
-          web_search_options: {
-            search_context_size: 'high'
-          }
-        },
+        requestData,
         {
           headers: {
             'Authorization': `Bearer ${this.perplexityApiKey}`,
@@ -88,6 +117,9 @@ export class AIClientService {
       );
 
       console.log('Réponse Perplexity complète:', response.data);
+
+      // Sauvegarder la réponse
+      this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
 
       // Extraire la réponse et les citations
       const messageContent = response.data.choices[0].message.content;
@@ -161,10 +193,24 @@ RÈGLES IMPÉRATIVES:
 4. Si des images sont mentionnées, intègre leurs résultats dans les sections appropriées
 5. Assure-toi que CHAQUE section est présente et bien formatée`;
 
+      // Sauvegarder la requête
+      this.requestChain.push({
+        timestamp: new Date().toISOString(),
+        model: 'OpenAI o3',
+        type: 'Analyse clinique complète',
+        request: prompt,
+        response: ''
+      });
+
       if (this.useFirebaseFunctions) {
         console.log('Analyse avec o3 via Firebase Functions...');
         const { analyzeWithO3ViaFunction } = await import('@/lib/firebase-functions');
-        return await analyzeWithO3ViaFunction(prompt);
+        const response = await analyzeWithO3ViaFunction(prompt);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = response;
+        
+        return response;
       } else {
         // Mode développement - appel direct o3
         console.log('Appel API o3 direct (mode dev)...');
@@ -189,6 +235,9 @@ RÈGLES IMPÉRATIVES:
         const outputText = response.data.output[1].content[0].text || '';
         console.log('Réponse o3 dev, usage:', response.data.usage);
         
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
+        
         return outputText;
       }
     } catch (error: any) {
@@ -202,10 +251,13 @@ RÈGLES IMPÉRATIVES:
     progressCallback?: (message: string) => void,
     sectionCallback?: (section: any, index: number, total: number) => void,
     images?: { base64: string, type: string }[]
-  ): Promise<{ sections: any[], references: any[], perplexityReport: any }> {
+  ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[] }> {
     if (!this.hasApiKeys()) {
       throw new Error('Les clés API ne sont pas configurées');
     }
+
+    // Réinitialiser la chaîne de requêtes pour cette nouvelle analyse
+    this.clearRequestChain();
 
     try {
       // Étape 1 : Recherche Perplexity
@@ -267,7 +319,8 @@ RÈGLES IMPÉRATIVES:
       return {
         sections,
         references: referencesAnalysis.references,
-        perplexityReport
+        perplexityReport,
+        requestChain: this.getRequestChain()
       };
     } catch (error: any) {
       console.error('Erreur complète dans analyzeClinicalCase:', error);
@@ -411,10 +464,23 @@ RÈGLES IMPORTANTES:
 4. Base tes points clés sur le contenu du rapport Perplexity
 5. Évalue la pertinence en fonction du cas clinique analysé`;
 
+      // Sauvegarder la requête
+      this.requestChain.push({
+        timestamp: new Date().toISOString(),
+        model: 'GPT-4o',
+        type: 'Analyse des références',
+        request: prompt,
+        response: ''
+      });
+
       if (this.useFirebaseFunctions) {
         console.log('Analyse des références avec GPT-4o via Firebase Functions...');
         // TODO: Créer une fonction Firebase pour GPT-4o
         const analysis = await this.callGPT4ViaFirebase(prompt);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = analysis;
+        
         return {
           analysis,
           references: rawReferences
@@ -445,6 +511,9 @@ RÈGLES IMPORTANTES:
         );
 
         const analysis = response.data.choices?.[0]?.message?.content || '';
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
         
         // Enrichir les références avec l'analyse
         const enrichedReferences = this.enrichReferencesFromAnalysis(rawReferences, analysis);
@@ -642,10 +711,24 @@ RÈGLES IMPORTANTES:
     
     Sois précis et méthodique. Liste toutes les anomalies observées et leur signification clinique potentielle.`;
 
+    // Sauvegarder la requête
+    this.requestChain.push({
+      timestamp: new Date().toISOString(),
+      model: this.useFirebaseFunctions ? 'o3 (via Firebase)' : 'GPT-4o Vision',
+      type: `Analyse d'image ${imageType}`,
+      request: prompt + '\n\n[Image Base64 fournie]',
+      response: ''
+    });
+
     try {
       if (this.useFirebaseFunctions) {
         console.log('Analyse d\'image avec o3 via Firebase Functions...');
-        return await analyzeImageWithO3ViaFunction(prompt, imageBase64);
+        const response = await analyzeImageWithO3ViaFunction(prompt, imageBase64);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = response;
+        
+        return response;
       } else {
         // Mode développement - utiliser GPT-4o pour les images (o3 ne supporte pas encore)
         console.log('Analyse d\'image avec GPT-4o (mode dev)...');
@@ -684,6 +767,9 @@ RÈGLES IMPORTANTES:
 
         const outputText = response.data.choices?.[0]?.message?.content || '';
         console.log('Réponse GPT-4o Vision dev, usage:', response.data.usage);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
         
         return outputText;
       }

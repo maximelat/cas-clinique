@@ -510,55 +510,92 @@ function DemoPageContent() {
   }
 
   const exportAsText = () => {
-    let content = `ANALYSE DE CAS CLINIQUE\n${new Date().toLocaleDateString('fr-FR')}\n\n${'='.repeat(50)}\n\n`
-    
-    if (analysisData?.isDemo) {
-      Object.entries(demoSections).forEach(([key, text]) => {
-        content += `${sectionTitles[key as keyof typeof sectionTitles]}\n${'-'.repeat(40)}\n${text}\n\n`
-      })
-    } else if (analysisData?.sections) {
-      const sections = currentSections.length > 0 ? currentSections : analysisData.sections
-      sections.forEach((section: any) => {
-        content += `${sectionTitles[section.type as keyof typeof sectionTitles]}\n${'-'.repeat(40)}\n${section.content}\n\n`
-      })
+    if (!analysisData || !analysisData.sections) {
+      toast.error("Aucune analyse à exporter")
+      return
     }
-    
-    // Ajouter la section maladies rares si présente
-    if (rareDiseaseData && showRareDiseaseSection) {
-      content += `\n8. Recherche de maladies rares\n${'-'.repeat(40)}\n${rareDiseaseData.report}\n\n`
-    }
-    
-    // Ajouter les références
-    content += `\nRÉFÉRENCES BIBLIOGRAPHIQUES\n${'='.repeat(50)}\n\n`
-    const references = analysisData?.isDemo ? demoReferences : (analysisData?.references || [])
-    references.forEach((ref: any) => {
-      content += `[${ref.label}] ${ref.title}\n`
-      if (ref.authors) content += `    Auteurs: ${ref.authors}\n`
-      if (ref.journal) content += `    Journal: ${ref.journal}\n`
-      if (ref.year) content += `    Année: ${ref.year}\n`
-      if (ref.url && ref.url !== '#') content += `    URL: ${ref.url}\n`
-      content += '\n'
+
+    const sections = analysisData.sections
+    let textContent = `ANALYSE CLINIQUE\n`
+    textContent += `================\n\n`
+    textContent += `Date: ${new Date().toLocaleString('fr-FR')}\n\n`
+
+    sections.forEach((section: any) => {
+      const title = sectionTitles[section.type as keyof typeof sectionTitles] || section.type
+      textContent += `${title}\n`
+      textContent += `${'-'.repeat(title.length)}\n`
+      textContent += `${section.content}\n\n`
     })
-    
-    // Ajouter les références maladies rares si présentes
-    if (rareDiseaseData && rareDiseaseData.references.length > 0) {
-      content += `\nRÉFÉRENCES - MALADIES RARES\n${'='.repeat(50)}\n\n`
-      rareDiseaseData.references.forEach((ref: any) => {
-        content += `[${ref.label}] ${ref.title}\n`
-        if (ref.url && ref.url !== '#') content += `    URL: ${ref.url}\n`
-        content += '\n'
-      })
+
+    if (analysisData.references && analysisData.references.length > 0) {
+      textContent += `RÉFÉRENCES:\n${analysisData.references.map((ref: any) => 
+        `[${ref.label}] ${ref.title} - ${ref.url}`
+      ).join('\n')}`
     }
-    
-    const blob = new Blob([content], { type: 'text/plain; charset=utf-8' })
+
+    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'analyse-cas-clinique.txt'
+    a.download = `analyse-clinique-${new Date().toISOString().split('T')[0]}.txt`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    toast.success("Fichier texte téléchargé")
   }
+
+  // Nouvelle fonction pour exporter la chaîne de requêtes
+  const exportRequestChain = () => {
+    if (!analysisData || !analysisData.requestChain) {
+      toast.error("Aucune chaîne de requêtes disponible")
+      return
+    }
+
+    let chainContent = "=== CHAÎNE COMPLÈTE DES REQUÊTES ET RÉPONSES ===\n";
+    chainContent += `Exporté le : ${new Date().toLocaleString('fr-FR')}\n`;
+    chainContent += `Cas clinique : ${analysisData.caseText || textContent}\n`;
+    chainContent += "=================================================\n\n";
+
+    analysisData.requestChain.forEach((item: any, index: number) => {
+      chainContent += `\n--- REQUÊTE ${index + 1} ---\n`;
+      chainContent += `Timestamp : ${new Date(item.timestamp).toLocaleString('fr-FR')}\n`;
+      chainContent += `Modèle : ${item.model}\n`;
+      chainContent += `Type : ${item.type}\n\n`;
+      
+      chainContent += "=== REQUÊTE ===\n";
+      chainContent += item.request + "\n\n";
+      
+      chainContent += "=== RÉPONSE ===\n";
+      // Si la réponse est déjà un string JSON, essayer de le parser et le reformater
+      try {
+        const parsed = JSON.parse(item.response);
+        chainContent += JSON.stringify(parsed, null, 2) + "\n";
+      } catch {
+        // Si ce n'est pas du JSON, afficher tel quel
+        chainContent += item.response + "\n";
+      }
+      
+      chainContent += "\n" + "=".repeat(80) + "\n";
+    });
+
+    // Ajouter un résumé
+    chainContent += "\n\n=== RÉSUMÉ ===\n";
+    chainContent += `Nombre total de requêtes : ${analysisData.requestChain.length}\n`;
+    chainContent += `Modèles utilisés : ${[...new Set(analysisData.requestChain.map((r: any) => r.model))].join(', ')}\n`;
+
+    // Télécharger le fichier
+    const blob = new Blob([chainContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chaine-requetes-${analysisData.id || new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success("Chaîne de requêtes exportée !");
+  };
 
   const exportAsPDF = async () => {
     const element = document.getElementById('analysis-results')
@@ -1274,6 +1311,18 @@ function DemoPageContent() {
                   >
                     <FileText className="mr-2 h-4 w-4" />
                     Export All ({analysisHistory.length})
+                  </Button>
+                )}
+                {/* Nouveau bouton Export Chain pour maxime.latry@gmail.com */}
+                {user?.email === 'maxime.latry@gmail.com' && analysisData?.requestChain && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportRequestChain}
+                    className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Export Chain
                   </Button>
                 )}
                 {!analysisData?.isDemo && analysisData?.perplexityReport && (
