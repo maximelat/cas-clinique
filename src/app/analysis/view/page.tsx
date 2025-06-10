@@ -6,7 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { ArrowLeft, Download, FileDown, FileText, Copy, Calendar, Microscope } from "lucide-react"
+import { ArrowLeft, Download, FileDown, FileText, Copy, Calendar, Microscope, Plus, RefreshCw, GitBranch } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/AuthContext"
 import { HistoryService, AnalysisRecord } from "@/services/history"
@@ -16,6 +16,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { Label } from "@/components/ui/label"
+import { AIClientService } from "@/services/ai-client"
+import { CreditsService } from "@/services/credits"
+import { Timestamp } from "firebase/firestore"
 
 const sectionTitles = {
   CLINICAL_CONTEXT: "1. Contexte clinique",
@@ -35,6 +39,18 @@ function AnalysisView() {
   const [analysis, setAnalysis] = useState<AnalysisRecord | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const id = searchParams.get('id')
+  
+  // Nouveaux états pour la réanalyse
+  const [isEditingSection, setIsEditingSection] = useState<{ [key: string]: boolean }>({})
+  const [additionalInfo, setAdditionalInfo] = useState<{ [key: string]: string }>({})
+  const [isReanalyzing, setIsReanalyzing] = useState(false)
+  const [progressMessage, setProgressMessage] = useState("")
+  const [userCredits, setUserCredits] = useState<{ credits: number } | null>(null)
+  const [analysisVersions, setAnalysisVersions] = useState<any[]>([])
+  const [currentVersion, setCurrentVersion] = useState(0)
+  const [showVersionComparison, setShowVersionComparison] = useState(false)
+  
+  const aiService = new AIClientService()
 
   useEffect(() => {
     if (!user) {
@@ -44,6 +60,23 @@ function AnalysisView() {
     
     loadAnalysis()
   }, [user, id, router])
+
+  // Charger les crédits utilisateur
+  useEffect(() => {
+    if (user) {
+      refreshCredits()
+    }
+  }, [user])
+
+  const refreshCredits = async () => {
+    if (!user) return
+    try {
+      const credits = await CreditsService.getUserCredits(user.uid)
+      setUserCredits(credits)
+    } catch (error) {
+      console.error('Erreur chargement crédits:', error)
+    }
+  }
 
   const loadAnalysis = async () => {
     if (!id) return
@@ -262,6 +295,181 @@ function AnalysisView() {
     }
   }
 
+  // Nouvelles fonctions pour la réanalyse
+  const handleAddInformation = (sectionType: string) => {
+    setIsEditingSection({ ...isEditingSection, [sectionType]: true })
+  }
+
+  const handleCancelEdit = (sectionType: string) => {
+    setIsEditingSection({ ...isEditingSection, [sectionType]: false })
+    setAdditionalInfo({ ...additionalInfo, [sectionType]: '' })
+  }
+
+  const handleSaveAdditionalInfo = async (sectionType: string) => {
+    if (!analysis || !user) return
+    
+    const info = additionalInfo[sectionType]
+    if (!info?.trim()) {
+      toast.error("Veuillez ajouter des informations")
+      return
+    }
+
+    setIsEditingSection({ ...isEditingSection, [sectionType]: false })
+    setIsReanalyzing(true)
+    setProgressMessage("Amélioration de l'analyse en cours...")
+
+    try {
+      // Sauvegarder la version actuelle
+      const currentAnalysis = {
+        ...analysis,
+        version: currentVersion,
+        timestamp: new Date().toISOString()
+      }
+      setAnalysisVersions([...analysisVersions, currentAnalysis])
+
+      // Préparer le contexte pour la ré-analyse
+      const currentSection = analysis.sections.find((s: any) => s.type === sectionType)
+      const allSections = analysis.sections.map((s: any) => 
+        `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`
+      ).join('\n\n')
+
+      const prompt = `Tu as analysé ce cas clinique et produit l'analyse suivante:
+
+CAS CLINIQUE ORIGINAL:
+${analysis.caseText}
+
+ANALYSE COMPLÈTE:
+${allSections}
+
+RÉFÉRENCES DISPONIBLES:
+${analysis.references.map((ref: any) => `[${ref.label}] ${ref.title} - ${ref.url}`).join('\n')}
+
+L'utilisateur a ajouté ces INFORMATIONS COMPLÉMENTAIRES pour la section "${sectionTitles[sectionType as keyof typeof sectionTitles]}":
+${info}
+
+INSTRUCTIONS:
+1. Intègre ces nouvelles informations dans la section spécifiée
+2. Ajuste si nécessaire les autres sections qui pourraient être impactées
+3. Utilise EXACTEMENT le même format que l'analyse originale
+4. Conserve toutes les références [X] existantes
+5. Retourne UNIQUEMENT le contenu amélioré de la section, sans répéter le titre`
+
+      // Appeler o3 pour améliorer l'analyse
+      const response = await aiService.improveAnalysisWithO3(prompt)
+      
+      // Mettre à jour la section
+      const updatedSections = analysis.sections.map((section: any) => {
+        if (section.type === sectionType) {
+          return { ...section, content: response }
+        }
+        return section
+      })
+
+      // Créer la nouvelle version
+      const newAnalysisData = {
+        ...analysis,
+        sections: updatedSections,
+        lastModified: Timestamp.fromDate(new Date()),
+        modificationHistory: [
+          ...(analysis.modificationHistory || []),
+          {
+            sectionType,
+            additionalInfo: info,
+            timestamp: new Date().toISOString(),
+            version: currentVersion + 1
+          }
+        ]
+      }
+
+      // Sauvegarder dans Firebase
+      await HistoryService.updateAnalysis(analysis.id, newAnalysisData)
+      
+      setAnalysis(newAnalysisData)
+      setCurrentVersion(currentVersion + 1)
+      setAdditionalInfo({ ...additionalInfo, [sectionType]: '' })
+      
+      toast.success("Section améliorée avec succès !")
+    } catch (error) {
+      console.error('Erreur amélioration:', error)
+      toast.error("Erreur lors de l'amélioration de l'analyse")
+    } finally {
+      setIsReanalyzing(false)
+      setProgressMessage("")
+    }
+  }
+
+  const handleDeepReanalysis = async () => {
+    if (!user || !userCredits || (userCredits.credits ?? 0) <= 0 || !analysis) {
+      toast.error("Crédits insuffisants pour une analyse approfondie")
+      return
+    }
+
+    setIsReanalyzing(true)
+    setProgressMessage("Nouvelle recherche approfondie en cours...")
+
+    try {
+      // Utiliser un crédit
+      await CreditsService.useCredit(user.uid)
+      await refreshCredits()
+
+      // Construire le nouveau contexte avec toutes les modifications
+      let enrichedContext = analysis.caseText
+      if (analysis.modificationHistory && analysis.modificationHistory.length > 0) {
+        enrichedContext += "\n\nINFORMATIONS COMPLÉMENTAIRES AJOUTÉES:\n"
+        analysis.modificationHistory.forEach((mod: any) => {
+          enrichedContext += `- ${sectionTitles[mod.sectionType as keyof typeof sectionTitles]}: ${mod.additionalInfo}\n`
+        })
+      }
+
+      // Relancer une analyse complète
+      const result = await aiService.analyzeClinicalCase(
+        enrichedContext,
+        (message) => setProgressMessage(message),
+        undefined,
+        analysis.images
+      )
+
+      // Sauvegarder l'ancienne version
+      const currentAnalysis = {
+        ...analysis,
+        version: currentVersion,
+        timestamp: new Date().toISOString()
+      }
+      setAnalysisVersions([...analysisVersions, currentAnalysis])
+
+      // Mettre à jour avec la nouvelle analyse
+      const newAnalysisData = {
+        ...result,
+        id: analysis.id,
+        userId: analysis.userId,
+        date: analysis.date,
+        title: analysis.title,
+        caseText: enrichedContext,
+        version: currentVersion + 1,
+        isDeepReanalysis: true,
+        previousVersions: analysisVersions.length + 1
+      }
+
+      // Sauvegarder dans Firebase
+      await HistoryService.updateAnalysis(analysis.id, newAnalysisData)
+      
+      setAnalysis(newAnalysisData)
+      setCurrentVersion(currentVersion + 1)
+      
+      toast.success("Analyse approfondie terminée !")
+    } catch (error) {
+      console.error('Erreur analyse approfondie:', error)
+      toast.error("Erreur lors de l'analyse approfondie")
+    } finally {
+      setIsReanalyzing(false)
+      setProgressMessage("")
+    }
+  }
+
+  const toggleVersionComparison = () => {
+    setShowVersionComparison(!showVersionComparison)
+  }
+
   if (!user || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -302,6 +510,31 @@ function AnalysisView() {
             </CardHeader>
             <CardContent>
               <div className="flex gap-2">
+                {/* Boutons pour la gestion des versions */}
+                {analysisVersions.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleVersionComparison}
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
+                  >
+                    <GitBranch className="mr-2 h-4 w-4" />
+                    Versions ({analysisVersions.length})
+                  </Button>
+                )}
+                {/* Bouton reprise approfondie */}
+                {analysis.modificationHistory && analysis.modificationHistory.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeepReanalysis}
+                    disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
+                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Reprise approfondie
+                  </Button>
+                )}
                 {analysis.perplexityReport && (
                   <Button
                     variant="outline"
@@ -340,6 +573,47 @@ function AnalysisView() {
             </CardContent>
           </Card>
           
+          {/* Indicateur de ré-analyse en cours */}
+          {isReanalyzing && progressMessage && (
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2 text-blue-700">
+                <RefreshCw className="h-5 w-5 animate-spin" />
+                <span className="font-medium">{progressMessage}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Comparaison des versions */}
+          {showVersionComparison && analysisVersions.length > 0 && (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>Historique des versions</CardTitle>
+                <CardDescription>
+                  Version actuelle: {currentVersion + 1} | {analysisVersions.length} version(s) précédente(s)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {analysisVersions.map((version, idx) => (
+                    <div key={idx} className="p-3 bg-gray-50 rounded-lg border">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">Version {version.version + 1}</span>
+                        <span className="text-sm text-gray-500">
+                          {new Date(version.timestamp).toLocaleString('fr-FR')}
+                        </span>
+                      </div>
+                      {version.modificationHistory?.slice(-1).map((mod: any, i: number) => (
+                        <p key={i} className="text-sm text-gray-600 mt-1">
+                          Modification: {sectionTitles[mod.sectionType as keyof typeof sectionTitles]}
+                        </p>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
           <Accordion type="single" collapsible className="w-full space-y-4" defaultValue="0">
             {analysis.sections.map((section: any, index: number) => (
               <AccordionItem key={index} value={String(index)} className="border rounded-lg">
@@ -349,7 +623,58 @@ function AnalysisView() {
                   </span>
                 </AccordionTrigger>
                 <AccordionContent className="px-6 pb-6">
-                  {renderContentWithReferences(section.content, analysis.references || [])}
+                  {/* Contenu de la section */}
+                  <div className="mb-4">
+                    {renderContentWithReferences(section.content, analysis.references || [])}
+                  </div>
+                  
+                  {/* Zone d'édition pour ajouter des informations */}
+                  {isEditingSection[section.type] ? (
+                    <div className="mt-4 space-y-3 border-t pt-4">
+                      <Label className="text-sm font-medium flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        Ajouter des informations complémentaires
+                      </Label>
+                      <textarea
+                        value={additionalInfo[section.type] || ''}
+                        onChange={(e) => setAdditionalInfo({
+                          ...additionalInfo,
+                          [section.type]: e.target.value
+                        })}
+                        placeholder="Ex: Le patient présente également une toux sèche depuis 3 jours..."
+                        className="w-full p-3 border rounded-lg resize-none h-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleSaveAdditionalInfo(section.type)}
+                          disabled={!additionalInfo[section.type]?.trim() || isReanalyzing}
+                        >
+                          Améliorer l'analyse
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleCancelEdit(section.type)}
+                        >
+                          Annuler
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 border-t pt-4">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAddInformation(section.type)}
+                        disabled={isReanalyzing}
+                        className="w-full"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Ajouter des informations
+                      </Button>
+                    </div>
+                  )}
                 </AccordionContent>
               </AccordionItem>
             ))}

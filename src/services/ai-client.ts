@@ -626,13 +626,36 @@ RÈGLES IMPORTANTES:
     // Utiliser search_results en priorité s'ils existent
     if (perplexityReport.search_results && perplexityReport.search_results.length > 0) {
       perplexityReport.search_results.forEach((result, index) => {
+        // Extraire plus d'informations depuis l'URL si possible
+        let inferredAuthors = '';
+        let inferredJournal = '';
+        
+        if (result.url) {
+          // Déduire depuis PMC
+          if (result.url.includes('pmc.ncbi.nlm.nih.gov')) {
+            inferredJournal = 'PubMed Central';
+          }
+          // Déduire depuis PubMed
+          else if (result.url.includes('pubmed.ncbi.nlm.nih.gov')) {
+            inferredJournal = 'PubMed';
+          }
+          // Déduire depuis Orphanet
+          else if (result.url.includes('orphanet')) {
+            inferredJournal = 'Orphanet - Base de données des maladies rares';
+          }
+          // Déduire depuis OMIM
+          else if (result.url.includes('omim.org')) {
+            inferredJournal = 'OMIM - Online Mendelian Inheritance in Man';
+          }
+        }
+        
         references.push({
           label: String(index + 1),
           title: result.title || `Source ${index + 1}`,
           url: result.url,
-          authors: '',
+          authors: inferredAuthors,
           year: result.date ? new Date(result.date).getFullYear() : null,
-          journal: '',
+          journal: inferredJournal,
           date: result.date
         });
       });
@@ -643,24 +666,39 @@ RÈGLES IMPORTANTES:
       const sourcesMatch = perplexityReport.answer.match(/###\s*\*?\*?Sources?\*?\*?:?\s*\n([\s\S]*?)(?=###|$)/i);
       
       if (sourcesMatch) {
-        // Pattern pour extraire chaque source de la section Sources
-        const sourcePattern = /\[(\d+)\]\s*(?:\[([^\]]+)\])?\s*\(([^)]+)\)/g;
-        let match;
+        // Pattern amélioré pour extraire plus d'infos
+        const sourceLines = sourcesMatch[1].split('\n').filter(line => line.trim());
         
-        while ((match = sourcePattern.exec(sourcesMatch[1])) !== null) {
-          const num = match[1];
-          const title = match[2] || `Source ${num}`;
-          const url = match[3];
+        sourceLines.forEach((line, index) => {
+          // Pattern pour [1] Titre (URL) ou [1] [Titre](URL)
+          const match = line.match(/\[(\d+)\]\s*(?:\[([^\]]+)\])?\s*(?:\(([^)]+)\))?/);
           
-          references.push({
-            label: num,
-            title: title.trim(),
-            url: url.trim(),
-            authors: '',
-            year: null,
-            journal: ''
-          });
-        }
+          if (match) {
+            const num = match[1];
+            let title = match[2] || '';
+            const url = match[3] || '';
+            
+            // Si pas de titre entre crochets, essayer d'extraire du texte restant
+            if (!title && line.includes(']')) {
+              const textAfterBracket = line.substring(line.indexOf(']') + 1).trim();
+              // Extraire jusqu'à l'URL si présente
+              if (textAfterBracket && url) {
+                title = textAfterBracket.replace(/\([^)]+\)/, '').trim();
+              } else {
+                title = textAfterBracket;
+              }
+            }
+            
+            references.push({
+              label: num,
+              title: title || `Source ${num}`,
+              url: url || '#',
+              authors: '',
+              year: null,
+              journal: ''
+            });
+          }
+        });
       }
       
       // Si on n'a pas trouvé de section Sources, utiliser les citations
@@ -716,6 +754,7 @@ RÈGLES IMPORTANTES:
     }
     
     console.log(`${references.length} références extraites`);
+    console.log('Références extraites:', JSON.stringify(references, null, 2));
     return references;
   }
 

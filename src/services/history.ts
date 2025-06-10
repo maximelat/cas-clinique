@@ -24,6 +24,16 @@ export interface AnalysisRecord {
   perplexityReport?: any;
   rareDiseaseData?: any;
   images?: { base64: string, type: string, name: string }[];
+  modificationHistory?: Array<{
+    sectionType: string;
+    additionalInfo: string;
+    timestamp: string;
+    version: number;
+  }>;
+  lastModified?: Timestamp;
+  version?: number;
+  isDeepReanalysis?: boolean;
+  previousVersions?: number;
 }
 
 export class HistoryService {
@@ -119,6 +129,45 @@ export class HistoryService {
     } catch (error) {
       console.error('Erreur lors de la récupération de l\'analyse:', error);
       throw new Error('Impossible de récupérer l\'analyse');
+    }
+  }
+  
+  /**
+   * Mettre à jour une analyse existante
+   */
+  static async updateAnalysis(analysisId: string, updates: Partial<AnalysisRecord>): Promise<void> {
+    try {
+      if (!db) {
+        throw new Error('Base de données non initialisée');
+      }
+      
+      // Vérifier que l'analyse existe
+      const existingAnalysis = await this.getAnalysis(analysisId);
+      if (!existingAnalysis) {
+        throw new Error('Analyse non trouvée');
+      }
+      
+      // Filtrer les champs undefined
+      const cleanedUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key as keyof AnalysisRecord] = value;
+        }
+        return acc;
+      }, {} as any);
+      
+      // Mettre à jour le document
+      await setDoc(
+        doc(db, this.COLLECTION_NAME, analysisId),
+        {
+          ...existingAnalysis,
+          ...cleanedUpdates,
+          lastModified: Timestamp.fromDate(new Date())
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour de l\'analyse:', error);
+      throw new Error('Impossible de mettre à jour l\'analyse');
     }
   }
   
