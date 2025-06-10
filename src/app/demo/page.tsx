@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -137,7 +137,8 @@ const demoReferences = [
   }
 ]
 
-export default function DemoPage() {
+// Composant interne qui utilise useSearchParams
+function DemoPageContent() {
   const [textContent, setTextContent] = useState("")
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showResults, setShowResults] = useState(false)
@@ -172,10 +173,23 @@ export default function DemoPage() {
   const aiService = new AIClientService()
   const hasApiKeys = aiService.hasApiKeys()
 
+  // Utilisation de useSearchParams
+  const searchParams = useSearchParams()
+
   // Vérifier le support audio côté client seulement
   useEffect(() => {
     setIsAudioSupported(AIClientService.isAudioRecordingSupported())
   }, [])
+
+  // Lire le paramètre mode de l'URL
+  useEffect(() => {
+    const mode = searchParams.get('mode')
+    if (mode === 'real') {
+      setIsDemoMode(false)
+    } else if (mode === 'demo') {
+      setIsDemoMode(true)
+    }
+  }, [searchParams])
 
   // Affichage de la popup au premier usage
   useEffect(() => {
@@ -189,9 +203,16 @@ export default function DemoPage() {
 
   // Mode réel par défaut si connecté
   useEffect(() => {
-    if (user && isDemoMode) setIsDemoMode(false)
-    if (!user && !isDemoMode) setIsDemoMode(true)
-  }, [user])
+    // Ne pas changer si on a un paramètre d'URL explicite
+    const mode = searchParams.get('mode')
+    if (!mode) {
+      if (user && isDemoMode) {
+        setIsDemoMode(false)
+      } else if (!user && !isDemoMode) {
+        setIsDemoMode(true)
+      }
+    }
+  }, [user, searchParams])
 
   // Préremplissage et blocage du champ en mode démo
   useEffect(() => {
@@ -201,16 +222,6 @@ export default function DemoPage() {
       setTextContent("")
     }
   }, [isDemoMode])
-
-  const searchParams = useSearchParams ? useSearchParams() : null;
-
-  useEffect(() => {
-    if (searchParams) {
-      const mode = searchParams.get('mode');
-      if (mode === 'real' && isDemoMode) setIsDemoMode(false);
-      if (mode === 'demo' && !isDemoMode) setIsDemoMode(true);
-    }
-  }, [searchParams]);
 
   // Gérer l'upload d'images
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -855,50 +866,51 @@ export default function DemoPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-5xl">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Analyse de Cas Cliniques</h1>
-            <p className="text-gray-600 mt-1">
-              {isDemoMode ? "Mode démonstration" : "Mode analyse réelle"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {user && (
-              <Link href="/history">
-                <Button variant="outline">
-                  <History className="mr-2 h-4 w-4" />
-                  Historique
-                </Button>
-              </Link>
-            )}
-            <Link href="/">
-              <Button variant="outline">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Accueil
-              </Button>
-            </Link>
-          </div>
+    <div className="min-h-screen bg-gray-50 pb-12">
+      <div className="container mx-auto px-4 pt-8">
+        <div className="flex items-center justify-between mb-6">
+          <Link href="/">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Retour
+            </Button>
+          </Link>
+          <Link href="/history">
+            <Button variant="outline" size="sm" disabled={!user}>
+              <History className="mr-2 h-4 w-4" />
+              Historique
+            </Button>
+          </Link>
         </div>
 
         {/* Bannière orange MODE DÉMO */}
         {isDemoMode && (
-          <div style={{background:'#FFA500',color:'#fff',padding:'10px',textAlign:'center',fontWeight:'bold',fontSize:'18px',letterSpacing:'2px'}}>MODE DÉMO</div>
+          <div className="bg-orange-500 text-white p-3 text-center font-bold text-lg tracking-wider mb-6 rounded-lg shadow-lg">
+            MODE DÉMO
+          </div>
         )}
+
         {/* Popup d'information au premier usage */}
         {showDemoInfo && (
-          <div style={{position:'fixed',top:0,left:0,width:'100vw',height:'100vh',background:'rgba(0,0,0,0.3)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
-            <div style={{background:'#fff',padding:'32px',borderRadius:'12px',maxWidth:'400px',boxShadow:'0 2px 16px #0002',textAlign:'center'}}>
-              <h2 style={{color:'#FFA500',fontWeight:'bold',fontSize:'22px',marginBottom:'12px'}}>Mode Démo</h2>
-              <p>Vous utilisez le mode démonstration. Les données sont préremplies et non modifiables. Pour utiliser vos propres cas, connectez-vous.</p>
-              <button style={{marginTop:'18px',background:'#FFA500',color:'#fff',border:'none',borderRadius:'6px',padding:'10px 24px',fontWeight:'bold',fontSize:'16px',cursor:'pointer'}} onClick={()=>setShowDemoInfo(false)}>OK</button>
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-xl max-w-md shadow-2xl">
+              <h2 className="text-orange-500 font-bold text-2xl mb-4 text-center">Mode Démonstration</h2>
+              <p className="text-gray-700 mb-6 text-center">
+                Vous utilisez le mode démonstration. Les données sont préremplies et non modifiables. 
+                Pour analyser vos propres cas cliniques, connectez-vous pour utiliser le mode réel.
+              </p>
+              <button 
+                className="w-full bg-orange-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-orange-600 transition-colors"
+                onClick={() => setShowDemoInfo(false)}
+              >
+                J'ai compris
+              </button>
             </div>
           </div>
         )}
 
         {!showResults ? (
-          <Card>
+          <Card className="max-w-4xl mx-auto">
             <CardHeader>
               <div className="flex justify-between items-center">
                 <div>
@@ -944,7 +956,7 @@ export default function DemoPage() {
                           variant="outline"
                           size="sm"
                           onClick={handleStartRecording}
-                          disabled={isTranscribing}
+                          disabled={isTranscribing || isDemoMode}
                         >
                           <Mic className="h-4 w-4 mr-2" />
                           Dicter
@@ -987,9 +999,9 @@ export default function DemoPage() {
                 <textarea
                   id="content"
                   value={textContent}
-                  onChange={(e) => setTextContent(e.target.value)}
+                  onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
                   placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
-                  className="w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   disabled={isRecording || isTranscribing || isDemoMode}
                 />
                 {recordingError && (
@@ -1002,7 +1014,8 @@ export default function DemoPage() {
                 )}
                 {!isDemoMode && !user && (
                   <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
-                    <Lock className="h-4 w-4" /> Connexion requise pour utiliser la fonctionnalité avec vos données
+                    <Lock className="h-4 w-4" /> 
+                    <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
                   </div>
                 )}
               </div>
@@ -1019,12 +1032,13 @@ export default function DemoPage() {
                       multiple
                       onChange={handleImageUpload}
                       className="hidden"
+                      disabled={isDemoMode}
                     />
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => document.getElementById('images')?.click()}
-                      disabled={isAnalyzing}
+                      disabled={isAnalyzing || isDemoMode}
                     >
                       <ImagePlus className="h-4 w-4 mr-2" />
                       Ajouter des images
@@ -1058,12 +1072,12 @@ export default function DemoPage() {
                 )}
               </div>
 
-              <div className={`border rounded-lg p-4 ${isDemoMode ? 'bg-blue-50 border-blue-200' : hasApiKeys ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <div className={`border rounded-lg p-4 ${isDemoMode ? 'bg-orange-50 border-orange-200' : hasApiKeys ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <div className="flex">
-                  <AlertCircle className={`w-5 h-5 mr-2 flex-shrink-0 ${isDemoMode ? 'text-blue-600' : hasApiKeys ? 'text-green-600' : 'text-red-600'}`} />
-                  <div className={`text-sm ${isDemoMode ? 'text-blue-800' : hasApiKeys ? 'text-green-800' : 'text-red-800'}`}>
+                  <AlertCircle className={`w-5 h-5 mr-2 flex-shrink-0 ${isDemoMode ? 'text-orange-600' : hasApiKeys ? 'text-green-600' : 'text-red-600'}`} />
+                  <div className={`text-sm ${isDemoMode ? 'text-orange-800' : hasApiKeys ? 'text-green-800' : 'text-red-800'}`}>
                     <p className="font-medium mb-1">
-                      {isDemoMode ? "Mode démonstration" : hasApiKeys ? "Mode analyse réelle" : "Clés API manquantes"}
+                      {isDemoMode ? "Mode démonstration activé" : hasApiKeys ? "Mode analyse réelle" : "Clés API manquantes"}
                     </p>
                     <p>
                       {isDemoMode 
@@ -1103,7 +1117,7 @@ export default function DemoPage() {
               <div className="flex justify-end">
                 <Button
                   onClick={handleAnalyze}
-                  disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys)}
+                  disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
                   className="min-w-[200px]"
                 >
                   {isAnalyzing ? (
@@ -1366,5 +1380,21 @@ export default function DemoPage() {
         )}
       </div>
     </div>
+  )
+}
+
+// Composant principal avec Suspense
+export default function DemoPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    }>
+      <DemoPageContent />
+    </Suspense>
   )
 } 

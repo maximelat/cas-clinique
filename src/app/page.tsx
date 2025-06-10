@@ -7,8 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
 export default function HomePage() {
-  const { user } = useAuth ? useAuth() : { user: null };
-  const router = useRouter ? useRouter() : null;
+  const { user } = useAuth();
+  const router = useRouter();
 
   const features = [
     {
@@ -87,9 +87,9 @@ export default function HomePage() {
               className="text-lg px-8 py-6 bg-blue-600 hover:bg-blue-700 shadow-xl"
               onClick={() => {
                 if (user) {
-                  router && router.push('/demo?mode=real');
+                  router.push('/demo?mode=real');
                 } else {
-                  router && router.push('/admin'); // ou '/login' selon la page de connexion
+                  router.push('/admin'); // page de connexion
                 }
               }}
             >
@@ -99,7 +99,7 @@ export default function HomePage() {
               size="lg"
               variant="outline"
               className="text-lg px-8 py-6 border-2"
-              onClick={() => router && router.push('/demo?mode=demo')}
+              onClick={() => router.push('/demo?mode=demo')}
             >
               <Stethoscope className="mr-2 h-5 w-5" /> Mode Démo
             </Button>
