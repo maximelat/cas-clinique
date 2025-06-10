@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History, Settings, ChevronRight, ChevronDown, Camera, Info, Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, CircleCheck, Eye, Plus, RefreshCw, GitBranch } from "lucide-react"
+import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History, Settings, ChevronRight, ChevronDown, Camera, Info, Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, CircleCheck, Eye, Plus, RefreshCw, GitBranch, Edit, ChevronUp } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
 import ReactMarkdown from 'react-markdown'
@@ -178,6 +178,12 @@ function DemoPageContent() {
   const [currentVersion, setCurrentVersion] = useState(0)
   const [showVersionComparison, setShowVersionComparison] = useState(false)
   const [caseTitle, setCaseTitle] = useState<string>("")
+  
+  // Nouveaux états pour les améliorations
+  const [showInitialCase, setShowInitialCase] = useState(false)
+  const [expandAllAccordions, setExpandAllAccordions] = useState(false)
+  const [accordionValues, setAccordionValues] = useState<string[]>([])
+  const [editingPreviousSection, setEditingPreviousSection] = useState<{ [key: string]: boolean }>({})
   
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -1390,16 +1396,47 @@ Exemple de format attendu :
     setAdditionalInfo({ ...additionalInfo, [sectionType]: '' });
   }
 
-  const handleSaveAdditionalInfo = async (sectionType: string) => {
-    const info = additionalInfo[sectionType];
+  const handleSaveAdditionalInfo = async (sectionType: string, shouldRelaunchAnalysis: boolean = false) => {
+    const info = additionalInfo[sectionType]
     if (!info?.trim()) {
-      toast.error("Veuillez ajouter des informations");
-      return;
+      toast.error("Veuillez ajouter des informations")
+      return
     }
 
-    setIsEditingSection({ ...isEditingSection, [sectionType]: false });
-    setIsReanalyzing(true);
-    setProgressMessage("Amélioration de l'analyse en cours...");
+    // Si on veut relancer l'analyse complète
+    if (shouldRelaunchAnalysis) {
+      if (!user || !userCredits || (userCredits.credits ?? 0) <= 0) {
+        toast.error("Crédits insuffisants pour relancer l'analyse")
+        return
+      }
+      
+      // Sauvegarder les infos et relancer
+      const updatedAnalysisData = {
+        ...analysisData,
+        modificationHistory: [
+          ...(analysisData.modificationHistory || []),
+          {
+            sectionType,
+            additionalInfo: info,
+            timestamp: new Date().toISOString(),
+            version: currentVersion + 1
+          }
+        ]
+      }
+      
+      setAnalysisData(updatedAnalysisData)
+      setAdditionalInfo({ ...additionalInfo, [sectionType]: '' })
+      setIsEditingSection({ ...isEditingSection, [sectionType]: false })
+      
+      // Relancer l'analyse complète
+      await handleCompleteReanalysis()
+      return
+    }
+
+    // Sinon, comportement normal (mise à jour de la section uniquement)
+    setIsEditingSection({ ...isEditingSection, [sectionType]: false })
+    setIsReanalyzing(true)
+    setProgressMessage("Amélioration de l'analyse en cours...")
 
     try {
       // Sauvegarder la version actuelle
@@ -1545,6 +1582,115 @@ INSTRUCTIONS:
 
   const toggleVersionComparison = () => {
     setShowVersionComparison(!showVersionComparison);
+  }
+
+  // Nouvelle fonction pour relancer l'analyse complète (1 crédit)
+  const handleCompleteReanalysis = async () => {
+    if (!user || !userCredits || (userCredits.credits ?? 0) <= 0 || !analysisData) {
+      toast.error("Crédits insuffisants pour relancer l'analyse")
+      return
+    }
+
+    setIsReanalyzing(true)
+    setProgressMessage("Nouvelle analyse complète en cours...")
+
+    try {
+      // Utiliser un crédit
+      await CreditsService.useCredit(user.uid)
+      await refreshCredits()
+
+      // Construire le contexte enrichi avec toutes les modifications
+      let enrichedContext = analysisData.caseText || textContent
+      if (analysisData.modificationHistory?.length > 0) {
+        enrichedContext += "\n\nINFORMATIONS COMPLÉMENTAIRES AJOUTÉES:\n"
+        analysisData.modificationHistory.forEach((mod: any) => {
+          enrichedContext += `- ${sectionTitles[mod.sectionType as keyof typeof sectionTitles]}: ${mod.additionalInfo}\n`
+        })
+      }
+
+      // Réinitialiser les sections actuelles
+      setCurrentSections([])
+      
+      // Relancer l'analyse complète
+      const result = await aiService.analyzeClinicalCase(
+        enrichedContext,
+        (message) => setProgressMessage(message),
+        (section, index, total) => {
+          setCurrentSections(prev => [...prev, section])
+        },
+        analysisData.images || uploadedImages
+      )
+
+      // Conserver l'historique des modifications mais mettre à jour toutes les sections non modifiées
+      const manuallyModifiedSections = new Set(
+        analysisData.modificationHistory?.map((mod: any) => mod.sectionType) || []
+      )
+
+      const updatedSections = result.sections.map((newSection: any) => {
+        // Si cette section a été modifiée manuellement, conserver la version modifiée
+        if (manuallyModifiedSections.has(newSection.type)) {
+          const existingSection = analysisData.sections.find((s: any) => s.type === newSection.type)
+          return existingSection || newSection
+        }
+        // Sinon, utiliser la nouvelle version
+        return newSection
+      })
+
+      // Sauvegarder l'ancienne version
+      const currentAnalysis = {
+        ...analysisData,
+        version: currentVersion,
+        timestamp: new Date().toISOString()
+      }
+      setAnalysisVersions([...analysisVersions, currentAnalysis])
+
+      // Créer la nouvelle version de l'analyse
+      const newAnalysisData = {
+        ...result,
+        id: analysisData.id,
+        title: analysisData.title,
+        caseText: enrichedContext,
+        sections: updatedSections,
+        modificationHistory: analysisData.modificationHistory || [],
+        version: currentVersion + 1,
+        isCompleteReanalysis: true,
+        previousVersions: analysisVersions.length + 1
+      }
+
+      setAnalysisData(newAnalysisData)
+      setCurrentVersion(currentVersion + 1)
+      
+      // Sauvegarder dans l'historique
+      if (user) {
+        try {
+          await HistoryService.saveAnalysis(user.uid, newAnalysisData)
+        } catch (saveError) {
+          console.error('Erreur lors de la sauvegarde:', saveError)
+        }
+      }
+      
+      toast.success("Analyse complète terminée ! Les sections modifiées manuellement ont été conservées.")
+    } catch (error) {
+      console.error('Erreur analyse complète:', error)
+      toast.error("Erreur lors de l'analyse complète")
+    } finally {
+      setIsReanalyzing(false)
+      setProgressMessage("")
+    }
+  }
+
+  // Fonction pour gérer l'expansion/fermeture de tous les accordéons
+  const toggleAllAccordions = () => {
+    if (expandAllAccordions) {
+      setAccordionValues([])
+    } else {
+      const allValues = analysisData?.sections?.map((_: any, index: number) => String(index)) || []
+      if (showRareDiseaseSection) {
+        allValues.push('rare-diseases')
+      }
+      setAccordionValues(allValues)
+    }
+    setExpandAllAccordions(!expandAllAccordions)
   }
 
   return (
@@ -1977,6 +2123,44 @@ INSTRUCTIONS:
                 )}
               </div>
               <div className="flex gap-2">
+                {/* Boutons pour la gestion des versions */}
+                {analysisVersions.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleVersionComparison}
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
+                  >
+                    <GitBranch className="mr-2 h-4 w-4" />
+                    Versions ({analysisVersions.length})
+                  </Button>
+                )}
+                {/* Bouton reprise approfondie */}
+                {!analysisData?.isDemo && analysisData?.modificationHistory && analysisData.modificationHistory.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeepReanalysis}
+                    disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Reprise approfondie
+                  </Button>
+                )}
+                {/* Nouveau bouton pour relancer l'analyse complète */}
+                {!analysisData?.isDemo && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCompleteReanalysis}
+                    disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                    className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Relancer l'analyse (1 crédit)
+                  </Button>
+                )}
                 {/* Bouton Export All pour maxime.latry@gmail.com uniquement */}
                 {user?.email === 'maxime.latry@gmail.com' && analysisHistory.length > 0 && (
                   <Button
@@ -2094,7 +2278,56 @@ INSTRUCTIONS:
               </Card>
             )}
             
-            <Accordion type="single" collapsible className="w-full space-y-4" defaultValue="0">
+            {/* Nouveau : Dossier initial */}
+            <Accordion type="single" collapsible className="mb-4">
+              <AccordionItem value="initial-case" className="border rounded-lg">
+                <AccordionTrigger 
+                  className="px-6 hover:no-underline bg-gray-50"
+                  onClick={() => setShowInitialCase(!showInitialCase)}
+                >
+                  <span className="text-left font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Voir dossier initial
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-6">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {analysisData?.caseText || textContent}
+                    </p>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+
+            {/* Boutons pour gérer les accordéons */}
+            <div className="mb-4 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleAllAccordions}
+              >
+                {expandAllAccordions ? (
+                  <>
+                    <ChevronUp className="mr-2 h-4 w-4" />
+                    Fermer tout
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="mr-2 h-4 w-4" />
+                    Ouvrir tout
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            <Accordion 
+              type="single" 
+              collapsible 
+              className="w-full space-y-4" 
+              value={accordionValues.length === 1 ? accordionValues[0] : undefined}
+              onValueChange={(value) => setAccordionValues(value ? [value] : [])}
+            >
               {analysisData?.isDemo ? (
                 // Mode démo - afficher les sections prédéfinies
                 Object.entries(demoSections).map(([key, content], index) => (
@@ -2124,6 +2357,67 @@ INSTRUCTIONS:
                         {renderContentWithReferences(section.content, analysisData?.references || [])}
                       </div>
                       
+                      {/* Afficher les modifications précédentes s'il y en a */}
+                      {analysisData?.modificationHistory?.filter((mod: any) => mod.sectionType === section.type).length > 0 && (
+                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <Label className="text-sm font-medium text-blue-700 flex items-center gap-2 mb-2">
+                            <Info className="h-4 w-4" />
+                            Informations ajoutées précédemment :
+                          </Label>
+                          {analysisData.modificationHistory
+                            .filter((mod: any) => mod.sectionType === section.type)
+                            .map((mod: any, idx: number) => (
+                              <div key={idx} className="text-sm text-blue-700 mb-2">
+                                • {mod.additionalInfo}
+                                {editingPreviousSection[`${section.type}-${idx}`] && (
+                                  <div className="mt-2">
+                                    <textarea
+                                      value={additionalInfo[`${section.type}-${idx}`] || mod.additionalInfo}
+                                      onChange={(e) => setAdditionalInfo({
+                                        ...additionalInfo,
+                                        [`${section.type}-${idx}`]: e.target.value
+                                      })}
+                                      className="w-full p-2 border border-blue-300 rounded-md resize-none h-20 text-sm"
+                                    />
+                                    <div className="flex gap-2 mt-2">
+                                      <Button
+                                        size="sm"
+                                        variant="default"
+                                        onClick={() => {
+                                          // TODO: implémenter la modification
+                                          setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: false })
+                                        }}
+                                      >
+                                        Sauvegarder
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: false })
+                                          setAdditionalInfo({ ...additionalInfo, [`${section.type}-${idx}`]: '' })
+                                        }}
+                                      >
+                                        Annuler
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                                {!editingPreviousSection[`${section.type}-${idx}`] && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="ml-2"
+                                    onClick={() => setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: true })}
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                      
                       {/* Zone d'édition pour ajouter des informations */}
                       {isEditingSection[section.type] ? (
                         <div className="mt-4 space-y-3 border-t pt-4">
@@ -2143,14 +2437,26 @@ INSTRUCTIONS:
                           <div className="flex gap-2">
                             <Button
                               size="sm"
-                              onClick={() => handleSaveAdditionalInfo(section.type)}
+                              onClick={() => handleSaveAdditionalInfo(section.type, false)}
                               disabled={!additionalInfo[section.type]?.trim() || isReanalyzing}
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
                             >
-                              Améliorer l'analyse
+                              <Plus className="mr-2 h-4 w-4" />
+                              Ajouter
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
+                              onClick={() => handleSaveAdditionalInfo(section.type, true)}
+                              disabled={!additionalInfo[section.type]?.trim() || isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                              className="border-orange-600 text-orange-600 hover:bg-orange-50"
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Ajouter et relancer l'analyse
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               onClick={() => handleCancelEdit(section.type)}
                             >
                               Annuler
