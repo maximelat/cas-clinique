@@ -1670,7 +1670,7 @@ Exemple de format attendu :
   }
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={400}>
       <div className="min-h-screen bg-gray-50 pb-12">
         <div className="container mx-auto px-4 pt-8">
           <div className="flex items-center justify-between mb-6">
@@ -1834,8 +1834,8 @@ Exemple de format attendu :
 
                 {/* Formulaire structuré dans un accordéon */}
                 {!isDemoMode && hasApiKeys && (
-                  <Accordion type="single" collapsible className="mt-4 border rounded-lg">
-                    <AccordionItem value="structured-form" className="border-0">
+                                  <Accordion type="multiple" className="mt-4 border rounded-lg">
+                  <AccordionItem value="structured-form" className="border-0">
                       <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-white rounded-lg shadow-sm">
@@ -2286,7 +2286,7 @@ Exemple de format attendu :
                 )}
                 
                 {/* Nouveau : Dossier initial */}
-                <Accordion type="single" collapsible className="mb-4">
+                <Accordion type="multiple" className="mb-4" value={showInitialCase ? ["initial-case"] : []}>
                   <AccordionItem value="initial-case" className="border rounded-lg">
                     <AccordionTrigger 
                       className="px-6 hover:no-underline bg-gray-50"

@@ -580,7 +580,7 @@ function AnalysisView() {
   }
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={400}>
       <div className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8 max-w-5xl">
           <div className="mb-8 flex items-center justify-between">
@@ -754,7 +754,7 @@ function AnalysisView() {
             )}
             
             {/* Nouveau : Dossier initial */}
-            <Accordion type="single" collapsible className="mb-4">
+            <Accordion type="multiple" className="mb-4" value={showInitialCase ? ["initial-case"] : []}>
               <AccordionItem value="initial-case" className="border rounded-lg">
                 <AccordionTrigger 
                   className="px-6 hover:no-underline bg-gray-50"
