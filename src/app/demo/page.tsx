@@ -30,6 +30,7 @@ import { useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { getFirestore, collection, addDoc } from 'firebase/firestore'
 
 // Section titles configuration
 const sectionTitles = {
@@ -198,6 +199,8 @@ function DemoPageContent() {
   const [currentVersion, setCurrentVersion] = useState(0)
   const [showVersionComparison, setShowVersionComparison] = useState(false)
   const [caseTitle, setCaseTitle] = useState<string>("")
+  const [initialCaseContent, setInitialCaseContent] = useState<string>("")
+  const [requestChain, setRequestChain] = useState<any[]>([])
   
   // États pour les améliorations UI
   const [showInitialCase, setShowInitialCase] = useState(false)
@@ -447,15 +450,94 @@ function DemoPageContent() {
         }, 2000)
       } else {
         // Analyse réelle avec l'API
-        // TODO: Implémenter l'appel à l'API avec base64Images
-        toast.info("L'analyse réelle sera implémentée prochainement")
-        setIsAnalyzing(false)
+        try {
+          // Sauvegarder le cas initial
+          setInitialCaseContent(textContent)
+          setCaseTitle(generateCaseTitle(textContent))
+          
+          const result = await aiService.analyzeClinicalCase(
+            textContent,
+            (message) => setProgressMessage(message),
+            (section, index, total) => {
+              console.log(`Section ${index + 1}/${total} reçue:`, section.type)
+              setCurrentSections(prev => [...prev, section])
+            },
+            base64Images.length > 0 ? base64Images : undefined
+          )
+
+          // Sauvegarder en base de données
+          if (user) {
+            try {
+              const historyEntry = {
+                uid: user.uid,
+                content: textContent,
+                sections: result.sections,
+                references: result.references,
+                perplexityReport: result.perplexityReport,
+                requestChain: result.requestChain || [],
+                title: generateCaseTitle(textContent),
+                createdAt: new Date()
+              }
+
+              const db = getFirestore()
+              await addDoc(collection(db, 'history'), historyEntry)
+            } catch (saveError) {
+              console.error('Erreur lors de la sauvegarde:', saveError)
+            }
+          }
+
+          // Déduire un crédit
+          if (user && refreshCredits) {
+            await refreshCredits()
+          }
+
+          setIsAnalyzing(false)
+          setShowResults(true)
+          setAnalysisData({
+            isDemo: false,
+            sections: result.sections,
+            references: result.references,
+            perplexityReport: result.perplexityReport,
+            requestChain: result.requestChain
+          })
+          setRequestChain(result.requestChain || [])
+          toast.success("Analyse terminée !")
+        } catch (error: any) {
+          console.error("Erreur lors de l'analyse:", error)
+          toast.error(error.message || "Erreur lors de l'analyse")
+          setIsAnalyzing(false)
+        }
       }
     } catch (error) {
       console.error("Erreur lors de l'analyse:", error)
       toast.error("Erreur lors de l'analyse")
       setIsAnalyzing(false)
     }
+  }
+
+  // Fonction pour générer un titre de cas à partir du contenu
+  const generateCaseTitle = (content: string): string => {
+    // Extraire les premiers mots significatifs
+    const words = content.trim().split(/\s+/).slice(0, 10).join(' ')
+    
+    // Patterns pour identifier les éléments clés
+    const ageMatch = content.match(/(\d+)\s*ans?/i)
+    const genderMatch = content.match(/\b(homme|femme|patient|patiente|garçon|fille|enfant)\b/i)
+    const symptomMatch = content.match(/\b(douleur|fièvre|toux|dyspnée|vomissement|asthénie|vertige|céphalée|malaise)\b/i)
+    
+    let title = ""
+    if (ageMatch && genderMatch) {
+      title = `${genderMatch[1]} ${ageMatch[1]} ans`
+      if (symptomMatch) {
+        title += ` - ${symptomMatch[1]}`
+      }
+    } else if (words.length > 0) {
+      title = words.length > 50 ? words.substring(0, 50) + "..." : words
+    } else {
+      title = "Cas clinique sans titre"
+    }
+    
+    return title
   }
 
   // Fonction pour afficher le contenu avec les références
