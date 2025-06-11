@@ -118,14 +118,38 @@ export class HistoryService {
         throw new Error('Base de données non initialisée');
       }
       
+      console.log('Recherche de l\'analyse avec ID:', analysisId);
+      
+      // Essayer d'abord avec l'ID direct
       const docRef = doc(db, this.COLLECTION_NAME, analysisId);
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
+        console.log('Analyse trouvée avec l\'ID direct');
         return docSnap.data() as AnalysisRecord;
-      } else {
-        return null;
       }
+      
+      // Si pas trouvé et que l'ID ressemble à un ancien format (cas-XXX)
+      if (analysisId.startsWith('cas-')) {
+        console.log('ID ancien format détecté, recherche par ID dans les données...');
+        
+        // Rechercher dans toutes les analyses où le champ id correspond
+        const q = query(
+          collection(db, this.COLLECTION_NAME),
+          where('id', '==', analysisId),
+          limit(1)
+        );
+        
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          console.log('Analyse trouvée avec l\'ancien format d\'ID');
+          return querySnapshot.docs[0].data() as AnalysisRecord;
+        }
+      }
+      
+      console.log('Aucune analyse trouvée pour l\'ID:', analysisId);
+      return null;
     } catch (error) {
       console.error('Erreur lors de la récupération de l\'analyse:', error);
       throw new Error('Impossible de récupérer l\'analyse');

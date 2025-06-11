@@ -230,6 +230,9 @@ function DemoPageContent() {
   const hasApiKeys = aiService.hasApiKeys()
   const searchParams = useSearchParams()
 
+  const [isRelaunchingAnalysis, setIsRelaunchingAnalysis] = useState(false)
+  const [relaunchProgressMessage, setRelaunchProgressMessage] = useState('')
+
   // Effects
   useEffect(() => {
     setIsAudioSupported(AIClientService.isAudioRecordingSupported())
@@ -1202,13 +1205,14 @@ Exemple de format attendu :
       setAnalysisVersions(prev => [...prev, currentVersion])
     }
     
-    setIsAnalyzing(true)
-    setProgressMessage("Relance de l'analyse en cours...")
+    setIsRelaunchingAnalysis(true)
+    setRelaunchProgressMessage("Relance de l'analyse en cours...")
     
     try {
       // Convertir les images en base64 si nécessaire
       let base64Images: { base64: string, type: string, name: string }[] = []
       if (uploadedImages.length > 0) {
+        setRelaunchProgressMessage("Préparation des images...")
         for (const img of uploadedImages) {
           const reader = new FileReader()
           const base64Promise = new Promise<string>((resolve, reject) => {
@@ -1248,7 +1252,7 @@ Exemple de format attendu :
       // Relancer avec la méthode qui n'utilise que o3
       const result = await aiService.relaunchAnalysis(
         currentData,
-        (message) => setProgressMessage(message)
+        (message) => setRelaunchProgressMessage(message)
       )
 
       // Déduire 1 crédit
@@ -1275,7 +1279,8 @@ Exemple de format attendu :
       console.error("Erreur relance analyse:", error)
       toast.error(error.message || "Erreur lors de la relance")
     } finally {
-      setIsAnalyzing(false)
+      setIsRelaunchingAnalysis(false)
+      setRelaunchProgressMessage('')
     }
   }
 
@@ -1859,11 +1864,20 @@ Exemple de format attendu :
                   variant="outline"
                   size="sm"
                   onClick={() => handleRelaunchAnalysis()}
-                  disabled={!user || !userCredits || (userCredits.credits ?? 0) < 1}
+                  disabled={!user || !userCredits || (userCredits.credits ?? 0) < 1 || isRelaunchingAnalysis}
                   className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Relancer l'analyse (1 crédit)
+                  {isRelaunchingAnalysis ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {relaunchProgressMessage || "Relance en cours..."}
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Relancer l'analyse (1 crédit)
+                    </>
+                  )}
                 </Button>
                       </TooltipTrigger>
                       <TooltipContent>

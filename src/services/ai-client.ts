@@ -100,7 +100,7 @@ export class AIClientService {
       messages: [
         {
           role: 'system',
-          content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni. INSTRUCTIONS IMPORTANTES: 1) Concentre-toi UNIQUEMENT sur les publications médicales datant de moins de 5 ans (2020-2025), les guidelines récentes et les études cliniques actuelles. 2) Pour CHAQUE affirmation, cite OBLIGATOIREMENT la source avec [1], [2], etc. 3) Fournis l\'URL complète de chaque source citée. 4) Structure ta réponse de manière claire avec des sections bien définies.'
+          content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni. INSTRUCTIONS IMPORTANTES: 1) Concentre-toi autant que possubleautant que possuble sur les publications médicales datant de moins de 5 ans (2020-2025), les guidelines récentes et les études cliniques actuelles associée. 2) Pour CHAQUE affirmation, cite autant que possible la source avec [1], [2], etc. 3) Fournis l\'URL complète de chaque source citée. 4) Structure ta réponse de manière claire avec des sections bien définies.'
         },
         {
           role: 'user',
@@ -646,139 +646,118 @@ RÈGLES IMPORTANTES:
     console.log('Extraction des références...');
     console.log('Citations disponibles:', perplexityReport.citations?.length || 0);
     console.log('Search results disponibles:', perplexityReport.search_results?.length || 0);
+    console.log('Citations brutes:', JSON.stringify(perplexityReport.citations, null, 2));
 
-    // Utiliser search_results en priorité s'ils existent
-    if (perplexityReport.search_results && perplexityReport.search_results.length > 0) {
-      perplexityReport.search_results.forEach((result, index) => {
-        // Extraire plus d'informations depuis l'URL si possible
-        let inferredAuthors = '';
-        let inferredJournal = '';
+    // Utiliser les citations directement si disponibles
+    if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
+      perplexityReport.citations.forEach((citation, index) => {
+        const refLabel = String(index + 1);
         
-        if (result.url) {
-          // Déduire depuis PMC
-          if (result.url.includes('pmc.ncbi.nlm.nih.gov')) {
-            inferredJournal = 'PubMed Central';
+        // Extraire les informations selon le format de la citation
+        let title = '';
+        let url = '';
+        let authors = '';
+        let year = null;
+        let journal = '';
+        let date = '';
+        
+        if (typeof citation === 'string') {
+          // Citation simple (URL)
+          url = citation;
+          title = `Source ${refLabel}`;
+        } else if (typeof citation === 'object' && citation !== null) {
+          // Citation structurée
+          title = citation.title || citation.name || citation.text || `Source ${refLabel}`;
+          url = citation.url || citation.link || citation.href || '#';
+          authors = citation.authors?.join?.(', ') || citation.author || '';
+          date = citation.date || citation.published_date || '';
+          year = citation.year || (date ? new Date(date).getFullYear() : null);
+          journal = citation.journal || citation.source || citation.publisher || '';
+          
+          // Enrichir avec les métadonnées si disponibles
+          if (citation.metadata) {
+            authors = authors || citation.metadata.authors?.join?.(', ') || '';
+            journal = journal || citation.metadata.journal || citation.metadata.source || '';
+            year = year || citation.metadata.year || null;
           }
-          // Déduire depuis PubMed
-          else if (result.url.includes('pubmed.ncbi.nlm.nih.gov')) {
-            inferredJournal = 'PubMed';
-          }
-          // Déduire depuis Orphanet
-          else if (result.url.includes('orphanet')) {
-            inferredJournal = 'Orphanet - Base de données des maladies rares';
-          }
-          // Déduire depuis OMIM
-          else if (result.url.includes('omim.org')) {
-            inferredJournal = 'OMIM - Online Mendelian Inheritance in Man';
+        }
+        
+        // Déduire le journal depuis l'URL si non fourni
+        if (!journal && url) {
+          if (url.includes('pmc.ncbi.nlm.nih.gov')) {
+            journal = 'PubMed Central';
+          } else if (url.includes('pubmed.ncbi.nlm.nih.gov')) {
+            journal = 'PubMed';
+          } else if (url.includes('orphanet')) {
+            journal = 'Orphanet - Base de données des maladies rares';
+          } else if (url.includes('omim.org')) {
+            journal = 'OMIM - Online Mendelian Inheritance in Man';
+          } else if (url.includes('nejm.org')) {
+            journal = 'New England Journal of Medicine';
+          } else if (url.includes('thelancet.com')) {
+            journal = 'The Lancet';
+          } else if (url.includes('nature.com')) {
+            journal = 'Nature';
+          } else if (url.includes('sciencedirect.com')) {
+            journal = 'ScienceDirect';
           }
         }
         
         references.push({
-          label: String(index + 1),
-          title: result.title || `Source ${index + 1}`,
-          url: result.url,
-          authors: inferredAuthors,
-          year: result.date ? new Date(result.date).getFullYear() : null,
-          journal: inferredJournal,
-          date: result.date
+          label: refLabel,
+          title: title,
+          url: url,
+          authors: authors,
+          year: year,
+          journal: journal,
+          date: date
         });
       });
     }
-    // Si pas de search_results, utiliser citations et extraire depuis le texte
-    else {
-      // D'abord essayer d'extraire depuis la section Sources du texte
-      const sourcesMatch = perplexityReport.answer.match(/###\s*\*?\*?Sources?\*?\*?:?\s*\n([\s\S]*?)(?=###|$)/i);
+    
+    // Si pas de citations, utiliser search_results
+    else if (perplexityReport.search_results && perplexityReport.search_results.length > 0) {
+      perplexityReport.search_results.forEach((result, index) => {
+        references.push({
+          label: String(index + 1),
+          title: result.title || `Source ${index + 1}`,
+          url: result.url || '#',
+          authors: '',
+          year: result.date ? new Date(result.date).getFullYear() : null,
+          journal: '',
+          date: result.date || ''
+        });
+      });
+    }
+    
+    // En dernier recours, extraire depuis le texte
+    else if (perplexityReport.answer) {
+      // Chercher les références dans le texte
+      const refPattern = /\[(\d+)\]\s*([^[\n]+)?/g;
+      const matches = Array.from(perplexityReport.answer.matchAll(refPattern));
       
-      if (sourcesMatch) {
-        // Pattern amélioré pour extraire plus d'infos
-        const sourceLines = sourcesMatch[1].split('\n').filter(line => line.trim());
-        
-        sourceLines.forEach((line, index) => {
-          // Pattern pour [1] Titre (URL) ou [1] [Titre](URL)
-          const match = line.match(/\[(\d+)\]\s*(?:\[([^\]]+)\])?\s*(?:\(([^)]+)\))?/);
-          
-          if (match) {
-            const num = match[1];
-            let title = match[2] || '';
-            const url = match[3] || '';
-            
-            // Si pas de titre entre crochets, essayer d'extraire du texte restant
-            if (!title && line.includes(']')) {
-              const textAfterBracket = line.substring(line.indexOf(']') + 1).trim();
-              // Extraire jusqu'à l'URL si présente
-              if (textAfterBracket && url) {
-                title = textAfterBracket.replace(/\([^)]+\)/, '').trim();
-              } else {
-                title = textAfterBracket;
-              }
-            }
-            
-            references.push({
+      if (matches.length > 0) {
+        const uniqueRefs = new Map();
+        matches.forEach(match => {
+          const num = match[1];
+          if (!uniqueRefs.has(num)) {
+            uniqueRefs.set(num, {
               label: num,
-              title: title || `Source ${num}`,
-              url: url || '#',
+              title: match[2]?.trim() || `Source ${num}`,
+              url: '#',
               authors: '',
               year: null,
               journal: ''
             });
           }
         });
-      }
-      
-      // Si on n'a pas trouvé de section Sources, utiliser les citations
-      if (references.length === 0 && perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
-        perplexityReport.citations.forEach((citation, index) => {
-          const refLabel = String(index + 1);
-          
-          if (typeof citation === 'string') {
-            // URL simple
-            references.push({
-              label: refLabel,
-              title: `Source ${refLabel}`,
-              url: citation,
-              authors: '',
-              year: null,
-              journal: ''
-            });
-          } else if (typeof citation === 'object' && citation !== null) {
-            // Objet structuré
-            references.push({
-              label: refLabel,
-              title: citation.title || citation.name || citation.text || `Source ${refLabel}`,
-              url: citation.url || citation.link || citation || '#',
-              authors: citation.authors?.join?.(', ') || citation.author || '',
-              year: citation.year || citation.date ? new Date(citation.date).getFullYear() : null,
-              journal: citation.journal || citation.source || ''
-            });
-          }
-        });
-      }
-      
-      // En dernier recours, extraire les numéros de citation du texte
-      if (references.length === 0 && perplexityReport.answer) {
-        const citationNumbersRegex = /\[(\d+)\]/g;
-        const citationNumbers = new Set<string>();
-        let match;
         
-        while ((match = citationNumbersRegex.exec(perplexityReport.answer)) !== null) {
-          citationNumbers.add(match[1]);
-        }
-        
-        Array.from(citationNumbers).sort((a, b) => parseInt(a) - parseInt(b)).forEach(num => {
-          references.push({
-            label: num,
-            title: `Source ${num}`,
-            url: '#',
-            authors: '',
-            year: null,
-            journal: ''
-          });
-        });
+        uniqueRefs.forEach(ref => references.push(ref));
       }
     }
     
     console.log(`${references.length} références extraites`);
-    console.log('Références extraites:', JSON.stringify(references, null, 2));
+    console.log('Références finales:', JSON.stringify(references, null, 2));
     return references;
   }
 
@@ -1058,20 +1037,35 @@ ${clinicalCase}
 ANALYSE MÉDICALE:
 ${o3Analysis}
 
-INSTRUCTIONS SPÉCIFIQUES:
+INSTRUCTIONS SPÉCIFIQUES POUR UN RAPPORT COMPLET:
 1. Identifie UNIQUEMENT des maladies rares (prévalence < 1/2000)
-2. Pour chaque maladie rare identifiée, fournis :
-   - Nom de la maladie (avec code ORPHA si disponible)
-   - Prévalence exacte
-   - Critères diagnostiques qui correspondent au cas
-   - Examens spécifiques pour confirmer
+2. Pour chaque maladie rare identifiée, fournis OBLIGATOIREMENT TOUTES ces sections :
+   
+   ## Critères diagnostiques
+   - Liste complète des critères qui correspondent au cas
+   - Critères majeurs et mineurs
+   
+   ## Examens spécifiques
+   - Examens biologiques spécialisés
+   - Examens génétiques nécessaires
+   - Imagerie spécifique
+   
+   ## Prise en charge thérapeutique
    - Traitements spécialisés disponibles
-   - Centres de référence en France
-3. Utilise UNIQUEMENT des sources de moins de 5 ans (2020-2025)
-4. Cite OBLIGATOIREMENT chaque affirmation avec [1], [2], etc.
-5. Privilégie Orphanet, GeneReviews, ERN (European Reference Networks)
+   - Protocoles thérapeutiques
+   - Essais cliniques en cours
+   
+   ## Centres de référence en France
+   - Nom complet du centre
+   - Localisation
+   - Coordonnées si disponibles
+   
+3. Structure ton rapport de manière COMPLÈTE sans couper
+4. Utilise autant que possible des sources récentes (2020-2025)
+5. Cite chaque affirmation avec [1], [2], etc.
+6. Privilégie Orphanet, GeneReviews, ERN
 
-Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur les diagnostics communs.`;
+IMPORTANT: Fournis un rapport COMPLET et DÉTAILLÉ. Ne coupe PAS le contenu.`;
 
     try {
       const response = await axios.post(
@@ -1081,7 +1075,7 @@ Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur le
           messages: [
             {
               role: 'system',
-              content: 'Tu es un expert en maladies rares. Fais une recherche approfondie dans les bases de données spécialisées (Orphanet, OMIM, GeneReviews) pour identifier des maladies rares correspondant au cas présenté. Cite toutes tes sources.'
+              content: 'Tu es un expert en maladies rares. Fais une recherche approfondie dans les bases de données spécialisées (Orphanet, OMIM, GeneReviews) pour identifier des maladies rares correspondant au cas présenté. IMPORTANT: Fournis un rapport COMPLET et DÉTAILLÉ sans couper le contenu. Cite toutes tes sources.'
             },
             {
               role: 'user',
@@ -1089,12 +1083,12 @@ Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur le
             }
           ],
           temperature: 0.1,
-          max_tokens: 8000,
+          max_tokens: 16000,
           search_domain_filter: ['orphanet.org', 'omim.org', 'ncbi.nlm.nih.gov', 'genereviews.org', 'ern-net.eu'],
           search_recency_filter: 'month',
           return_citations: true,
           return_images: false,
-          search_recency_days: 1825 // 5 ans
+          search_recency_days: 1825
         },
         {
           headers: {
