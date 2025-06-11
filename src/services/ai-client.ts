@@ -180,39 +180,50 @@ export class AIClientService {
 
   private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
     try {
-      const prompt = `Cas clinique: ${clinicalCase}
+      const prompt = `Tu es un expert médical. Analyse ce cas clinique en te basant sur les informations fournies.
 
+CAS CLINIQUE:
+${clinicalCase}
+
+INFORMATIONS COMPLÉMENTAIRES (recherche académique et analyses):
 ${perplexityDataProcessed}
 
-Analyse ce cas clinique en utilisant EXACTEMENT ce format avec ces 7 sections OBLIGATOIRES. IMPORTANT: Commence chaque section par "## SECTION_NAME:" sur une nouvelle ligne.
+INSTRUCTIONS CRITIQUES:
+1. Rédige une analyse clinique complète et structurée
+2. Utilise OBLIGATOIREMENT le format exact ci-dessous pour chaque section
+3. NE PAS ajouter de sauts de ligne supplémentaires entre les paragraphes
+4. Cite les références avec [1], [2], etc. SANS les détailler dans le texte
+5. Garde un formatage propre et professionnel
+
+FORMAT OBLIGATOIRE (respecte EXACTEMENT cette structure):
 
 ## CLINICAL_CONTEXT:
-Résume le contexte clinique du patient.
+[Écris ici le résumé du contexte clinique en un paragraphe continu]
 
 ## KEY_DATA:
-Identifie les données clés importantes du cas.
+[Liste ici les données clés sous forme de points bullet avec - ]
 
 ## DIAGNOSTIC_HYPOTHESES:
-Liste les hypothèses diagnostiques principales et différentielles.
+[Liste les hypothèses diagnostiques principales et différentielles]
 
 ## COMPLEMENTARY_EXAMS:
-Recommande les examens complémentaires nécessaires.
+[Recommande les examens complémentaires nécessaires]
 
 ## THERAPEUTIC_DECISIONS:
-Propose les décisions thérapeutiques appropriées.
+[Propose les décisions thérapeutiques appropriées]
 
 ## PROGNOSIS_FOLLOWUP:
-Évalue le pronostic et le plan de suivi.
+[Évalue le pronostic et le plan de suivi]
 
 ## PATIENT_EXPLANATIONS:
-Formule les explications à donner au patient.
+[Formule les explications claires pour le patient]
 
-RÈGLES IMPÉRATIVES:
-1. Utilise EXACTEMENT le format "## SECTION_NAME:" pour chaque section
-2. NE PAS numéroter les sections (pas de "1.", "2.", etc.)
-3. Cite TOUTES les références avec [1], [2], etc.
-4. Si des images sont mentionnées, intègre leurs résultats dans les sections appropriées
-5. Assure-toi que CHAQUE section est présente et bien formatée`;
+RAPPELS IMPORTANTS:
+- Commence TOUJOURS chaque section par "## SECTION_NAME:" exactement
+- NE JAMAIS numéroter les sections (pas de "1.", "2.", etc.)
+- Intègre les résultats d'imagerie dans les sections appropriées
+- Évite les doubles sauts de ligne inutiles
+- Reste concis et structuré`;
 
       // Sauvegarder la requête
       this.requestChain.push({

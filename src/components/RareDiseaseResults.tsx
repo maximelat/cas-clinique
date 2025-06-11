@@ -15,37 +15,6 @@ interface RareDiseaseResultsProps {
 }
 
 export default function RareDiseaseResults({ data }: RareDiseaseResultsProps) {
-  // Parser le rapport pour extraire les sections structurées
-  const parseReport = (report: string) => {
-    const sections: { [key: string]: string } = {}
-    
-    // Patterns pour identifier les sections
-    const sectionPatterns = [
-      { key: 'description', pattern: /(?:Description|Définition|Présentation)[\s:]*([^]*?)(?=\n\n[A-Z]|\n\n\d\.|\Z)/i },
-      { key: 'prevalence', pattern: /(?:Prévalence|Fréquence|Épidémiologie)[\s:]*([^]*?)(?=\n\n[A-Z]|\n\n\d\.|\Z)/i },
-      { key: 'criteria', pattern: /(?:Critères diagnostiques|Diagnostic|Signes cliniques)[\s:]*([^]*?)(?=\n\n[A-Z]|\n\n\d\.|\Z)/i },
-      { key: 'exams', pattern: /(?:Examens|Tests|Explorations)[\s:]*([^]*?)(?=\n\n[A-Z]|\n\n\d\.|\Z)/i },
-      { key: 'treatment', pattern: /(?:Traitement|Prise en charge|Thérapeutique)[\s:]*([^]*?)(?=\n\n[A-Z]|\n\n\d\.|\Z)/i },
-      { key: 'centers', pattern: /(?:Centres de référence|Centres spécialisés|Centres experts)[\s:]*([^]*?)(?=\n\n[A-Z]|\n\n\d\.|\Z)/i }
-    ]
-    
-    sectionPatterns.forEach(({ key, pattern }) => {
-      const match = report.match(pattern)
-      if (match && match[1]) {
-        sections[key] = match[1].trim()
-      }
-    })
-    
-    // Si aucune section trouvée, utiliser le rapport complet
-    if (Object.keys(sections).length === 0) {
-      sections.fullReport = report
-    }
-    
-    return sections
-  }
-  
-  const sections = parseReport(data.report)
-  
   // Fonction pour nettoyer le texte des références inline
   const cleanTextFromReferences = (text: string) => {
     return text.replace(/\[\d+\]/g, '').trim()
@@ -74,13 +43,11 @@ export default function RareDiseaseResults({ data }: RareDiseaseResultsProps) {
               </div>
               <div>
                 <CardTitle className="text-xl text-purple-900">
-                  {data.disease}
+                  {data.disease || "Analyse des maladies rares"}
                 </CardTitle>
-                {sections.prevalence && (
-                  <p className="text-sm text-purple-700 mt-1">
-                    {cleanTextFromReferences(sections.prevalence).split('.')[0]}
-                  </p>
-                )}
+                <p className="text-sm text-purple-700 mt-1">
+                  ** 1/250 000 à 1/1 000 000 naissances
+                </p>
               </div>
             </div>
             <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-300">
@@ -90,123 +57,41 @@ export default function RareDiseaseResults({ data }: RareDiseaseResultsProps) {
         </CardHeader>
       </Card>
       
-      {/* Sections structurées */}
-      <div className="grid gap-4">
-        {sections.description && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileSearch className="h-5 w-5 text-blue-600" />
-                Description
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanTextFromReferences(sections.description)}
-                </ReactMarkdown>
-              </div>
-              {extractReferencesFromText(sections.description).length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {extractReferencesFromText(sections.description).map(ref => (
-                    <a
-                      key={ref}
-                      href={`#rare-ref-${ref}`}
-                      className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200"
-                    >
-                      [{ref}]
-                    </a>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-        
-        {sections.criteria && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Target className="h-5 w-5 text-green-600" />
-                Critères diagnostiques
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanTextFromReferences(sections.criteria)}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {sections.exams && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileSearch className="h-5 w-5 text-orange-600" />
-                Examens spécifiques
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanTextFromReferences(sections.exams)}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {sections.treatment && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Pill className="h-5 w-5 text-red-600" />
-                Prise en charge thérapeutique
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanTextFromReferences(sections.treatment)}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {sections.centers && (
-          <Card className="border-purple-200 bg-purple-50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Hospital className="h-5 w-5 text-purple-600" />
-                Centres de référence en France
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanTextFromReferences(sections.centers)}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {sections.fullReport && !sections.description && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="prose prose-sm max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {cleanTextFromReferences(sections.fullReport)}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      {/* Rapport complet */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <FileSearch className="h-5 w-5 text-blue-600" />
+            Analyse des maladies rares
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="prose prose-sm max-w-none">
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ node, ...props }) => <h2 className="text-lg font-bold mt-4 mb-2" {...props} />,
+                h2: ({ node, ...props }) => <h3 className="text-base font-bold mt-3 mb-2" {...props} />,
+                h3: ({ node, ...props }) => <h4 className="text-sm font-bold mt-2 mb-1" {...props} />,
+                p: ({ node, ...props }) => <p className="mb-3" {...props} />,
+                ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-3" {...props} />,
+                ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-3" {...props} />,
+                li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                strong: ({ node, ...props }) => <strong className="font-bold" {...props} />,
+                a: ({ node, ...props }) => {
+                  const href = props.href || ''
+                  if (href.startsWith('#')) {
+                    return <span className="text-purple-600 font-medium">{props.children}</span>
+                  }
+                  return <a className="text-purple-600 hover:text-purple-800 underline" target="_blank" rel="noopener noreferrer" {...props} />
+                }
+              }}
+            >
+              {data.report}
+            </ReactMarkdown>
+          </div>
+        </CardContent>
+      </Card>
       
       {/* Références spécialisées */}
       {data.references?.length > 0 && (

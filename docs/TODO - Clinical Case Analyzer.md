@@ -172,6 +172,26 @@ ___
 
 2 la reprise approfondie et la relance d'analyse devraient mettre à jour les 7 parties et historiser l'ancienne version du resultat (le versionning existe déjà je crois dans le code) comme ça on peut suivre l'évolution de la reflexion facilement 
 
+. 🔧 Structure des maladies rares
+Le composant RareDiseaseResults structure déjà l'affichage avec des sections
+Si le format n'est toujours pas satisfaisant, il faudrait me préciser exactement ce qui manque
+
+tu as vu dans l'image que jet'ai envoyé juste avant ? le contenu semble avoir été coupé et il n'y a pas tourtes les informations disponibles 
+
+3. ✅ Format o3 pour l'analyse simple
+Correction du format de sortie pour utiliser ## SECTION_TYPE: au lieu de [SECTION_TYPE:XXX]
+L'analyse simple devrait maintenant être bien structurée
+
+>non mais l'analyse simple était correcte je t'ai montré que l'analyse approfondie, le resultat donne des à la ligne entre et un bazar autour des srouces 
+
+4. 🔍 URLs avec paramètres
+Le code semble correct (Suspense wrapper, searchParams)
+Le problème pourrait venir du serveur de production ou de l'encodage des URLs
+Il faudrait vérifier les logs serveur pour identifier l'erreur exacte
+
+ça dit analyse non trouvée, car je pense qu'on doit garder ?id=cas et non is=analysis pour revenir sur une analyse pasée 
+
+
 3 de plus il n'est pas affiché les auteurs et la date pour les références bibliographique comme c'était le cas avant ni meme pour les références spécialisées maladies rares, tu peux retrouver la fonction et la réactiver stp
 
 ### 5. Checklist des symptômes par diagnostic
