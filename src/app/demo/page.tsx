@@ -30,7 +30,8 @@ import { useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { getFirestore, collection, addDoc } from 'firebase/firestore'
+import { collection, addDoc } from 'firebase/firestore'
+import { getFirebaseDb } from '@/lib/firebase'
 import RareDiseaseResults from '@/components/RareDiseaseResults'
 
 // Section titles configuration
@@ -470,22 +471,37 @@ function DemoPageContent() {
           // Sauvegarder en base de données
           if (user) {
             try {
+              console.log('Tentative de sauvegarde dans l\'historique...')
               const historyEntry = {
-                uid: user.uid,
-                content: textContent,
-          sections: result.sections,
-          references: result.references,
-          perplexityReport: result.perplexityReport,
-                requestChain: result.requestChain || [],
+                id: `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                userId: user.uid,
                 title: generateCaseTitle(textContent),
-                createdAt: new Date()
+                date: new Date(),
+                caseText: textContent,
+                sections: result.sections,
+                references: result.references,
+                perplexityReport: result.perplexityReport || null,
+                requestChain: result.requestChain || [],
+                images: uploadedImages.length > 0 ? uploadedImages.map(img => ({
+                  name: img.name,
+                  type: img.type,
+                  size: img.size
+                })) : null,
+                modificationHistory: [],
+                version: 1
               }
 
-              const db = getFirestore()
-              await addDoc(collection(db, 'history'), historyEntry)
-        } catch (saveError) {
-          console.error('Erreur lors de la sauvegarde:', saveError)
+              console.log('Données à sauvegarder:', historyEntry)
+              const db = getFirebaseDb()
+              const docRef = await addDoc(collection(db, 'analyses'), historyEntry)
+              console.log('Document sauvegardé avec l\'ID:', docRef.id)
+              toast.success('Analyse sauvegardée dans votre historique')
+            } catch (saveError: any) {
+              console.error('Erreur lors de la sauvegarde:', saveError)
+              toast.error(`Erreur de sauvegarde: ${saveError.message || 'Erreur inconnue'}`)
             }
+          } else {
+            console.log('Utilisateur non connecté, pas de sauvegarde dans l\'historique')
           }
 
           // Déduire un crédit
