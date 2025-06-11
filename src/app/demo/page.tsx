@@ -376,7 +376,7 @@ function DemoPageContent() {
     }
   }
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (isSimpleAnalysis: boolean) => {
     if (!textContent.trim()) {
       toast.error("Veuillez entrer un cas clinique")
       return
@@ -458,15 +458,28 @@ function DemoPageContent() {
           setInitialCaseContent(textContent)
           setCaseTitle(generateCaseTitle(textContent))
           
-        const result = await aiService.analyzeClinicalCase(
-          textContent,
-          (message) => setProgressMessage(message),
-          (section, index, total) => {
-              console.log(`Section ${index + 1}/${total} reçue:`, section.type)
-            setCurrentSections(prev => [...prev, section])
-            },
-            base64Images.length > 0 ? base64Images : undefined
-          )
+          let result;
+          
+          if (isSimpleAnalysis) {
+            // Analyse simple avec o3 seulement
+            setProgressMessage("Analyse clinique avec o3...")
+            result = await aiService.simpleAnalysis(
+              textContent,
+              (message) => setProgressMessage(message),
+              base64Images.length > 0 ? base64Images : undefined
+            )
+          } else {
+            // Analyse approfondie avec Perplexity + o3
+            result = await aiService.analyzeClinicalCase(
+              textContent,
+              (message) => setProgressMessage(message),
+              (section, index, total) => {
+                console.log(`Section ${index + 1}/${total} reçue:`, section.type)
+                setCurrentSections(prev => [...prev, section])
+              },
+              base64Images.length > 0 ? base64Images : undefined
+            )
+          }
 
           // Sauvegarder en base de données
           if (user) {
@@ -479,7 +492,7 @@ function DemoPageContent() {
                 date: new Date(),
                 caseText: textContent,
                 sections: result.sections,
-                references: result.references,
+                references: result.references || [],
                 perplexityReport: result.perplexityReport || null,
                 requestChain: result.requestChain || [],
                 images: uploadedImages.length > 0 ? uploadedImages.map(img => ({
@@ -488,7 +501,8 @@ function DemoPageContent() {
                   size: img.size
                 })) : null,
                 modificationHistory: [],
-                version: 1
+                version: 1,
+                isSimpleAnalysis: isSimpleAnalysis
               }
 
               console.log('Données à sauvegarder:', historyEntry)
@@ -514,13 +528,14 @@ function DemoPageContent() {
           setAnalysisData({
             isDemo: false,
             sections: result.sections,
-            references: result.references,
-            perplexityReport: result.perplexityReport,
-            requestChain: result.requestChain,
-            imageAnalyses: result.imageAnalyses
+            references: result.references || [],
+            perplexityReport: result.perplexityReport || null,
+            requestChain: result.requestChain || [],
+            imageAnalyses: result.imageAnalyses,
+            isSimpleAnalysis: isSimpleAnalysis
           })
           setRequestChain(result.requestChain || [])
-          toast.success("Analyse terminée !")
+          toast.success(isSimpleAnalysis ? "Analyse simple terminée !" : "Analyse approfondie terminée !")
       } catch (error: any) {
           console.error("Erreur lors de l'analyse:", error)
         toast.error(error.message || "Erreur lors de l'analyse")
@@ -638,11 +653,11 @@ function DemoPageContent() {
   // Fonction pour exporter en PDF
   const exportToPDF = async () => {
     try {
-      const element = document.getElementById('analysis-results')
-      if (!element) {
+    const element = document.getElementById('analysis-results')
+    if (!element) {
         toast.error('Aucun résultat à exporter')
-        return
-      }
+      return
+    }
 
       toast.info('Génération du PDF en cours...')
       
@@ -764,7 +779,7 @@ function DemoPageContent() {
         sourceY += (currentPageHeight * canvas.width) / imgWidth
         
         if (remainingHeight > 0) {
-          pdf.addPage()
+            pdf.addPage()
           yPosition = 20 // Marge supérieure pour les pages suivantes
         }
       }
@@ -1571,7 +1586,7 @@ Exemple de format attendu :
                         <Lock className="h-4 w-4" /> 
                         <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
                       </div>
-                    )}
+                )}
               </div>
 
                   {/* Formulaire structuré dans un accordéon */}
@@ -1763,10 +1778,11 @@ Exemple de format attendu :
                 </div>
               )}
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-3">
                 <Button
-                  onClick={handleAnalyze}
-                      disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
+                  onClick={() => handleAnalyze(true)} // Analyse simple
+                  disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
+                  variant="outline"
                   className="min-w-[200px]"
                 >
                   {isAnalyzing ? (
@@ -1777,7 +1793,25 @@ Exemple de format attendu :
                   ) : (
                     <>
                       <Brain className="mr-2 h-4 w-4" />
-                      Analyser le cas
+                      Analyse simple (o3 seulement)
+                    </>
+                  )}
+                </Button>
+                
+                <Button
+                  onClick={() => handleAnalyze(false)} // Analyse approfondie
+                  disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
+                  className="min-w-[200px]"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                      Analyse en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="mr-2 h-4 w-4" />
+                      Analyse approfondie et sourcée
                     </>
                   )}
                 </Button>
@@ -2411,108 +2445,105 @@ Exemple de format attendu :
               )}
             </Accordion>
 
-                {/* Section Maladies Rares - Placée AVANT les références */}
-            {!analysisData?.isDemo && analysisData?.sections && (
-                  <Card className="mt-8">
-                    <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50">
-                      <CardTitle className="flex items-center gap-3">
-                        <div className="p-2 bg-white rounded-lg shadow-sm">
+                {/* Section Maladies Rares - Intégrée dans l'accordion principal */}
+                {!analysisData?.isDemo && analysisData?.sections && (
+                  <Accordion type="multiple" className="mt-4">
+                    <AccordionItem value="rare-diseases" className="border rounded-lg">
+                      <AccordionTrigger className="px-6 hover:no-underline bg-gradient-to-r from-purple-50 to-pink-50">
+                        <div className="flex items-center gap-3">
                           <Microscope className="h-5 w-5 text-purple-600" />
+                          <span className="text-left font-medium">Recherche de maladies rares</span>
                         </div>
-                        <span>Recherche de maladies rares</span>
-                      </CardTitle>
-                      <CardDescription>
-                        Analyse approfondie pour identifier d'éventuelles pathologies rares
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-6">
-                      {!showRareDiseaseSection ? (
-                        <div className="text-center py-8">
-                          <p className="text-gray-600 mb-4">
-                            Lancez une recherche avancée pour identifier des maladies rares 
-                            potentiellement en lien avec le cas clinique
-                          </p>
-                <Button
-                            onClick={searchForRareDiseases}
-                            disabled={isSearchingRareDisease || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
-                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                >
-                  {isSearchingRareDisease ? (
-                    <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Recherche en cours...
-                    </>
-                  ) : (
-                    <>
-                                <Search className="mr-2 h-4 w-4" />
-                                Lancer la recherche (1 crédit)
-                    </>
-                  )}
-                </Button>
-                          {(!user || !userCredits || (userCredits.credits ?? 0) <= 0) && (
-                            <p className="text-sm text-red-600 mt-2">
-                              {!user ? "Connexion requise" : "Crédits insuffisants"}
+                      </AccordionTrigger>
+                      <AccordionContent className="px-6 pb-6">
+                        {!showRareDiseaseSection ? (
+                          <div className="text-center py-8">
+                            <p className="text-gray-600 mb-4">
+                              Lancez une recherche avancée pour identifier des maladies rares 
+                              potentiellement en lien avec le cas clinique
+                            </p>
+                            <Button
+                              onClick={searchForRareDiseases}
+                              disabled={isSearchingRareDisease || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                            >
+                              {isSearchingRareDisease ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Recherche en cours...
+                                </>
+                              ) : (
+                                <>
+                                  <Search className="mr-2 h-4 w-4" />
+                                  Lancer la recherche (1 crédit)
+                                </>
+                              )}
+                            </Button>
+                            {(!user || !userCredits || (userCredits.credits ?? 0) <= 0) && (
+                              <p className="text-sm text-red-600 mt-2">
+                                {!user ? "Connexion requise" : "Crédits insuffisants"}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            {isSearchingRareDisease ? (
+                              // Loader sophistiqué pour la recherche de maladies rares
+                              <div className="space-y-6">
+                                <div className="flex flex-col items-center">
+                                  <div className="relative">
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                      <div className="w-24 h-24 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full opacity-20 animate-ping"></div>
+                                    </div>
+                                    <div className="relative z-10 p-4 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full shadow-lg">
+                                      <Microscope className="w-12 h-12 text-white animate-pulse" />
+                                    </div>
+                                  </div>
+                                  <h3 className="mt-4 text-lg font-semibold text-gray-800">Recherche en cours...</h3>
+                                  <p className="mt-2 text-sm text-gray-600 text-center max-w-md">
+                                    Exploration des bases de données spécialisées : Orphanet, OMIM, GeneReviews
                                   </p>
-                                )}
+                                </div>
+                                
+                                <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto">
+                                  <div className="text-center">
+                                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                                      <Globe className="w-6 h-6 text-purple-600 animate-pulse" />
+                                    </div>
+                                    <p className="text-xs text-gray-600">Orphanet</p>
                                   </div>
-                      ) : (
-                        <>
-                          {isSearchingRareDisease ? (
-                            // Loader sophistiqué pour la recherche de maladies rares
-                            <div className="space-y-6">
-                              <div className="flex flex-col items-center">
-                                <div className="relative">
-                                  <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="w-24 h-24 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full opacity-20 animate-ping"></div>
+                                  <div className="text-center">
+                                    <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                                      <BookOpen className="w-6 h-6 text-pink-600 animate-pulse" />
+                                    </div>
+                                    <p className="text-xs text-gray-600">OMIM</p>
                                   </div>
-                                  <div className="relative z-10 p-4 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full shadow-lg">
-                                    <Microscope className="w-12 h-12 text-white animate-pulse" />
+                                  <div className="text-center">
+                                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                                      <FileSearch className="w-6 h-6 text-purple-600 animate-pulse" />
+                                    </div>
+                                    <p className="text-xs text-gray-600">GeneReviews</p>
                                   </div>
                                 </div>
-                                <h3 className="mt-4 text-lg font-semibold text-gray-800">Recherche en cours...</h3>
-                                <p className="mt-2 text-sm text-gray-600 text-center max-w-md">
-                                  Exploration des bases de données spécialisées : Orphanet, OMIM, GeneReviews
-                                </p>
-                              </div>
-                              
-                              <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto">
-                                <div className="text-center">
-                                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                                    <Globe className="w-6 h-6 text-purple-600 animate-pulse" />
-              </div>
-                                  <p className="text-xs text-gray-600">Orphanet</p>
-                                </div>
-                                <div className="text-center">
-                                  <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                                    <BookOpen className="w-6 h-6 text-pink-600 animate-pulse" />
-                                  </div>
-                                  <p className="text-xs text-gray-600">OMIM</p>
-                                </div>
-                                <div className="text-center">
-                                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                                    <FileSearch className="w-6 h-6 text-purple-600 animate-pulse" />
-                                  </div>
-                                  <p className="text-xs text-gray-600">GeneReviews</p>
-                                </div>
-                              </div>
-                              
-                              <div className="bg-purple-50 rounded-lg p-4">
-                                <div className="flex items-start gap-3">
-                                  <Info className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
-                                  <div className="text-sm text-purple-800 space-y-1">
-                                    <p className="font-medium">Recherche approfondie</p>
-                                    <p>Notre IA analyse les symptômes et compare avec plus de 7000 maladies rares référencées.</p>
+                                
+                                <div className="bg-purple-50 rounded-lg p-4">
+                                  <div className="flex items-start gap-3">
+                                    <Info className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                                    <div className="text-sm text-purple-800 space-y-1">
+                                      <p className="font-medium">Recherche approfondie</p>
+                                      <p>Notre IA analyse les symptômes et compare avec plus de 7000 maladies rares référencées.</p>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          ) : rareDiseaseData && (
-                            <RareDiseaseResults data={rareDiseaseData} />
-                          )}
-                        </>
-                      )}
-                  </CardContent>
-                </Card>
+                            ) : rareDiseaseData && (
+                              <RareDiseaseResults data={rareDiseaseData} />
+                            )}
+                          </>
+                        )}
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 )}
                 
                 {/* Références bibliographiques - Placées APRÈS la section maladies rares */}

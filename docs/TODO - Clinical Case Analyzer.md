@@ -69,7 +69,9 @@ ____________________
   - un bouton reprise approfondies est également affichée pour relancer une recherche sonar (notammelt si beaucoup d'informations ont ete ajoutées)
   - donne un titre court au cas clinique, peut etre founrnit initialement par 4o mini comme tu veux
 
-En cours :
+
+_____ DONE 
+_____
 
 en fait tu peux ajouter les éléments au cas clinque en cliquant sur le + c'est très bien mais on peut avoir deux boutons : Bouton un ajouter des informations  ok  puis deux boutons visible > bouton Ajouter / bouton Ajouter et relancer l'analyse 
 ensuite il y a aussi la possibilité de modifier les sections ajoutées par le passé 
@@ -113,8 +115,8 @@ relancer l'analyse 1 crédit
 5
 les références spécialisées ne sont pas au meme format correctemet mis en forme avec titre date et auteurs 
 
-TODOOOO : 
-
+___DONE 
+___
 
 
 2 de plus les données ajoutées. manuellement ou fournie par la recherche ne sont pas éditable comme le dossier initial l'est 
@@ -140,9 +142,6 @@ ___
 
 1 la recherche maladie rare lance une recheche classique non? alrs qu'il est supposé lancer la recherche perplexity déjà existante pour focus maladie rare orphanet etc tu peux retrouver et réactiver? de pus le bouton n'est pas disponible quand j'ouvre une page historique. On doit pouvoir supprimé une information ajoutée ensuite
 
-2 la reprise approfondie et la relance d'analyse devraient mettre à jour les 7 parties et historiser l'ancienne version du resultat (le versionning existe déjà je crois dans le code) comme ça on peut suivre l'évolution de la reflexion facilement 
-
-3 de plus il n'est pas affiché les auteurs et la date pour les références bibliographique comme c'était le cas avant ni meme pour les références spécialisées maladies rares, tu peux retrouver la fonction et la réactiver stp
 
  4. Ajouter un loader pendant l'analyse
 **Contexte** : Actuellement l'analyse affiche juste "Analyse en cours..." 
@@ -157,6 +156,15 @@ ___
 
 ---
 
+TODO : 
+TODO
+TODO
+
+
+2 la reprise approfondie et la relance d'analyse devraient mettre à jour les 7 parties et historiser l'ancienne version du resultat (le versionning existe déjà je crois dans le code) comme ça on peut suivre l'évolution de la reflexion facilement 
+
+3 de plus il n'est pas affiché les auteurs et la date pour les références bibliographique comme c'était le cas avant ni meme pour les références spécialisées maladies rares, tu peux retrouver la fonction et la réactiver stp
+
 ### 5. Checklist des symptômes par diagnostic
 **Contexte** : Guider le médecin dans la validation des hypothèses
 - [ ] **Système de validation symptômes/signes**
@@ -169,6 +177,7 @@ ___
 
 ---
 ### 6. Ajouter medgemma !!
+
 
 ---
 

@@ -927,6 +927,92 @@ RÈGLES IMPORTANTES:
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 
+  // Nouvelle méthode pour l'analyse simple avec o3 seulement
+  async simpleAnalysis(
+    caseText: string,
+    progressCallback?: (message: string) => void,
+    images?: { base64: string, type: string }[]
+  ): Promise<{ sections: any[], references: any[], perplexityReport?: any, requestChain?: any[], imageAnalyses?: string[] }> {
+    this.clearRequestChain();
+
+    try {
+      // Étape 1 : Analyser les images si présentes
+      let imageAnalyses = '';
+      const imageAnalysesArray: string[] = [];
+      if (images && images.length > 0) {
+        progressCallback?.('Analyse des images médicales...');
+        for (let i = 0; i < images.length; i++) {
+          try {
+            progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
+            const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type);
+            imageAnalysesArray.push(imageAnalysis);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
+          } catch (imageError: any) {
+            console.error(`Erreur lors de l'analyse de l'image ${i + 1}:`, imageError.message);
+            const errorMsg = 'Erreur lors de l\'analyse.';
+            imageAnalysesArray.push(errorMsg);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${errorMsg}`;
+          }
+        }
+      }
+
+      // Étape 2 : Analyse clinique directe avec o3 (sans recherche Perplexity)
+      progressCallback?.('Analyse clinique avec o3...');
+      
+      const analysisPrompt = `CAS CLINIQUE À ANALYSER:
+${caseText}
+
+${imageAnalyses ? `ANALYSES D'IMAGERIE:${imageAnalyses}` : ''}
+
+INSTRUCTIONS:
+Rédige une analyse clinique structurée SANS références bibliographiques selon ces sections exactes:
+
+1. CONTEXTE CLINIQUE
+- Résume le cas présenté
+
+2. DONNÉES CLÉS
+- Identifie les éléments cliniques, biologiques et d'imagerie essentiels
+
+3. HYPOTHÈSES DIAGNOSTIQUES
+- Liste et argumente les diagnostics principaux et différentiels
+
+4. EXAMENS COMPLÉMENTAIRES RECOMMANDÉS
+- Propose les investigations pertinentes
+
+5. DÉCISIONS THÉRAPEUTIQUES
+- Détaille la prise en charge immédiate et à moyen terme
+
+6. PRONOSTIC & SUIVI
+- Évalue le pronostic et planifie le suivi
+
+7. EXPLICATIONS AU PATIENT
+- Rédige une explication claire et adaptée pour le patient
+
+Format de réponse attendu:
+[SECTION_TYPE:CLINICAL_CONTEXT]
+Contenu de la section...
+
+[SECTION_TYPE:KEY_DATA]
+Contenu de la section...
+
+(etc. pour toutes les sections)`;
+
+      const analysis = await this.analyzeWithO3(analysisPrompt, '');
+      const sections = this.parseSections(analysis);
+
+      // Retourner le résultat sans références
+      return {
+        sections,
+        references: [],
+        requestChain: this.requestChain,
+        imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
+      };
+    } catch (error: any) {
+      console.error('Erreur analyse simple:', error);
+      throw new Error('Erreur lors de l\'analyse simple: ' + error.message);
+    }
+  }
+
   // Recherche de maladies rares avec sonar-deep-research
   async searchRareDiseases(
     clinicalCase: string, 
