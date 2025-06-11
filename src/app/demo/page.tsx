@@ -30,7 +30,7 @@ import { useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { collection, addDoc } from 'firebase/firestore'
+import { collection, addDoc, doc, setDoc } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase'
 import RareDiseaseResults from '@/components/RareDiseaseResults'
 
@@ -488,8 +488,9 @@ function DemoPageContent() {
           if (user) {
             try {
               console.log('Tentative de sauvegarde dans l\'historique...')
+              const analysisId = `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
               const historyEntry = {
-                id: `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                id: analysisId,
                 userId: user.uid,
                 title: generateCaseTitle(textContent),
                 date: new Date(),
@@ -510,8 +511,24 @@ function DemoPageContent() {
 
               console.log('Données à sauvegarder:', historyEntry)
               const db = getFirebaseDb()
-              const docRef = await addDoc(collection(db, 'analyses'), historyEntry)
-              console.log('Document sauvegardé avec l\'ID:', docRef.id)
+              
+              // Utiliser setDoc avec l'ID personnalisé au lieu de addDoc
+              await setDoc(doc(db, 'analyses', analysisId), historyEntry)
+              console.log('Document sauvegardé avec l\'ID:', analysisId)
+              
+              // Stocker l'ID pour pouvoir le partager
+              setAnalysisData({
+                ...result,
+                id: analysisId,
+                isDemo: false,
+                sections: result.sections,
+                references: result.references || [],
+                perplexityReport: result.perplexityReport || null,
+                requestChain: result.requestChain || [],
+                imageAnalyses: result.imageAnalyses,
+                isSimpleAnalysis: isSimpleAnalysis
+              })
+              
               toast.success('Analyse sauvegardée dans votre historique')
             } catch (saveError: any) {
               console.error('Erreur lors de la sauvegarde:', saveError)
@@ -519,6 +536,16 @@ function DemoPageContent() {
             }
           } else {
             console.log('Utilisateur non connecté, pas de sauvegarde dans l\'historique')
+            // Si pas connecté, définir analysisData sans ID
+            setAnalysisData({
+              isDemo: false,
+              sections: result.sections,
+              references: result.references || [],
+              perplexityReport: result.perplexityReport || null,
+              requestChain: result.requestChain || [],
+              imageAnalyses: result.imageAnalyses,
+              isSimpleAnalysis: isSimpleAnalysis
+            })
           }
 
           // Déduire un crédit
@@ -528,21 +555,12 @@ function DemoPageContent() {
 
           setIsAnalyzing(false)
           setShowResults(true)
-          setAnalysisData({
-            isDemo: false,
-            sections: result.sections,
-            references: result.references || [],
-            perplexityReport: result.perplexityReport || null,
-            requestChain: result.requestChain || [],
-            imageAnalyses: result.imageAnalyses,
-            isSimpleAnalysis: isSimpleAnalysis
-          })
           setRequestChain(result.requestChain || [])
           toast.success(isSimpleAnalysis ? "Analyse simple terminée !" : "Analyse approfondie terminée !")
-      } catch (error: any) {
+        } catch (error: any) {
           console.error("Erreur lors de l'analyse:", error)
-        toast.error(error.message || "Erreur lors de l'analyse")
-        setIsAnalyzing(false)
+          toast.error(error.message || "Erreur lors de l'analyse")
+          setIsAnalyzing(false)
         }
       }
     } catch (error) {
