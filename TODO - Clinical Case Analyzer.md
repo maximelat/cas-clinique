@@ -23,17 +23,7 @@ ___DONE
   - Couleur distincte (orange/jaune) avec texte "MODE DÉMO"
   - Popup d'information au premier usage
 - [ ] **Donner le mode réel par default quand l'utilisateur est connecté**
-
-### 2. Ajouter un loader pendant l'analyse
-**Contexte** : Actuellement l'analyse affiche juste "Analyse en cours..." 
-- [ ] **Créer un composant loader sophistiqué**
-  - Animation de cerveau/IA en cours de réflexion
-  - Étapes de progression (Recherche → Analyse → Structuration)
-  - Temps estimé d'analyse
-  - Messages informatifs pendant l'
-  - idem pour chaque nouvelle requette future, notamment maladie rare
-
----
+______
 
 _____________________DONE 
 ______________________
@@ -126,7 +116,6 @@ les références spécialisées ne sont pas au meme format correctemet mis en fo
 TODOOOO : 
 
 
-1 j'ai l'impression que lorsqu'on relance l'analyse ça ne remplace pas ou ne met pas à jour la version affichée
 
 2 de plus les données ajoutées. manuellement ou fournie par la recherche ne sont pas éditable comme le dossier initial l'est 
 
@@ -139,10 +128,34 @@ TODOOOO :
 Références : <a href="#ref-1" class="text-blue-600 hover:text-blue-800 font-semibold">[1]</a> <a href="#ref-2" class="text-blue-600 hover:text-blue-800 font-semibold">[2]</a> <a href="#ref-4" class="text-blue-600 hover:text-blue-800 font-semibold">[4]</a> <a href="#ref-6" class="text-blue-600 hover:text-blue-800 font-semibold">[6]</a> <a href="#ref-8" class="text-blue-600 hover:text-blue-800 font-semibold">[8]</a> <a href="#ref-9" class="text-blue-600 hover:text-blue-800 font-semibold">[9]</a> <a href="#ref-10" class="text-blue-600 hover:text-blue-800 font-semibold">[10]</a>
 " 
 
-de plus il n'est pas affiché les auteurs et la date pour les références bibliographique comme c'était le cas avant ni meme pour la références spécialisées 
+
 
 d'ailleurs met un menu déroulant pour ces deux listes de références une fois que tu auras résolu le sujet 
 
+
+___
+
+0 l'analyse de l'image n'est pas disponible immédiatement apparement 
+"L'analyse de cette image sera disponible après la prochaine analyse" 
+
+1 la recherche maladie rare lance une recheche classique non? alrs qu'il est supposé lancer la recherche perplexity déjà existante pour focus maladie rare orphanet etc tu peux retrouver et réactiver? de pus le bouton n'est pas disponible quand j'ouvre une page historique. On doit pouvoir supprimé une information ajoutée ensuite
+
+2 la reprise approfondie et la relance d'analyse devraient mettre à jour les 7 parties et historiser l'ancienne version du resultat (le versionning existe déjà je crois dans le code) comme ça on peut suivre l'évolution de la reflexion facilement 
+
+3 de plus il n'est pas affiché les auteurs et la date pour les références bibliographique comme c'était le cas avant ni meme pour les références spécialisées maladies rares, tu peux retrouver la fonction et la réactiver stp
+
+ 4. Ajouter un loader pendant l'analyse
+**Contexte** : Actuellement l'analyse affiche juste "Analyse en cours..." 
+- [ ] **Créer un composant loader sophistiqué**
+  - Animation de cerveau/IA en cours de réflexion
+  - affichage des éléments quand disponible (dossier initial> résultat analyse image bouton pour télécharger le dossier de recher pdf perplexity, afficache dans les 7 parties, affichage maladie rare si recherché)
+  - Étapes de progression (Recherche → Analyse → Structuration > source)
+  - Temps estimé d'analyse
+  - Messages informatifs pendant l'e process complet
+  - idem pour chaque nouvelle requette future, notamment maladie rare
+  - ajouter un bouton 
+
+---
 
 ### 5. Checklist des symptômes par diagnostic
 **Contexte** : Guider le médecin dans la validation des hypothèses

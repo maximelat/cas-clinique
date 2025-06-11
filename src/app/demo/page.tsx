@@ -14,7 +14,7 @@ import {
   Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, 
   CircleCheck, Eye, Plus, RefreshCw, GitBranch, Edit, ChevronUp, 
   ChevronLeft, Save, Loader2, Sparkles, CheckCircle, Trash2, Check, Lightbulb, 
-  Globe, Calculator
+  Globe, Calculator, Clock, FileSearch
 } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
@@ -499,7 +499,8 @@ function DemoPageContent() {
             sections: result.sections,
             references: result.references,
             perplexityReport: result.perplexityReport,
-            requestChain: result.requestChain
+            requestChain: result.requestChain,
+            imageAnalyses: result.imageAnalyses
           })
           setRequestChain(result.requestChain || [])
           toast.success("Analyse terminée !")
@@ -951,6 +952,19 @@ Exemple de format attendu :
   const handleDeepAnalysis = async () => {
     if (!analysisData || !user || !userCredits || userCredits.credits < 2) return
     
+    // Sauvegarder la version actuelle avant la mise à jour
+    if (analysisData) {
+      const currentVersion = {
+        timestamp: new Date().toISOString(),
+        sections: analysisData.sections,
+        references: analysisData.references,
+        perplexityReport: analysisData.perplexityReport,
+        type: 'deep_analysis',
+        version: analysisVersions.length + 1
+      }
+      setAnalysisVersions(prev => [...prev, currentVersion])
+    }
+    
     setIsAnalyzing(true)
     setProgressMessage("Reprise approfondie en cours...")
     
@@ -1010,9 +1024,13 @@ Exemple de format attendu :
         references: result.references,
         perplexityReport: result.perplexityReport,
         requestChain: result.requestChain,
-        isDeepAnalysis: true
+        isDeepAnalysis: true,
+        imageAnalyses: result.imageAnalyses,
+        version: analysisVersions.length + 2,
+        previousVersion: analysisVersions.length + 1
       })
       setRequestChain(result.requestChain || [])
+      setCurrentSections(result.sections) // Forcer l'affichage des nouvelles sections
       
       toast.success("Reprise approfondie terminée !")
     } catch (error: any) {
@@ -1026,6 +1044,19 @@ Exemple de format attendu :
   // Fonction pour relancer l'analyse (1 crédit)
   const handleRelaunchAnalysis = async () => {
     if (!analysisData || !user || !userCredits || userCredits.credits < 1) return
+    
+    // Sauvegarder la version actuelle avant la mise à jour
+    if (analysisData) {
+      const currentVersion = {
+        timestamp: new Date().toISOString(),
+        sections: analysisData.sections,
+        references: analysisData.references,
+        perplexityReport: analysisData.perplexityReport,
+        type: 'relaunch_analysis',
+        version: analysisVersions.length + 1
+      }
+      setAnalysisVersions(prev => [...prev, currentVersion])
+    }
     
     setIsAnalyzing(true)
     setProgressMessage("Relance de l'analyse en cours...")
@@ -1087,7 +1118,9 @@ Exemple de format attendu :
         sections: result.sections,
         // On garde les références et perplexityReport existants
         requestChain: result.requestChain,
-        lastRelaunched: new Date().toISOString()
+        lastRelaunched: new Date().toISOString(),
+        version: analysisVersions.length + 2,
+        previousVersion: analysisVersions.length + 1
       }
       setAnalysisData(updatedData)
       setCurrentSections(result.sections) // Forcer la mise à jour de l'affichage
@@ -1187,326 +1220,443 @@ Exemple de format attendu :
         )}
 
         {!showResults ? (
-          <Card className="max-w-4xl mx-auto">
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Entrez votre cas clinique</CardTitle>
-                  <CardDescription>
-                    Collez ou tapez le cas clinique à analyser
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="demo-toggle" className="text-sm">
-                    Mode démo
-                  </Label>
-                  <Button
-                    id="demo-toggle"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsDemoMode(!isDemoMode)}
-                    className="p-1"
-                  >
-                    {isDemoMode ? (
-                      <ToggleRight className="h-6 w-6 text-blue-600" />
-                    ) : (
-                      <ToggleLeft className="h-6 w-6 text-gray-500" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <Label htmlFor="content">Cas clinique</Label>
-                  {isAudioSupported && (
-                    <div className="flex items-center gap-2">
-                      {isRecording && (
-                        <span className="text-sm text-gray-600">
-                          {formatTime(recordingTime)}
-                        </span>
+          <>
+            {isAnalyzing ? (
+              // Loader sophistiqué pendant l'analyse
+              <div className="max-w-4xl mx-auto">
+                <Card className="border-0 shadow-xl">
+                  <CardContent className="p-8">
+                    <div className="space-y-8">
+                      {/* Animation du cerveau/IA */}
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="relative">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-32 h-32 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full opacity-20 animate-ping"></div>
+                          </div>
+                          <div className="relative z-10 p-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full shadow-lg">
+                            <Brain className="w-16 h-16 text-white animate-pulse" />
+                          </div>
+                        </div>
+                        <h2 className="mt-6 text-2xl font-bold text-gray-800">Analyse en cours...</h2>
+                        <p className="mt-2 text-gray-600 text-center max-w-md">
+                          Notre IA médicale analyse votre cas clinique en profondeur
+                        </p>
+                      </div>
+
+                      {/* Barre de progression avec étapes */}
+                      <div className="space-y-4">
+                        <div className="flex justify-between text-sm text-gray-600 mb-2">
+                          <span>Progression</span>
+                          <span className="font-medium">{progressMessage}</span>
+                        </div>
+                        
+                        <div className="relative">
+                          <div className="flex justify-between mb-2">
+                            <div className="flex flex-col items-center">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${progressMessage.includes('image') ? 'bg-blue-600 text-white' : progressMessage.includes('Analyse') ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
+                                <Camera className="w-5 h-5" />
+                              </div>
+                              <span className="text-xs mt-1">Images</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${progressMessage.includes('académique') ? 'bg-blue-600 text-white animate-pulse' : progressMessage.includes('références') || progressMessage.includes('complète') ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
+                                <Search className="w-5 h-5" />
+                              </div>
+                              <span className="text-xs mt-1">Recherche</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${progressMessage.includes('références') ? 'bg-blue-600 text-white animate-pulse' : progressMessage.includes('complète') ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
+                                <Brain className="w-5 h-5" />
+                              </div>
+                              <span className="text-xs mt-1">Analyse</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${progressMessage.includes('complète') ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-300'}`}>
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <span className="text-xs mt-1">Structuration</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${progressMessage.includes('complète') && currentSections.length > 0 ? 'bg-green-600 text-white' : 'bg-gray-300'}`}>
+                                <CheckCircle className="w-5 h-5" />
+                              </div>
+                              <span className="text-xs mt-1">Finalisation</span>
+                            </div>
+                          </div>
+                          <div className="absolute top-5 left-0 right-0 h-0.5 bg-gray-300 -z-10"></div>
+                          <div 
+                            className="absolute top-5 left-0 h-0.5 bg-gradient-to-r from-blue-600 to-purple-600 -z-10 transition-all duration-500"
+                            style={{ 
+                              width: progressMessage.includes('image') ? '20%' : 
+                                     progressMessage.includes('académique') ? '40%' :
+                                     progressMessage.includes('références') ? '60%' :
+                                     progressMessage.includes('complète') ? '80%' :
+                                     currentSections.length > 0 ? '100%' : '10%'
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      {/* Sections en cours de génération */}
+                      {currentSections.length > 0 && (
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-medium text-gray-700">Sections générées :</h3>
+                          <div className="space-y-2">
+                            {currentSections.map((section, index) => (
+                              <div key={index} className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                <CheckCircle className="w-5 h-5 text-green-600" />
+                                <span className="text-sm font-medium text-gray-800">
+                                  {sectionTitles[section.type as keyof typeof sectionTitles] || section.type}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                      {!isRecording ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleStartRecording}
-                          disabled={isTranscribing || isDemoMode}
-                        >
-                          <Mic className="h-4 w-4 mr-2" />
-                          Dicter
-                        </Button>
-                      ) : (
-                        <div className="flex gap-2">
-                          {isPaused ? (
+
+                      {/* Messages informatifs */}
+                      <div className="bg-blue-50 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                          <div className="text-sm text-blue-800 space-y-1">
+                            <p className="font-medium">Le saviez-vous ?</p>
+                            <p>Notre IA utilise les dernières avancées en traitement du langage naturel pour analyser votre cas clinique et croiser les informations avec les bases de données médicales les plus récentes.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Temps estimé */}
+                      <div className="text-center text-sm text-gray-600">
+                        <Clock className="w-4 h-4 inline mr-1" />
+                        Temps estimé : 30-45 secondes
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <Card className="max-w-4xl mx-auto">
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <CardTitle>Entrez votre cas clinique</CardTitle>
+                      <CardDescription>
+                        Collez ou tapez le cas clinique à analyser
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="demo-toggle" className="text-sm">
+                        Mode démo
+                      </Label>
+                      <Button
+                        id="demo-toggle"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsDemoMode(!isDemoMode)}
+                        className="p-1"
+                      >
+                        {isDemoMode ? (
+                          <ToggleRight className="h-6 w-6 text-blue-600" />
+                        ) : (
+                          <ToggleLeft className="h-6 w-6 text-gray-500" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <Label htmlFor="content">Cas clinique</Label>
+                      {isAudioSupported && (
+                        <div className="flex items-center gap-2">
+                          {isRecording && (
+                            <span className="text-sm text-gray-600">
+                              {formatTime(recordingTime)}
+                            </span>
+                          )}
+                          {!isRecording ? (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={resumeRecording}
+                              onClick={handleStartRecording}
+                              disabled={isTranscribing || isDemoMode}
                             >
-                              <Play className="h-4 w-4" />
+                              <Mic className="h-4 w-4 mr-2" />
+                              Dicter
                             </Button>
                           ) : (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={pauseRecording}
-                            >
-                              <Pause className="h-4 w-4" />
-                            </Button>
+                            <div className="flex gap-2">
+                              {isPaused ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={resumeRecording}
+                                >
+                                  <Play className="h-4 w-4" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={pauseRecording}
+                                >
+                                  <Pause className="h-4 w-4" />
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                variant="default"
+                                size="sm"
+                                onClick={handleStopRecording}
+                              >
+                                <MicOff className="h-4 w-4 mr-2" />
+                                Arrêter
+                              </Button>
+                            </div>
                           )}
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="sm"
-                            onClick={handleStopRecording}
-                          >
-                            <MicOff className="h-4 w-4 mr-2" />
-                            Arrêter
-                          </Button>
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-                <textarea
-                  id="content"
-                  value={textContent}
-                  onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
-                  placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
-                  className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                  disabled={isRecording || isTranscribing || isDemoMode}
-                />
-                {recordingError && (
-                  <p className="text-sm text-red-600 mt-2">{recordingError}</p>
-                )}
-                {isTranscribing && (
-                  <p className="text-sm text-gray-600 mt-2 animate-pulse">
-                    Transcription en cours...
-                  </p>
-                )}
-                {!isDemoMode && !user && (
-                  <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
-                    <Lock className="h-4 w-4" /> 
-                    <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Formulaire structuré dans un accordéon */}
-              {!isDemoMode && hasApiKeys && (
-                <Accordion type="multiple" className="mt-4 border rounded-lg">
-                  <AccordionItem value="structured-form" className="border-0">
-                    <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white rounded-lg shadow-sm">
-                          <FileText className="h-5 w-5 text-blue-600" />
-                        </div>
-                        <div className="text-left">
-                          <h3 className="font-semibold text-gray-900">Formulaire structuré</h3>
-                          <p className="text-sm text-gray-600">Organisez les informations du cas clinique</p>
-                        </div>
-                      </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-4 pb-4 pt-2">
-                      <div className="space-y-4">
-                        {/* Boutons d'action */}
-                        <div className="flex gap-2 justify-end">
-                          {textContent.trim() && (
-                            <Button
-                              type="button"
-                              variant="default"
-                              size="sm"
-                              onClick={extractStructuredData}
-                              disabled={isExtractingForm}
-                              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                            >
-                              {isExtractingForm ? (
-                                <>
-                                  <Brain className="mr-2 h-4 w-4 animate-pulse" />
-                                  Extraction en cours...
-                                </>
-                              ) : (
-                                <>
-                                  <Brain className="mr-2 h-4 w-4" />
-                                  Extraire automatiquement
-                                </>
-                              )}
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={updateFromStructuredForm}
-                            disabled={!structuredForm.anamnese && !structuredForm.antecedents && !structuredForm.examenClinique}
-                          >
-                            <Copy className="mr-2 h-4 w-4" />
-                            Appliquer au cas
-                          </Button>
-                        </div>
-                        
-                        {/* Champs du formulaire */}
-                        <div className="space-y-3 bg-white p-4 rounded-lg border">
-                          <div>
-                            <Label htmlFor="contextePatient" className="text-sm font-medium flex items-center gap-2">
-                              <Users className="h-4 w-4 text-gray-500" />
-                              Contexte patient
-                            </Label>
-                            <textarea
-                              id="contextePatient"
-                              value={structuredForm.contextePatient}
-                              onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
-                              placeholder="Âge, sexe, profession, mode de vie..."
-                              className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="anamnese" className="text-sm font-medium flex items-center gap-2">
-                              <History className="h-4 w-4 text-gray-500" />
-                              Anamnèse
-                            </Label>
-                            <textarea
-                              id="anamnese"
-                              value={structuredForm.anamnese}
-                              onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
-                              placeholder="Symptômes principaux, chronologie, évolution..."
-                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="antecedents" className="text-sm font-medium flex items-center gap-2">
-                              <Calendar className="h-4 w-4 text-gray-500" />
-                              Antécédents
-                            </Label>
-                            <textarea
-                              id="antecedents"
-                              value={structuredForm.antecedents}
-                              onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
-                              placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
-                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="examenClinique" className="text-sm font-medium flex items-center gap-2">
-                              <Search className="h-4 w-4 text-gray-500" />
-                              Examen clinique
-                            </Label>
-                            <textarea
-                              id="examenClinique"
-                              value={structuredForm.examenClinique}
-                              onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
-                              placeholder="Constantes, examen physique par systèmes..."
-                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          
-                          <div>
-                            <Label htmlFor="examensComplementaires" className="text-sm font-medium flex items-center gap-2">
-                              <Microscope className="h-4 w-4 text-gray-500" />
-                              Examens complémentaires
-                            </Label>
-                            <textarea
-                              id="examensComplementaires"
-                              value={structuredForm.examensComplementaires}
-                              onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
-                              placeholder="Biologie, imagerie, ECG, etc..."
-                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              )}
-
-              {/* Upload d'images */}
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="images">Images médicales (optionnel)</Label>
-                  <div className="mt-2 flex items-center gap-4">
-                    <input
-                      type="file"
-                      id="images"
-                      accept="image/*"
-                      multiple
-                      onChange={handleImageUpload}
-                      className="hidden"
-                      disabled={isDemoMode}
+                    <textarea
+                      id="content"
+                      value={textContent}
+                      onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
+                      placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
+                      className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      disabled={isRecording || isTranscribing || isDemoMode}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => document.getElementById('images')?.click()}
-                      disabled={isAnalyzing || isDemoMode}
-                    >
-                      <ImagePlus className="h-4 w-4 mr-2" />
-                      Ajouter des images
-                    </Button>
-                    <span className="text-sm text-gray-600">
-                      {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
-                    </span>
+                    {recordingError && (
+                      <p className="text-sm text-red-600 mt-2">{recordingError}</p>
+                    )}
+                    {isTranscribing && (
+                      <p className="text-sm text-gray-600 mt-2 animate-pulse">
+                        Transcription en cours...
+                      </p>
+                    )}
+                    {!isDemoMode && !user && (
+                      <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
+                        <Lock className="h-4 w-4" /> 
+                        <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
+                      </div>
+                    )}
                   </div>
-                </div>
 
-                {uploadedImages.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {uploadedImages.map((img, index) => (
-                      <div key={index} className="relative group">
-                        <div className="border rounded-lg p-3 bg-gray-50">
-                          <p className="text-xs font-medium truncate">{img.name}</p>
-                          <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
-                        </div>
+                  {/* Formulaire structuré dans un accordéon */}
+                  {!isDemoMode && hasApiKeys && (
+                    <Accordion type="multiple" className="mt-4 border rounded-lg">
+                      <AccordionItem value="structured-form" className="border-0">
+                        <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-white rounded-lg shadow-sm">
+                              <FileText className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <div className="text-left">
+                              <h3 className="font-semibold text-gray-900">Formulaire structuré</h3>
+                              <p className="text-sm text-gray-600">Organisez les informations du cas clinique</p>
+                            </div>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-4 pb-4 pt-2">
+                          <div className="space-y-4">
+                            {/* Boutons d'action */}
+                            <div className="flex gap-2 justify-end">
+                              {textContent.trim() && (
+                                <Button
+                                  type="button"
+                                  variant="default"
+                                  size="sm"
+                                  onClick={extractStructuredData}
+                                  disabled={isExtractingForm}
+                                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                                >
+                                  {isExtractingForm ? (
+                                    <>
+                                      <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                                      Extraction en cours...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Brain className="mr-2 h-4 w-4" />
+                                      Extraire automatiquement
+                                    </>
+                                  )}
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={updateFromStructuredForm}
+                                disabled={!structuredForm.anamnese && !structuredForm.antecedents && !structuredForm.examenClinique}
+                              >
+                                <Copy className="mr-2 h-4 w-4" />
+                                Appliquer au cas
+                              </Button>
+                            </div>
+                            
+                            {/* Champs du formulaire */}
+                            <div className="space-y-3 bg-white p-4 rounded-lg border">
+                              <div>
+                                <Label htmlFor="contextePatient" className="text-sm font-medium flex items-center gap-2">
+                                  <Users className="h-4 w-4 text-gray-500" />
+                                  Contexte patient
+                                </Label>
+                                <textarea
+                                  id="contextePatient"
+                                  value={structuredForm.contextePatient}
+                                  onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
+                                  placeholder="Âge, sexe, profession, mode de vie..."
+                                  className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                              
+                              <div>
+                                <Label htmlFor="anamnese" className="text-sm font-medium flex items-center gap-2">
+                                  <History className="h-4 w-4 text-gray-500" />
+                                  Anamnèse
+                                </Label>
+                                <textarea
+                                  id="anamnese"
+                                  value={structuredForm.anamnese}
+                                  onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
+                                  placeholder="Symptômes principaux, chronologie, évolution..."
+                                  className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                              
+                              <div>
+                                <Label htmlFor="antecedents" className="text-sm font-medium flex items-center gap-2">
+                                  <Calendar className="h-4 w-4 text-gray-500" />
+                                  Antécédents
+                                </Label>
+                                <textarea
+                                  id="antecedents"
+                                  value={structuredForm.antecedents}
+                                  onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
+                                  placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
+                                  className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                              
+                              <div>
+                                <Label htmlFor="examenClinique" className="text-sm font-medium flex items-center gap-2">
+                                  <Search className="h-4 w-4 text-gray-500" />
+                                  Examen clinique
+                                </Label>
+                                <textarea
+                                  id="examenClinique"
+                                  value={structuredForm.examenClinique}
+                                  onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
+                                  placeholder="Constantes, examen physique par systèmes..."
+                                  className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                              
+                              <div>
+                                <Label htmlFor="examensComplementaires" className="text-sm font-medium flex items-center gap-2">
+                                  <Microscope className="h-4 w-4 text-gray-500" />
+                                  Examens complémentaires
+                                </Label>
+                                <textarea
+                                  id="examensComplementaires"
+                                  value={structuredForm.examensComplementaires}
+                                  onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
+                                  placeholder="Biologie, imagerie, ECG, etc..."
+                                  className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
+                  )}
+
+                  {/* Upload d'images */}
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="images">Images médicales (optionnel)</Label>
+                      <div className="mt-2 flex items-center gap-4">
+                        <input
+                          type="file"
+                          id="images"
+                          accept="image/*"
+                          multiple
+                          onChange={handleImageUpload}
+                          className="hidden"
+                          disabled={isDemoMode}
+                        />
                         <Button
                           type="button"
-                          variant="destructive"
-                          size="icon"
-                          className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removeImage(index)}
+                          variant="outline"
+                          onClick={() => document.getElementById('images')?.click()}
+                          disabled={isAnalyzing || isDemoMode}
                         >
-                          <X className="h-3 w-3" />
+                          <ImagePlus className="h-4 w-4 mr-2" />
+                          Ajouter des images
                         </Button>
+                        <span className="text-sm text-gray-600">
+                          {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
+                        </span>
                       </div>
-                    ))}
+                    </div>
+
+                    {uploadedImages.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {uploadedImages.map((img, index) => (
+                          <div key={index} className="relative group">
+                            <div className="border rounded-lg p-3 bg-gray-50">
+                              <p className="text-xs font-medium truncate">{img.name}</p>
+                              <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => removeImage(index)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {isAnalyzing && progressMessage && (
-                <div className="text-center text-sm text-gray-600">
-                  {progressMessage}
-                </div>
-              )}
-
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleAnalyze}
-                  disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
-                  className="min-w-[200px]"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Brain className="mr-2 h-4 w-4 animate-pulse" />
-                      Analyse en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Brain className="mr-2 h-4 w-4" />
-                      Analyser le cas
-                    </>
+                  {isAnalyzing && progressMessage && (
+                    <div className="text-center text-sm text-gray-600">
+                      {progressMessage}
+                    </div>
                   )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
+                      className="min-w-[200px]"
+                    >
+                      {isAnalyzing ? (
+                        <>
+                          <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                          Analyse en cours...
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="mr-2 h-4 w-4" />
+                          Analyser le cas
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
         ) : (
           <div id="analysis-results">
             <div className="mb-6 flex justify-between items-center">
@@ -1558,6 +1708,18 @@ Exemple de format attendu :
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
+                )}
+                {/* Bouton historique des versions */}
+                {analysisVersions.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowVersionComparison(!showVersionComparison)}
+                    className="bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-300"
+                  >
+                    <History className="mr-2 h-4 w-4" />
+                    Historique ({analysisVersions.length})
+                  </Button>
                 )}
                 {/* Boutons spéciaux pour maxime.latry@gmail.com */}
                 {user?.email === 'maxime.latry@gmail.com' && (
@@ -1819,6 +1981,75 @@ Exemple de format attendu :
                   </AccordionItem>
                 </Accordion>
 
+                {/* Modal historique des versions */}
+                {showVersionComparison && analysisVersions.length > 0 && (
+                  <Dialog open={showVersionComparison} onOpenChange={setShowVersionComparison}>
+                    <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <History className="h-5 w-5" />
+                          Historique des versions de l'analyse
+                        </DialogTitle>
+                        <DialogDescription>
+                          Comparez les différentes versions de votre analyse clinique
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 mt-4">
+                        {/* Version actuelle */}
+                        <div className="border rounded-lg p-4 bg-green-50 border-green-200">
+                          <div className="flex justify-between items-center mb-2">
+                            <h3 className="font-semibold text-green-800">Version actuelle</h3>
+                            <Badge className="bg-green-600">Active</Badge>
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            {analysisData?.version ? `Version ${analysisData.version}` : 'Version 1'} • 
+                            {analysisData?.lastRelaunched ? ` Mise à jour le ${new Date(analysisData.lastRelaunched).toLocaleString('fr-FR')}` : ' Version initiale'}
+                          </p>
+                        </div>
+                        
+                        {/* Versions précédentes */}
+                        {[...analysisVersions].reverse().map((version, index) => (
+                          <div key={index} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                            <div className="flex justify-between items-center mb-2">
+                              <h3 className="font-semibold">Version {version.version}</h3>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">
+                                  {version.type === 'deep_analysis' ? 'Reprise approfondie' : 
+                                   version.type === 'relaunch_analysis' ? 'Relance' : 'Analyse initiale'}
+                                </Badge>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    // Restaurer cette version
+                                    setAnalysisData({
+                                      ...version,
+                                      isRestored: true,
+                                      restoredFrom: analysisData
+                                    })
+                                    setCurrentSections(version.sections)
+                                    setShowVersionComparison(false)
+                                    toast.success(`Version ${version.version} restaurée`)
+                                  }}
+                                >
+                                  Restaurer
+                                </Button>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              Créée le {new Date(version.timestamp).toLocaleString('fr-FR')}
+                            </p>
+                            <div className="mt-2 text-sm text-gray-700">
+                              <p>• {version.sections.length} sections</p>
+                              <p>• {version.references.length} références</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+
                 {/* Boutons pour gérer les accordéons */}
                 <div className="mb-4 flex justify-end gap-2">
                   <Button
@@ -1944,23 +2175,42 @@ Exemple de format attendu :
                                     ) : (
                                       <div className="text-sm text-blue-700 mb-2 group flex items-start justify-between">
                                         <span>• {mod.additionalInfo}</span>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="opacity-0 group-hover:opacity-100 ml-2"
-                                          onClick={() => {
-                                            setEditingPreviousSection({
-                                              ...editingPreviousSection,
-                                              [`${section.type}-${idx}`]: true
-                                            })
-                                            setEditedPreviousInfo({
-                                              ...editedPreviousInfo,
-                                              [`${section.type}-${idx}`]: mod.additionalInfo
-                                            })
-                                          }}
-                                        >
-                                          <Edit className="h-3 w-3" />
-                                        </Button>
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                              setEditingPreviousSection({
+                                                ...editingPreviousSection,
+                                                [`${section.type}-${idx}`]: true
+                                              })
+                                              setEditedPreviousInfo({
+                                                ...editedPreviousInfo,
+                                                [`${section.type}-${idx}`]: mod.additionalInfo
+                                              })
+                                            }}
+                                          >
+                                            <Edit className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="hover:text-red-600"
+                                            onClick={() => {
+                                              // Supprimer la modification
+                                              const updatedHistory = analysisData.modificationHistory.filter((m: any, i: number) => {
+                                                return !(m.sectionType === section.type && i === idx)
+                                              })
+                                              setAnalysisData({
+                                                ...analysisData,
+                                                modificationHistory: updatedHistory
+                                              })
+                                              toast.success("Modification supprimée")
+                                            }}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
                                       </div>
                                     )}
                                   </div>
@@ -2078,7 +2328,56 @@ Exemple de format attendu :
                                   </div>
                       ) : (
                         <>
-                          {rareDiseaseData && (
+                          {isSearchingRareDisease ? (
+                            // Loader sophistiqué pour la recherche de maladies rares
+                            <div className="space-y-6">
+                              <div className="flex flex-col items-center">
+                                <div className="relative">
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-24 h-24 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full opacity-20 animate-ping"></div>
+                                  </div>
+                                  <div className="relative z-10 p-4 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full shadow-lg">
+                                    <Microscope className="w-12 h-12 text-white animate-pulse" />
+                                  </div>
+                                </div>
+                                <h3 className="mt-4 text-lg font-semibold text-gray-800">Recherche en cours...</h3>
+                                <p className="mt-2 text-sm text-gray-600 text-center max-w-md">
+                                  Exploration des bases de données spécialisées : Orphanet, OMIM, GeneReviews
+                                </p>
+                              </div>
+                              
+                              <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto">
+                                <div className="text-center">
+                                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <Globe className="w-6 h-6 text-purple-600 animate-pulse" />
+                                  </div>
+                                  <p className="text-xs text-gray-600">Orphanet</p>
+                                </div>
+                                <div className="text-center">
+                                  <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <BookOpen className="w-6 h-6 text-pink-600 animate-pulse" />
+                                  </div>
+                                  <p className="text-xs text-gray-600">OMIM</p>
+                                </div>
+                                <div className="text-center">
+                                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                                    <FileSearch className="w-6 h-6 text-purple-600 animate-pulse" />
+                                  </div>
+                                  <p className="text-xs text-gray-600">GeneReviews</p>
+                                </div>
+                              </div>
+                              
+                              <div className="bg-purple-50 rounded-lg p-4">
+                                <div className="flex items-start gap-3">
+                                  <Info className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                                  <div className="text-sm text-purple-800 space-y-1">
+                                    <p className="font-medium">Recherche approfondie</p>
+                                    <p>Notre IA analyse les symptômes et compare avec plus de 7000 maladies rares référencées.</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : rareDiseaseData && (
                             <div className="space-y-6">
                               <div className="bg-purple-50 p-4 rounded-lg">
                                 <h4 className="font-semibold text-purple-900 mb-2">
