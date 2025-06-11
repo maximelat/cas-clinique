@@ -581,32 +581,32 @@ function AnalysisView() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-        <div className="container mx-auto px-4 py-8 max-w-5xl">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Analyse sauvegardée</h1>
-              <p className="text-gray-600 mt-1">
-                {format(analysis.date.toDate(), "dd MMMM yyyy à HH:mm", { locale: fr })}
-              </p>
-            </div>
-            <Link href="/history">
-              <Button variant="outline">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Retour à l'historique
-              </Button>
-            </Link>
+      <div className="container mx-auto px-4 py-8 max-w-5xl">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Analyse sauvegardée</h1>
+            <p className="text-gray-600 mt-1">
+              {format(analysis.date.toDate(), "dd MMMM yyyy à HH:mm", { locale: fr })}
+            </p>
           </div>
+          <Link href="/history">
+            <Button variant="outline">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Retour à l'historique
+            </Button>
+          </Link>
+        </div>
 
-          <div id="analysis-results">
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>{analysis.title}</CardTitle>
-                <CardDescription>
-                  ID: {analysis.id}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
+        <div id="analysis-results">
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>{analysis.title}</CardTitle>
+              <CardDescription>
+                ID: {analysis.id}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
                   {/* Boutons pour la gestion des versions */}
                   {analysisVersions.length > 0 && (
                     <Button
@@ -661,44 +661,44 @@ function AnalysisView() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  {analysis.perplexityReport && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={downloadReport}
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Rapport de recherche
-                    </Button>
-                  )}
+                {analysis.perplexityReport && (
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={exportAsPDF}
+                    onClick={downloadReport}
                   >
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Export PDF
+                    <Download className="mr-2 h-4 w-4" />
+                    Rapport de recherche
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportAsText}
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Export TXT
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copyToClipboard}
-                  >
-                    <Copy className="mr-2 h-4 w-4" />
-                    Copier
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-            
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportAsPDF}
+                >
+                  <FileDown className="mr-2 h-4 w-4" />
+                  Export PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportAsText}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Export TXT
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={copyToClipboard}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copier
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          
             {/* Indicateur de ré-analyse en cours */}
             {isReanalyzing && progressMessage && (
               <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -876,17 +876,17 @@ function AnalysisView() {
               value={accordionValues}
               onValueChange={setAccordionValues}
             >
-              {analysis.sections.map((section: any, index: number) => (
-                <AccordionItem key={index} value={String(index)} className="border rounded-lg">
-                  <AccordionTrigger className="px-6 hover:no-underline">
-                    <span className="text-left font-medium">
-                      {sectionTitles[section.type as keyof typeof sectionTitles]}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pb-6">
+            {analysis.sections.map((section: any, index: number) => (
+              <AccordionItem key={index} value={String(index)} className="border rounded-lg">
+                <AccordionTrigger className="px-6 hover:no-underline">
+                  <span className="text-left font-medium">
+                    {sectionTitles[section.type as keyof typeof sectionTitles]}
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-6">
                     {/* Contenu de la section */}
                     <div className="mb-4">
-                      {renderContentWithReferences(section.content, analysis.references || [])}
+                  {renderContentWithReferences(section.content, analysis.references || [])}
                     </div>
                     
                     {/* Afficher les modifications précédentes s'il y en a */}
@@ -1037,38 +1037,92 @@ function AnalysisView() {
                         </Button>
                       </div>
                     )}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-              
-              {analysis.rareDiseaseData && (
-                <AccordionItem value="rare-diseases" className="border rounded-lg">
-                  <AccordionTrigger className="px-6 hover:no-underline">
-                    <span className="text-left font-medium flex items-center gap-2">
-                      <Microscope className="h-4 w-4 text-purple-600" />
-                      8. Recherche de maladies rares
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pb-6">
-                    {renderContentWithReferences(
-                      analysis.rareDiseaseData.report, 
-                      analysis.rareDiseaseData.references || []
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-              )}
-            </Accordion>
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+            
+            {analysis.rareDiseaseData && (
+              <AccordionItem value="rare-diseases" className="border rounded-lg">
+                <AccordionTrigger className="px-6 hover:no-underline">
+                  <span className="text-left font-medium flex items-center gap-2">
+                    <Microscope className="h-4 w-4 text-purple-600" />
+                    8. Recherche de maladies rares
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-6">
+                  {renderContentWithReferences(
+                    analysis.rareDiseaseData.report, 
+                    analysis.rareDiseaseData.references || []
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            )}
+          </Accordion>
 
+          <Card className="mt-8">
+            <CardHeader>
+              <CardTitle>Références bibliographiques</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-4">
+                {analysis.references.map((ref: any) => (
+                  <li key={ref.label} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
+                    <div className="flex items-start gap-3">
+                      <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                      <div className="flex-1">
+                        <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                        {ref.authors && (
+                          <p className="text-sm text-gray-700 mb-1">
+                            <span className="font-medium">Auteurs :</span> {ref.authors}
+                          </p>
+                        )}
+                        {ref.journal && (
+                          <p className="text-sm text-gray-600 italic mb-1">
+                            <span className="font-medium not-italic">Journal :</span> {ref.journal}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                          {ref.year && (
+                            <span className="bg-gray-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                          )}
+                          {ref.doi && (
+                            <span className="bg-gray-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
+                          )}
+                          {ref.pmid && (
+                            <span className="bg-gray-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
+                          )}
+                        </div>
+                        <a
+                          href={ref.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                        >
+                          Consulter la source
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+
+          {analysis.rareDiseaseData && analysis.rareDiseaseData.references?.length > 0 && (
             <Card className="mt-8">
               <CardHeader>
-                <CardTitle>Références bibliographiques</CardTitle>
+                <CardTitle>Références - Maladies rares</CardTitle>
+                <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-4">
-                  {analysis.references.map((ref: any) => (
-                    <li key={ref.label} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
+                  {analysis.rareDiseaseData.references.map((ref: any) => (
+                    <li key={`rare-${ref.label}`} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
                       <div className="flex items-start gap-3">
-                        <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                        <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
                         <div className="flex-1">
                           <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
                           {ref.authors && (
@@ -1081,22 +1135,16 @@ function AnalysisView() {
                               <span className="font-medium not-italic">Journal :</span> {ref.journal}
                             </p>
                           )}
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                            {ref.year && (
-                              <span className="bg-gray-200 px-2 py-1 rounded">Année : {ref.year}</span>
-                            )}
-                            {ref.doi && (
-                              <span className="bg-gray-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
-                            )}
-                            {ref.pmid && (
-                              <span className="bg-gray-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
-                            )}
-                          </div>
+                          {ref.year && (
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                              <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                            </div>
+                          )}
                           <a
                             href={ref.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                            className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
                           >
                             Consulter la source
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1110,58 +1158,10 @@ function AnalysisView() {
                 </ul>
               </CardContent>
             </Card>
-
-            {analysis.rareDiseaseData && analysis.rareDiseaseData.references?.length > 0 && (
-              <Card className="mt-8">
-                <CardHeader>
-                  <CardTitle>Références - Maladies rares</CardTitle>
-                  <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-4">
-                    {analysis.rareDiseaseData.references.map((ref: any) => (
-                      <li key={`rare-${ref.label}`} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
-                        <div className="flex items-start gap-3">
-                          <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                          <div className="flex-1">
-                            <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                            {ref.authors && (
-                              <p className="text-sm text-gray-700 mb-1">
-                                <span className="font-medium">Auteurs :</span> {ref.authors}
-                              </p>
-                            )}
-                            {ref.journal && (
-                              <p className="text-sm text-gray-600 italic mb-1">
-                                <span className="font-medium not-italic">Journal :</span> {ref.journal}
-                              </p>
-                            )}
-                            {ref.year && (
-                              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                                <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
-                              </div>
-                            )}
-                            <a
-                              href={ref.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
-                            >
-                              Consulter la source
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                            </a>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+          )}
         </div>
       </div>
+    </div>
   )
 }
 

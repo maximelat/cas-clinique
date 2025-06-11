@@ -106,6 +106,23 @@ Voir les anciennes versions - Tentative d'ajouter un bouton "Voir" mais erreurs 
 
 TODOOOOO:
 
+1 
+la requette perplexity ""Recherche académique"," doit venir juste avant la recherche "Analyse clinique complète"
+incluant "Analyse des références" + ""Analyse d'image other"  + le contenu ajouté par l'utilisateur initialement ou ensuite 
+ainsi la recherche académique est la recherche la plus complète
+
+2
+recherche maladei rare doit etre avant toutes les ref
+
+3 l'image doit etre affichée  dans l'onglet 'voir dossier initial' et peute tre enlever ou alors on peut en ajouter afin de relancer une recherce
+
+4 
+reprise approfondie 2 credits 
+relancer l'analyse 1 crédit
+
+5
+les références spécialisées ne sont pas au meme format correctemet mis en forme avec titre date et auteurs 
+
 ### 5. Checklist des symptômes par diagnostic
 **Contexte** : Guider le médecin dans la validation des hypothèses
 - [ ] **Système de validation symptômes/signes**

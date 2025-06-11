@@ -271,7 +271,8 @@ RÈGLES IMPÉRATIVES:
     caseText: string, 
     progressCallback?: (message: string) => void,
     sectionCallback?: (section: any, index: number, total: number) => void,
-    images?: { base64: string, type: string }[]
+    images?: { base64: string, type: string }[],
+    additionalContent?: string // Pour inclure le contenu ajouté par l'utilisateur
   ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[] }> {
     if (!this.hasApiKeys()) {
       throw new Error('Les clés API ne sont pas configurées');
@@ -281,24 +282,29 @@ RÈGLES IMPÉRATIVES:
     this.clearRequestChain();
 
     try {
-      // Étape 1 : Recherche Perplexity
-      progressCallback?.('Recherche dans la littérature médicale...');
-      console.log('Début recherche Perplexity...');
-      const perplexityReport = await this.searchWithPerplexity(caseText);
+      // Préparer le contenu complet pour la recherche académique
+      let fullSearchContent = caseText;
+      if (additionalContent) {
+        fullSearchContent += `\n\nINFORMATIONS COMPLÉMENTAIRES AJOUTÉES:\n${additionalContent}`;
+      }
+
+      // Étape 1 : Recherche académique complète avec Perplexity (incluant tout le contenu)
+      progressCallback?.('Recherche académique complète dans la littérature médicale...');
+      console.log('Début recherche Perplexity avec contenu complet...');
+      const perplexityReport = await this.searchWithPerplexity(fullSearchContent);
       console.log('Recherche Perplexity terminée, rapport:', perplexityReport);
       
-      // Étape 2 : Analyser les liens/références avec GPT-4o
-      progressCallback?.('Analyse des références avec GPT-4o...');
-      console.log('Analyse des liens avec GPT-4o...');
+      // Étape 2 : Analyser les références avec GPT-4o
+      progressCallback?.('Analyse des références académiques...');
+      console.log('Analyse des références avec GPT-4o...');
       const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
       console.log('Analyse GPT-4o terminée');
-      console.log('Résultat analyse GPT-4o:', referencesAnalysis.analysis?.substring(0, 200) + '...');
       
-      // Étape 3 : Analyser les images avec o3 si présentes
+      // Étape 3 : Analyser les images si présentes
       let imageAnalyses = '';
       if (images && images.length > 0) {
-        progressCallback?.('Analyse des images médicales avec o3...');
-        console.log(`Analyse de ${images.length} images avec o3...`);
+        progressCallback?.('Analyse des images médicales...');
+        console.log(`Analyse de ${images.length} images...`);
         for (let i = 0; i < images.length; i++) {
           try {
             progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
@@ -307,30 +313,37 @@ RÈGLES IMPÉRATIVES:
           } catch (imageError: any) {
             console.error(`Erreur lors de l'analyse de l'image ${i + 1}:`, imageError.message);
             imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\nErreur lors de l'analyse de cette image.`;
-            // Continuer avec les autres images sans bloquer tout le processus
           }
         }
-        console.log('Analyse des images terminée (avec erreurs possibles)');
+        console.log('Analyse des images terminée');
       }
 
-      // Étape 4 : Analyser avec o3 le cas clinique + rapport Perplexity + analyse des liens + images
-      progressCallback?.('Analyse médicale complète avec o3...');
-      console.log('Début analyse principale avec o3...');
-      const completeData = `RAPPORT DE RECHERCHE ACADÉMIQUE:\n${perplexityReport.answer}\n\n` +
-                          `ANALYSE DES RÉFÉRENCES ET LIENS:\n${referencesAnalysis.analysis}` +
-                          (imageAnalyses ? `\n\nANALYSES D'IMAGERIE:${imageAnalyses}` : '');
+      // Étape 4 : Analyse clinique complète avec o3 (utilisant TOUT : recherche académique + références + images + contenu ajouté)
+      progressCallback?.('Analyse clinique complète...');
+      console.log('Début analyse clinique complète avec o3...');
       
-      console.log('Longueur des données complètes:', completeData.length);
-      const fullAnalysis = await this.analyzeWithO3(completeData, caseText);
-      console.log('Analyse o3 terminée');
-      console.log('Longueur réponse o3:', fullAnalysis?.length || 0);
-      console.log('Début réponse o3:', fullAnalysis?.substring(0, 500) || 'RÉPONSE VIDE');
+      // Construire le contexte complet pour l'analyse clinique
+      let completeAnalysisContext = `RECHERCHE ACADÉMIQUE COMPLÈTE:\n${perplexityReport.answer}\n\n`;
+      completeAnalysisContext += `ANALYSE DÉTAILLÉE DES RÉFÉRENCES:\n${referencesAnalysis.analysis}\n\n`;
       
-      // Étape 5 : Parser la réponse pour extraire les sections
+      if (imageAnalyses) {
+        completeAnalysisContext += `ANALYSES D'IMAGERIE MÉDICALE:${imageAnalyses}\n\n`;
+      }
+      
+      if (additionalContent) {
+        completeAnalysisContext += `INFORMATIONS COMPLÉMENTAIRES FOURNIES:\n${additionalContent}\n\n`;
+      }
+      
+      completeAnalysisContext += `\nCAS CLINIQUE INITIAL:\n${caseText}`;
+      
+      console.log('Longueur du contexte complet:', completeAnalysisContext.length);
+      const fullAnalysis = await this.analyzeWithO3(completeAnalysisContext, fullSearchContent);
+      console.log('Analyse clinique complète terminée');
+      
+      // Étape 5 : Parser les sections
       console.log('Parsing des sections...');
       const sections = this.parseSections(fullAnalysis);
       console.log('Sections parsées:', sections.length);
-      console.log('Sections trouvées:', sections.map(s => s.type).join(', '));
       
       // Appeler le callback pour chaque section
       sections.forEach((section, index) => {

@@ -222,7 +222,7 @@ function DemoPageContent() {
     resumeRecording,
     error: recordingError
   } = useAudioRecorder()
-  
+
   const aiService = new AIClientService()
   const hasApiKeys = aiService.hasApiKeys()
   const searchParams = useSearchParams()
@@ -455,6 +455,14 @@ function DemoPageContent() {
           setInitialCaseContent(textContent)
           setCaseTitle(generateCaseTitle(textContent))
           
+                  // Collecter tout le contenu additionnel
+          let additionalContent = ''
+          if (analysisData?.modificationHistory && analysisData.modificationHistory.length > 0) {
+            additionalContent = analysisData.modificationHistory
+              .map((mod: any) => `[${mod.sectionType}]: ${mod.additionalInfo}`)
+              .join('\n\n')
+          }
+          
           const result = await aiService.analyzeClinicalCase(
             textContent,
             (message) => setProgressMessage(message),
@@ -462,7 +470,8 @@ function DemoPageContent() {
               console.log(`Section ${index + 1}/${total} reçue:`, section.type)
               setCurrentSections(prev => [...prev, section])
             },
-            base64Images.length > 0 ? base64Images : undefined
+            base64Images.length > 0 ? base64Images : undefined,
+            additionalContent || undefined
           )
 
           // Sauvegarder en base de données
@@ -471,9 +480,9 @@ function DemoPageContent() {
               const historyEntry = {
                 uid: user.uid,
                 content: textContent,
-                sections: result.sections,
-                references: result.references,
-                perplexityReport: result.perplexityReport,
+          sections: result.sections,
+          references: result.references,
+          perplexityReport: result.perplexityReport,
                 requestChain: result.requestChain || [],
                 title: generateCaseTitle(textContent),
                 createdAt: new Date()
@@ -481,8 +490,8 @@ function DemoPageContent() {
 
               const db = getFirestore()
               await addDoc(collection(db, 'history'), historyEntry)
-            } catch (saveError) {
-              console.error('Erreur lors de la sauvegarde:', saveError)
+        } catch (saveError) {
+          console.error('Erreur lors de la sauvegarde:', saveError)
             }
           }
 
@@ -502,10 +511,10 @@ function DemoPageContent() {
           })
           setRequestChain(result.requestChain || [])
           toast.success("Analyse terminée !")
-        } catch (error: any) {
+      } catch (error: any) {
           console.error("Erreur lors de l'analyse:", error)
-          toast.error(error.message || "Erreur lors de l'analyse")
-          setIsAnalyzing(false)
+        toast.error(error.message || "Erreur lors de l'analyse")
+        setIsAnalyzing(false)
         }
       }
     } catch (error) {
@@ -615,16 +624,16 @@ function DemoPageContent() {
     
     toast.success('Rapport de recherche exporté')
   }
-  
+
   // Fonction pour exporter en PDF
   const exportToPDF = async () => {
     try {
-      const element = document.getElementById('analysis-results')
-      if (!element) {
+    const element = document.getElementById('analysis-results')
+    if (!element) {
         toast.error('Aucun résultat à exporter')
-        return
-      }
-      
+      return
+    }
+
       toast.info('Génération du PDF en cours...')
       
       // Ouvrir tous les accordéons temporairement
@@ -892,7 +901,7 @@ Exemple de format attendu :
   // Fonction pour rechercher des maladies rares
   const searchForRareDiseases = async () => {
     if (!analysisData || analysisData.isDemo) return
-    
+
     setIsSearchingRareDisease(true)
     setShowRareDiseaseSection(true)
     
@@ -910,7 +919,7 @@ Exemple de format attendu :
         JSON.stringify(fullContext.sections),
         (message) => toast.info(message)
       )
-      
+
       setRareDiseaseData(result)
       
       // Déduire un crédit
@@ -925,6 +934,197 @@ Exemple de format attendu :
       setShowRareDiseaseSection(false)
     } finally {
       setIsSearchingRareDisease(false)
+    }
+  }
+
+  // Fonction pour lancer une reprise approfondie (2 crédits)
+  const handleDeepAnalysis = async () => {
+    if (!analysisData || !user || !userCredits || userCredits.credits < 2) return
+    
+    setIsAnalyzing(true)
+    setProgressMessage("Reprise approfondie en cours...")
+    
+    try {
+      // Collecter tout le contenu disponible
+      const fullContent = {
+        initialCase: initialCaseContent || textContent,
+        currentCase: textContent,
+        sections: analysisData.sections,
+        perplexityReport: analysisData.perplexityReport,
+        modifications: analysisData.modificationHistory || [],
+        images: uploadedImages
+      }
+      
+      // Prompt spécial pour reprise approfondie
+      const deepAnalysisPrompt = `REPRISE APPROFONDIE - Analyse complète et détaillée
+
+CAS CLINIQUE INITIAL:
+${fullContent.initialCase}
+
+MODIFICATIONS APPORTÉES:
+${fullContent.modifications.map((m: any) => `- ${m.sectionType}: ${m.additionalInfo}`).join('\n')}
+
+ANALYSE PRÉCÉDENTE:
+${fullContent.sections.map((s: any) => `${s.type}:\n${s.content}`).join('\n\n')}
+
+RECHERCHE ACADÉMIQUE INITIALE:
+${fullContent.perplexityReport.answer}
+
+INSTRUCTIONS POUR LA REPRISE APPROFONDIE:
+1. Faire une nouvelle recherche académique EXHAUSTIVE en incluant :
+   - Toutes les informations du cas initial
+   - Les modifications et ajouts
+   - Les résultats de la première analyse
+   
+2. Explorer TOUS les aspects suivants :
+   - Diagnostics différentiels rares ou atypiques
+   - Syndromes et associations pathologiques
+   - Dernières avancées thérapeutiques (2023-2025)
+   - Essais cliniques en cours
+   - Recommandations internationales récentes
+   
+3. Fournir une analyse PLUS DÉTAILLÉE que la première avec :
+   - Plus de références académiques récentes
+   - Arbres décisionnels complets
+   - Scores et critères diagnostiques
+   - Protocoles thérapeutiques détaillés`
+
+      // Convertir les images en base64 si nécessaire
+      let base64Images: { base64: string, type: string, name: string }[] = []
+      if (uploadedImages.length > 0) {
+        for (const img of uploadedImages) {
+          const reader = new FileReader()
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onload = (e) => {
+              const base64 = e.target?.result as string
+              resolve(base64.split(',')[1])
+            }
+            reader.onerror = reject
+          })
+          reader.readAsDataURL(img.file)
+          const base64Data = await base64Promise
+          
+          base64Images.push({
+            base64: base64Data,
+            type: img.type,
+            name: img.name
+          })
+        }
+      }
+      
+      // Lancer l'analyse approfondie
+      const result = await aiService.analyzeClinicalCase(
+        deepAnalysisPrompt,
+        (message) => setProgressMessage(message),
+        (section, index, total) => {
+          console.log(`Section approfondie ${index + 1}/${total} reçue:`, section.type)
+          setCurrentSections(prev => [...prev, section])
+        },
+        base64Images.length > 0 ? base64Images : undefined,
+        JSON.stringify(fullContent.modifications)
+      )
+
+      // Déduire 2 crédits
+      if (refreshCredits) {
+        await refreshCredits()
+      }
+
+      // Mettre à jour avec les nouveaux résultats
+      setAnalysisData({
+        ...analysisData,
+        sections: result.sections,
+        references: result.references,
+        perplexityReport: result.perplexityReport,
+        requestChain: result.requestChain,
+        isDeepAnalysis: true
+      })
+      setRequestChain(result.requestChain || [])
+      
+      toast.success("Reprise approfondie terminée !")
+    } catch (error: any) {
+      console.error("Erreur reprise approfondie:", error)
+      toast.error(error.message || "Erreur lors de la reprise approfondie")
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  // Fonction pour relancer l'analyse (1 crédit)
+  const handleRelaunchAnalysis = async () => {
+    if (!analysisData || !user || !userCredits || userCredits.credits < 1) return
+    
+    setIsAnalyzing(true)
+    setProgressMessage("Relance de l'analyse en cours...")
+    
+    try {
+      // Utiliser le cas actuel avec toutes les modifications
+      const currentFullCase = textContent
+      
+      // Collecter le contenu additionnel
+      let additionalContent = ''
+      if (analysisData.modificationHistory && analysisData.modificationHistory.length > 0) {
+        additionalContent = analysisData.modificationHistory
+          .map((mod: any) => `[${mod.sectionType}]: ${mod.additionalInfo}`)
+          .join('\n\n')
+      }
+      
+      // Convertir les images en base64 si nécessaire
+      let base64Images: { base64: string, type: string, name: string }[] = []
+      if (uploadedImages.length > 0) {
+        for (const img of uploadedImages) {
+          const reader = new FileReader()
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onload = (e) => {
+              const base64 = e.target?.result as string
+              resolve(base64.split(',')[1])
+            }
+            reader.onerror = reject
+          })
+          reader.readAsDataURL(img.file)
+          const base64Data = await base64Promise
+          
+          base64Images.push({
+            base64: base64Data,
+            type: img.type,
+            name: img.name
+          })
+        }
+      }
+      
+      // Relancer l'analyse standard
+      const result = await aiService.analyzeClinicalCase(
+        currentFullCase,
+        (message) => setProgressMessage(message),
+        (section, index, total) => {
+          console.log(`Section ${index + 1}/${total} reçue:`, section.type)
+          setCurrentSections(prev => [...prev, section])
+        },
+        base64Images.length > 0 ? base64Images : undefined,
+        additionalContent || undefined
+      )
+
+      // Déduire 1 crédit
+      if (refreshCredits) {
+        await refreshCredits()
+      }
+
+      // Mettre à jour avec les nouveaux résultats
+      setAnalysisData({
+        ...analysisData,
+        sections: result.sections,
+        references: result.references,
+        perplexityReport: result.perplexityReport,
+        requestChain: result.requestChain,
+        lastRelaunched: new Date().toISOString()
+      })
+      setRequestChain(result.requestChain || [])
+      
+      toast.success("Analyse relancée avec succès !")
+    } catch (error: any) {
+      console.error("Erreur relance analyse:", error)
+      toast.error(error.message || "Erreur lors de la relance")
+    } finally {
+      setIsAnalyzing(false)
     }
   }
 
@@ -972,12 +1172,12 @@ Exemple de format attendu :
               Retour
             </Button>
           </Link>
-          <Link href="/history">
+              <Link href="/history">
             <Button variant="outline" size="sm" disabled={!user}>
-              <History className="mr-2 h-4 w-4" />
-              Historique
-            </Button>
-          </Link>
+                  <History className="mr-2 h-4 w-4" />
+                  Historique
+                </Button>
+              </Link>
         </div>
 
         {/* Bannière orange MODE DÉMO */}
@@ -1008,8 +1208,8 @@ Exemple de format attendu :
               >
                 J'ai compris
               </button>
-            </div>
           </div>
+        </div>
         )}
 
         {!showResults ? (
@@ -1347,15 +1547,16 @@ Exemple de format attendu :
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toast.info("Reprise approfondie à implémenter")}
-                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
-                        >
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                          Reprise approfondie
-                        </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeepAnalysis()}
+                    disabled={!user || !userCredits || (userCredits.credits ?? 0) < 2}
+                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Reprise approfondie (2 crédits)
+                  </Button>
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Lancer une recherche sourcée sur la base du contenu disponible et du dossier initial</p>
@@ -1367,15 +1568,16 @@ Exemple de format attendu :
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toast.info("Relance d'analyse à implémenter")}
-                          className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
-                        >
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                          Relancer l'analyse (1 crédit)
-                        </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleRelaunchAnalysis()}
+                  disabled={!user || !userCredits || (userCredits.credits ?? 0) < 1}
+                  className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Relancer l'analyse (1 crédit)
+                </Button>
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Reprendre le dossier actuel et actualiser l'analyse</p>
@@ -1400,23 +1602,23 @@ Exemple de format attendu :
                       size="sm"
                       onClick={() => exportRequestChain()}
                       className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
-                    >
-                      <FileDown className="mr-2 h-4 w-4" />
+                >
+                  <FileDown className="mr-2 h-4 w-4" />
                       Export Chain
-                    </Button>
+                </Button>
                   </>
                 )}
                 {/* Bouton Rapport de recherche - visible pour tous en mode réel */}
                 {!analysisData?.isDemo && analysisData?.perplexityReport && (
-                  <Button
-                    variant="outline"
-                    size="sm"
+                <Button
+                  variant="outline"
+                  size="sm"
                     onClick={() => exportPerplexityReport()}
                     className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
+                >
+                  <FileText className="mr-2 h-4 w-4" />
                     Rapport de recherche
-                  </Button>
+                </Button>
                 )}
                 {/* Export PDF - visible pour tous */}
                 <Button
@@ -1445,7 +1647,7 @@ Exemple de format attendu :
                 </Button>
               </div>
             </div>
-
+            
             {analysisData && (
               <>
                 {/* Dossier initial */}
@@ -1461,59 +1663,154 @@ Exemple de format attendu :
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-6">
-                      <div className="bg-gray-50 p-4 rounded-lg relative">
-                        {editingInitialCase ? (
-                          <div className="space-y-3">
-                            <textarea
-                              value={editedInitialCase}
-                              onChange={(e) => setEditedInitialCase(e.target.value)}
-                              className="w-full p-3 border rounded-lg resize-none h-64 text-sm"
-                            />
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  const updatedData = {
-                                    ...analysisData,
-                                    caseText: editedInitialCase
-                                  }
-                                  setAnalysisData(updatedData)
-                                  setEditingInitialCase(false)
-                                  toast.success("Dossier initial modifié")
-                                }}
-                              >
-                                Sauvegarder
-                              </Button>
+                      <div className="space-y-4">
+                        {/* Section texte */}
+                        <div className="bg-gray-50 p-4 rounded-lg relative">
+                          {editingInitialCase ? (
+                            <div className="space-y-3">
+                              <textarea
+                                value={editedInitialCase}
+                                onChange={(e) => setEditedInitialCase(e.target.value)}
+                                className="w-full p-3 border rounded-lg resize-none h-64 text-sm"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const updatedData = {
+                                      ...analysisData,
+                                      caseText: editedInitialCase
+                                    }
+                                    setAnalysisData(updatedData)
+                                    setEditingInitialCase(false)
+                                    toast.success("Dossier initial modifié")
+                                  }}
+                                >
+                                  Sauvegarder
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingInitialCase(false)
+                                    setEditedInitialCase("")
+                                  }}
+                                >
+                                  Annuler
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                {analysisData?.caseText || initialCaseContent || textContent}
+                              </p>
                               <Button
                                 size="sm"
                                 variant="ghost"
+                                className="absolute top-2 right-2"
                                 onClick={() => {
-                                  setEditingInitialCase(false)
-                                  setEditedInitialCase("")
+                                  setEditingInitialCase(true)
+                                  setEditedInitialCase(analysisData?.caseText || initialCaseContent || textContent)
                                 }}
                               >
-                                Annuler
+                                <Edit className="h-4 w-4" />
                               </Button>
+                            </>
+                          )}
+                        </div>
+                        
+                        {/* Section images */}
+                        <div className="border-t pt-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                              <Camera className="h-4 w-4" />
+                              Images médicales jointes
+                            </h4>
+                            <div className="flex gap-2">
+                              <input
+                                type="file"
+                                id="additional-images"
+                                accept="image/*"
+                                multiple
+                                onChange={handleImageUpload}
+                                className="hidden"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => document.getElementById('additional-images')?.click()}
+                              >
+                                <ImagePlus className="h-4 w-4 mr-2" />
+                                Ajouter
+                              </Button>
+                              {uploadedImages.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setUploadedImages([])
+                                    toast.success("Toutes les images ont été supprimées")
+                                  }}
+                                  className="text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Tout supprimer
+                                </Button>
+                              )}
                             </div>
                           </div>
-                        ) : (
-                          <>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                              {analysisData?.caseText || textContent}
-                            </p>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="absolute top-2 right-2"
-                              onClick={() => {
-                                setEditingInitialCase(true)
-                                setEditedInitialCase(analysisData?.caseText || textContent)
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
+                          
+                          {uploadedImages.length === 0 ? (
+                            <div className="text-center py-8 bg-gray-50 rounded-lg">
+                              <Camera className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                              <p className="text-sm text-gray-600">Aucune image attachée</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Ajoutez des images pour enrichir l'analyse
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                              {uploadedImages.map((img, index) => (
+                                <div key={index} className="relative group">
+                                  <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                                    <img
+                                      src={img.preview}
+                                      alt={img.name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                  <div className="mt-2">
+                                    <p className="text-xs font-medium truncate">{img.name}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {img.type === 'medical' && 'Imagerie médicale'}
+                                      {img.type === 'biology' && 'Résultats biologiques'}
+                                      {img.type === 'ecg' && 'ECG'}
+                                      {img.type === 'other' && 'Autre'}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    size="icon"
+                                    variant="destructive"
+                                    className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => removeImage(index)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {uploadedImages.length > 0 && (
+                            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                              <p className="text-sm text-blue-700">
+                                <Info className="h-4 w-4 inline mr-1" />
+                                {uploadedImages.length} image{uploadedImages.length > 1 ? 's' : ''} seront analysées lors de la prochaine recherche
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </AccordionContent>
                   </AccordionItem>
@@ -1546,32 +1843,32 @@ Exemple de format attendu :
                   value={accordionValues}
                   onValueChange={setAccordionValues}
                 >
-                  {analysisData?.isDemo ? (
-                    // Mode démo - afficher les sections prédéfinies
-                    Object.entries(demoSections).map(([key, content], index) => (
-                      <AccordionItem key={key} value={String(index)} className="border rounded-lg">
-                        <AccordionTrigger className="px-6 hover:no-underline">
-                          <span className="text-left font-medium">
-                            {sectionTitles[key as keyof typeof sectionTitles]}
-                          </span>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-6 pb-6">
-                          {renderContentWithReferences(content, demoReferences)}
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))
-                  ) : (
-                    // Mode réel - afficher les sections au fur et à mesure
-                    (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((section: any, index: number) => (
-                      <AccordionItem key={index} value={String(index)} className="border rounded-lg">
-                        <AccordionTrigger className="px-6 hover:no-underline">
-                          <span className="text-left font-medium">
-                            {sectionTitles[section.type as keyof typeof sectionTitles]}
-                          </span>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-6 pb-6">
+              {analysisData?.isDemo ? (
+                // Mode démo - afficher les sections prédéfinies
+                Object.entries(demoSections).map(([key, content], index) => (
+                  <AccordionItem key={key} value={String(index)} className="border rounded-lg">
+                    <AccordionTrigger className="px-6 hover:no-underline">
+                      <span className="text-left font-medium">
+                        {sectionTitles[key as keyof typeof sectionTitles]}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-6 pb-6">
+                      {renderContentWithReferences(content, demoReferences)}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))
+              ) : (
+                // Mode réel - afficher les sections au fur et à mesure
+                (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((section: any, index: number) => (
+                  <AccordionItem key={index} value={String(index)} className="border rounded-lg">
+                    <AccordionTrigger className="px-6 hover:no-underline">
+                      <span className="text-left font-medium">
+                        {sectionTitles[section.type as keyof typeof sectionTitles]}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-6 pb-6">
                           <div className="mb-4">
-                            {renderContentWithReferences(section.content, analysisData?.references || [])}
+                      {renderContentWithReferences(section.content, analysisData?.references || [])}
                           </div>
                           
                           {/* Afficher les modifications précédentes s'il y en a */}
@@ -1608,7 +1905,7 @@ Exemple de format attendu :
                                 className="w-full p-3 border rounded-lg resize-none h-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               />
                               <div className="flex gap-2">
-                                <Button
+                <Button
                                   size="sm"
                                   onClick={() => handleSaveAdditionalInfo(section.type, false)}
                                   disabled={!additionalInfo[section.type]?.trim()}
@@ -1646,55 +1943,16 @@ Exemple de format attendu :
                               >
                                 <Plus className="mr-2 h-4 w-4" />
                                 Ajouter des informations
-                              </Button>
-                            </div>
-                          )}
+                </Button>
+              </div>
+            )}
                         </AccordionContent>
                       </AccordionItem>
                     ))
                   )}
-                </Accordion>
-
-                {/* Références */}
-                <Card className="mt-8">
-                  <CardHeader>
-                    <CardTitle>Références bibliographiques</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-4">
-                      {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
-                        <li key={ref.label} id={`ref-${ref.label}`} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
-                          <div className="flex items-start gap-3">
-                            <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                            <div className="flex-1">
-                              <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                              {ref.authors && (
-                                <p className="text-sm text-gray-700 mb-1">
-                                  <span className="font-medium">Auteurs :</span> {ref.authors}
-                                </p>
-                              )}
-                              {ref.url && (
-                                <a
-                                  href={ref.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
-                                >
-                                  Consulter la source
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
+                                </Accordion>
                 
-                {/* Section Maladies Rares */}
+                {/* Section Maladies Rares - Placée AVANT les références */}
                 {!analysisData?.isDemo && analysisData?.sections && (
                   <Card className="mt-8">
                     <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50">
@@ -1735,9 +1993,9 @@ Exemple de format attendu :
                           {(!user || !userCredits || (userCredits.credits ?? 0) <= 0) && (
                             <p className="text-sm text-red-600 mt-2">
                               {!user ? "Connexion requise" : "Crédits insuffisants"}
-                            </p>
-                          )}
-                        </div>
+                                  </p>
+                                )}
+                                  </div>
                       ) : (
                         <>
                           {rareDiseaseData && (
@@ -1760,25 +2018,38 @@ Exemple de format attendu :
                                   <h4 className="font-semibold mb-4 text-purple-900">
                                     Références spécialisées
                                   </h4>
-                                  <ul className="space-y-3">
+                                  <ul className="space-y-4">
                                     {rareDiseaseData.references.map((ref: any) => (
                                       <li key={ref.label} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
                                         <div className="flex items-start gap-3">
-                                          <span className="text-purple-600 font-bold min-w-[30px]">[{ref.label}]</span>
+                                          <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
                                           <div className="flex-1">
-                                            <p className="font-semibold text-gray-900">{ref.title}</p>
+                                            <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
                                             {ref.authors && (
-                                              <p className="text-sm text-gray-600 mt-1">{ref.authors}</p>
+                                              <p className="text-sm text-gray-700 mb-1">
+                                                <span className="font-medium">Auteurs :</span> {ref.authors}
+                                              </p>
+                                            )}
+                                            {ref.journal && (
+                                              <p className="text-sm text-gray-700 mb-1">
+                                                <span className="font-medium">Journal :</span> {ref.journal}
+                                                {ref.year && ` (${ref.year})`}
+                                              </p>
+                                            )}
+                                            {ref.date && !ref.year && (
+                                              <p className="text-sm text-gray-700 mb-1">
+                                                <span className="font-medium">Date :</span> {new Date(ref.date).toLocaleDateString('fr-FR')}
+                                              </p>
                                             )}
                                             {ref.url && (
                                               <a
                                                 href={ref.url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2"
+                                                className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
                                               >
-                                                Consulter
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                Consulter la source
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                 </svg>
                                               </a>
@@ -1797,6 +2068,51 @@ Exemple de format attendu :
                     </CardContent>
                   </Card>
                 )}
+                
+                {/* Références bibliographiques - Placées APRÈS la section maladies rares */}
+                <Card className="mt-8">
+                  <CardHeader>
+                    <CardTitle>Références bibliographiques</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-4">
+                      {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
+                        <li key={ref.label} id={`ref-${ref.label}`} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
+                          <div className="flex items-start gap-3">
+                            <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                            <div className="flex-1">
+                              <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                              {ref.authors && (
+                                <p className="text-sm text-gray-700 mb-1">
+                                  <span className="font-medium">Auteurs :</span> {ref.authors}
+                                </p>
+                              )}
+                              {ref.journal && (
+                                <p className="text-sm text-gray-700 mb-1">
+                                  <span className="font-medium">Journal :</span> {ref.journal}
+                                  {ref.year && ` (${ref.year})`}
+                                </p>
+                              )}
+                              {ref.url && (
+                                <a
+                                  href={ref.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                                >
+                                  Consulter la source
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
               </>
             )}
           </div>
