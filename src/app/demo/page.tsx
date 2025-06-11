@@ -1670,8 +1670,7 @@ Exemple de format attendu :
   }
 
   return (
-    <TooltipProvider delayDuration={400}>
-      <div className="min-h-screen bg-gray-50 pb-12">
+    <div className="min-h-screen bg-gray-50 pb-12">
         <div className="container mx-auto px-4 pt-8">
           <div className="flex items-center justify-between mb-6">
             <Link href="/">
@@ -2740,7 +2739,6 @@ Exemple de format attendu :
           </div>
         </div>
       </div>
-    </TooltipProvider>
   )
 }
 

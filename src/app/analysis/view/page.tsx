@@ -580,8 +580,7 @@ function AnalysisView() {
   }
 
   return (
-    <TooltipProvider delayDuration={400}>
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
         <div className="container mx-auto px-4 py-8 max-w-5xl">
           <div className="mb-8 flex items-center justify-between">
             <div>
@@ -1159,7 +1158,6 @@ function AnalysisView() {
           </div>
         </div>
       </div>
-    </TooltipProvider>
   )
 }
 
