@@ -925,8 +925,8 @@ function AnalysisView() {
                                         }
                                         
                                         // Mettre à jour l'historique des modifications
-                                        const updatedHistory = analysis.modificationHistory.map((mod: any, modIdx: number) => {
-                                          if (mod.sectionType === section.type && analysis.modificationHistory.filter((m: any) => m.sectionType === section.type).indexOf(mod) === idx) {
+                                        const updatedHistory = (analysis.modificationHistory || []).map((mod: any, modIdx: number) => {
+                                          if (mod.sectionType === section.type && (analysis.modificationHistory || []).filter((m: any) => m.sectionType === section.type).indexOf(mod) === idx) {
                                             return { ...mod, additionalInfo: newValue }
                                           }
                                           return mod
