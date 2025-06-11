@@ -12,7 +12,9 @@ import {
   Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, 
   Microscope, History, Settings, ChevronRight, ChevronDown, Camera, Info, 
   Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, 
-  CircleCheck, Eye, Plus, RefreshCw, GitBranch, Edit, ChevronUp 
+  CircleCheck, Eye, Plus, RefreshCw, GitBranch, Edit, ChevronUp, 
+  ChevronLeft, Save, Loader2, Sparkles, CheckCircle, Trash2, Check, Lightbulb, 
+  Globe, Calculator
 } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
@@ -162,7 +164,14 @@ function DemoPageContent() {
   const [currentSections, setCurrentSections] = useState<any[]>([])
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [isAudioSupported, setIsAudioSupported] = useState(false)
-  const [uploadedImages, setUploadedImages] = useState<{ base64: string, type: string, name: string }[]>([])
+  const [uploadedImages, setUploadedImages] = useState<Array<{
+    file: File
+    name: string
+    type: string
+    size: number
+    preview: string
+    description: string
+  }>>([])
   const [rareDiseaseData, setRareDiseaseData] = useState<{ disease: string, report: string, references: any[] } | null>(null)
   const [isSearchingRareDisease, setIsSearchingRareDisease] = useState(false)
   const [showRareDiseaseSection, setShowRareDiseaseSection] = useState(false)
@@ -173,11 +182,11 @@ function DemoPageContent() {
   
   // État pour le formulaire structuré
   const [structuredForm, setStructuredForm] = useState({
+    contextePatient: '',
     anamnese: '',
     antecedents: '',
     examenClinique: '',
-    examensComplementaires: '',
-    contextePatient: ''
+    examensComplementaires: ''
   })
   const [isExtractingForm, setIsExtractingForm] = useState(false)
   
@@ -258,44 +267,48 @@ function DemoPageContent() {
   }, [isDemoMode])
 
   // Handlers
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files) return;
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || isDemoMode) return
 
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith('image/')) {
-        toast.error(`${file.name} n'est pas une image`);
-        return;
-      }
+    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'))
+    
+    if (imageFiles.length === 0) {
+      toast.error("Veuillez sélectionner uniquement des fichiers image")
+      return
+    }
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64 = e.target?.result as string;
-        const base64Data = base64.split(',')[1];
-        
-        let imageType = 'other';
-        const fileName = file.name.toLowerCase();
-        if (fileName.includes('bio') || fileName.includes('lab') || fileName.includes('sang')) {
-          imageType = 'biology';
-        } else if (fileName.includes('ecg') || fileName.includes('ekg')) {
-          imageType = 'ecg';
-        } else if (fileName.includes('radio') || fileName.includes('rx') || fileName.includes('irm') || 
-                   fileName.includes('scan') || fileName.includes('echo')) {
-          imageType = 'medical';
-        }
+    // Limitation à 5 images maximum
+    if (uploadedImages.length + imageFiles.length > 5) {
+      toast.error("Maximum 5 images autorisées")
+      return
+    }
 
-        setUploadedImages(prev => [...prev, {
-          base64: base64Data,
-          type: imageType,
-          name: file.name
-        }]);
-      };
-      reader.readAsDataURL(file);
-    });
+    // Créer les objets d'image avec preview
+    const newImages = imageFiles.map(file => ({
+      file,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      preview: URL.createObjectURL(file),
+      description: '' // Pour une éventuelle description de l'image
+    }))
+
+    setUploadedImages(prev => [...prev, ...newImages])
+    toast.success(`${imageFiles.length} image(s) ajoutée(s)`)
   }
 
   const removeImage = (index: number) => {
-    setUploadedImages(prev => prev.filter((_, i) => i !== index));
+    setUploadedImages(prev => {
+      const updated = [...prev]
+      // Nettoyer l'URL de preview
+      if (updated[index].preview) {
+        URL.revokeObjectURL(updated[index].preview)
+      }
+      updated.splice(index, 1)
+      return updated
+    })
+    toast.success("Image supprimée")
   }
 
   const formatTime = (seconds: number) => {
@@ -378,19 +391,71 @@ function DemoPageContent() {
     setIsAnalyzing(true)
     setProgressMessage("Analyse en cours...")
     
-    // Simulation pour le moment
-    setTimeout(() => {
-      setIsAnalyzing(false)
-      setShowResults(true)
-      if (isDemoMode) {
-        setAnalysisData({
-          isDemo: true,
-          sections: Object.entries(demoSections).map(([key, content]) => ({ type: key, content })),
-          references: demoReferences
-        })
+    try {
+      // Convertir les images en base64 si nécessaire
+      let base64Images: { base64: string, type: string, name: string }[] = []
+      
+      if (uploadedImages.length > 0 && !isDemoMode) {
+        setProgressMessage("Traitement des images...")
+        
+        for (const img of uploadedImages) {
+          const reader = new FileReader()
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onload = (e) => {
+              const base64 = e.target?.result as string
+              resolve(base64.split(',')[1]) // Retirer le préfixe data:image/...;base64,
+            }
+            reader.onerror = reject
+          })
+          reader.readAsDataURL(img.file)
+          
+          const base64Data = await base64Promise
+          
+          // Déterminer le type d'image
+          let imageType = 'other'
+          const fileName = img.name.toLowerCase()
+          if (fileName.includes('bio') || fileName.includes('lab') || fileName.includes('sang')) {
+            imageType = 'biology'
+          } else if (fileName.includes('ecg') || fileName.includes('ekg')) {
+            imageType = 'ecg'
+          } else if (fileName.includes('radio') || fileName.includes('rx') || fileName.includes('irm') || 
+                     fileName.includes('scan') || fileName.includes('echo')) {
+            imageType = 'medical'
+          }
+          
+          base64Images.push({
+            base64: base64Data,
+            type: imageType,
+            name: img.name
+          })
+        }
       }
-      toast.success("Analyse terminée !")
-    }, 2000)
+      
+      setProgressMessage("Analyse en cours...")
+      
+      if (isDemoMode) {
+        // Simulation pour le mode démo
+        setTimeout(() => {
+          setIsAnalyzing(false)
+          setShowResults(true)
+          setAnalysisData({
+            isDemo: true,
+            sections: Object.entries(demoSections).map(([key, content]) => ({ type: key, content })),
+            references: demoReferences
+          })
+          toast.success("Analyse terminée !")
+        }, 2000)
+      } else {
+        // Analyse réelle avec l'API
+        // TODO: Implémenter l'appel à l'API avec base64Images
+        toast.info("L'analyse réelle sera implémentée prochainement")
+        setIsAnalyzing(false)
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'analyse:", error)
+      toast.error("Erreur lors de l'analyse")
+      setIsAnalyzing(false)
+    }
   }
 
   // Fonction pour afficher le contenu avec les références
@@ -497,6 +562,120 @@ function DemoPageContent() {
     setAdditionalInfo({ ...additionalInfo, [sectionType]: '' })
     
     toast.success("Information ajoutée avec succès")
+  }
+
+  // Fonction pour extraire les données structurées avec GPT-4o-mini
+  const extractStructuredData = async () => {
+    if (!textContent.trim()) {
+      toast.error("Veuillez entrer un cas clinique avant d'extraire")
+      return
+    }
+
+    setIsExtractingForm(true)
+    
+    try {
+      const prompt = `Analyse ce cas clinique et extrais les informations selon ces catégories. Réponds UNIQUEMENT en JSON avec ces clés exactes : anamnese, antecedents, examenClinique, examensComplementaires, contextePatient.
+
+CAS CLINIQUE :
+${textContent}
+
+INSTRUCTIONS :
+1. anamnese : Symptômes principaux, chronologie, évolution
+2. antecedents : Médicaux, chirurgicaux, familiaux, traitements actuels
+3. examenClinique : Constantes vitales, examen physique par systèmes
+4. examensComplementaires : Biologie, imagerie, ECG, etc.
+5. contextePatient : Âge, sexe, profession, mode de vie
+
+IMPORTANT : Chaque valeur dans le JSON doit être une STRING simple (pas d'objet, pas de tableau). Si une information n'est pas disponible, utilise la string "Non précisé".
+
+Exemple de format attendu :
+{
+  "anamnese": "Douleur thoracique depuis 2h...",
+  "antecedents": "HTA, diabète...",
+  "examenClinique": "PA 140/90...",
+  "examensComplementaires": "ECG normal...",
+  "contextePatient": "65 ans, homme..."
+}`;
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_tokens: 2000
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${aiService.getOpenAIApiKey()}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+
+      const rawData = JSON.parse(response.data.choices[0].message.content)
+      console.log('Données extraites:', rawData)
+      
+      // S'assurer que toutes les valeurs sont des strings
+      const structuredData = {
+        anamnese: typeof rawData.anamnese === 'string' ? rawData.anamnese : JSON.stringify(rawData.anamnese || 'Non précisé'),
+        antecedents: typeof rawData.antecedents === 'string' ? rawData.antecedents : JSON.stringify(rawData.antecedents || 'Non précisé'),
+        examenClinique: typeof rawData.examenClinique === 'string' ? rawData.examenClinique : JSON.stringify(rawData.examenClinique || 'Non précisé'),
+        examensComplementaires: typeof rawData.examensComplementaires === 'string' ? rawData.examensComplementaires : JSON.stringify(rawData.examensComplementaires || 'Non précisé'),
+        contextePatient: typeof rawData.contextePatient === 'string' ? rawData.contextePatient : JSON.stringify(rawData.contextePatient || 'Non précisé')
+      }
+      
+      setStructuredForm(structuredData)
+      toast.success("Extraction des données structurées réussie !")
+    } catch (error) {
+      console.error('Erreur extraction:', error)
+      toast.error("Erreur lors de l'extraction des données structurées")
+    } finally {
+      setIsExtractingForm(false)
+    }
+  }
+
+  // Fonction pour appliquer les données structurées au cas clinique
+  const updateFromStructuredForm = () => {
+    const sections = []
+    
+    if (structuredForm.contextePatient) {
+      sections.push(`CONTEXTE PATIENT:\n${structuredForm.contextePatient}`)
+    }
+    
+    if (structuredForm.anamnese) {
+      sections.push(`ANAMNÈSE:\n${structuredForm.anamnese}`)
+    }
+    
+    if (structuredForm.antecedents) {
+      sections.push(`ANTÉCÉDENTS:\n${structuredForm.antecedents}`)
+    }
+    
+    if (structuredForm.examenClinique) {
+      sections.push(`EXAMEN CLINIQUE:\n${structuredForm.examenClinique}`)
+    }
+    
+    if (structuredForm.examensComplementaires) {
+      sections.push(`EXAMENS COMPLÉMENTAIRES:\n${structuredForm.examensComplementaires}`)
+    }
+    
+    if (sections.length > 0) {
+      const structuredText = sections.join('\n\n')
+      setTextContent(structuredText)
+      toast.success("Données structurées appliquées au cas clinique")
+    } else {
+      toast.warning("Aucune donnée structurée à appliquer")
+    }
   }
 
   // Interface principale
@@ -657,6 +836,189 @@ function DemoPageContent() {
                   <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
                     <Lock className="h-4 w-4" /> 
                     <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Formulaire structuré dans un accordéon */}
+              {!isDemoMode && hasApiKeys && (
+                <Accordion type="multiple" className="mt-4 border rounded-lg">
+                  <AccordionItem value="structured-form" className="border-0">
+                    <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white rounded-lg shadow-sm">
+                          <FileText className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div className="text-left">
+                          <h3 className="font-semibold text-gray-900">Formulaire structuré</h3>
+                          <p className="text-sm text-gray-600">Organisez les informations du cas clinique</p>
+                        </div>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-4 pb-4 pt-2">
+                      <div className="space-y-4">
+                        {/* Boutons d'action */}
+                        <div className="flex gap-2 justify-end">
+                          {textContent.trim() && (
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              onClick={extractStructuredData}
+                              disabled={isExtractingForm}
+                              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                            >
+                              {isExtractingForm ? (
+                                <>
+                                  <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                                  Extraction en cours...
+                                </>
+                              ) : (
+                                <>
+                                  <Brain className="mr-2 h-4 w-4" />
+                                  Extraire automatiquement
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={updateFromStructuredForm}
+                            disabled={!structuredForm.anamnese && !structuredForm.antecedents && !structuredForm.examenClinique}
+                          >
+                            <Copy className="mr-2 h-4 w-4" />
+                            Appliquer au cas
+                          </Button>
+                        </div>
+                        
+                        {/* Champs du formulaire */}
+                        <div className="space-y-3 bg-white p-4 rounded-lg border">
+                          <div>
+                            <Label htmlFor="contextePatient" className="text-sm font-medium flex items-center gap-2">
+                              <Users className="h-4 w-4 text-gray-500" />
+                              Contexte patient
+                            </Label>
+                            <textarea
+                              id="contextePatient"
+                              value={structuredForm.contextePatient}
+                              onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
+                              placeholder="Âge, sexe, profession, mode de vie..."
+                              className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor="anamnese" className="text-sm font-medium flex items-center gap-2">
+                              <History className="h-4 w-4 text-gray-500" />
+                              Anamnèse
+                            </Label>
+                            <textarea
+                              id="anamnese"
+                              value={structuredForm.anamnese}
+                              onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
+                              placeholder="Symptômes principaux, chronologie, évolution..."
+                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor="antecedents" className="text-sm font-medium flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-gray-500" />
+                              Antécédents
+                            </Label>
+                            <textarea
+                              id="antecedents"
+                              value={structuredForm.antecedents}
+                              onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
+                              placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
+                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor="examenClinique" className="text-sm font-medium flex items-center gap-2">
+                              <Search className="h-4 w-4 text-gray-500" />
+                              Examen clinique
+                            </Label>
+                            <textarea
+                              id="examenClinique"
+                              value={structuredForm.examenClinique}
+                              onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
+                              placeholder="Constantes, examen physique par systèmes..."
+                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          
+                          <div>
+                            <Label htmlFor="examensComplementaires" className="text-sm font-medium flex items-center gap-2">
+                              <Microscope className="h-4 w-4 text-gray-500" />
+                              Examens complémentaires
+                            </Label>
+                            <textarea
+                              id="examensComplementaires"
+                              value={structuredForm.examensComplementaires}
+                              onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
+                              placeholder="Biologie, imagerie, ECG, etc..."
+                              className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              )}
+
+              {/* Upload d'images */}
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="images">Images médicales (optionnel)</Label>
+                  <div className="mt-2 flex items-center gap-4">
+                    <input
+                      type="file"
+                      id="images"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      disabled={isDemoMode}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => document.getElementById('images')?.click()}
+                      disabled={isAnalyzing || isDemoMode}
+                    >
+                      <ImagePlus className="h-4 w-4 mr-2" />
+                      Ajouter des images
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
+                    </span>
+                  </div>
+                </div>
+
+                {uploadedImages.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {uploadedImages.map((img, index) => (
+                      <div key={index} className="relative group">
+                        <div className="border rounded-lg p-3 bg-gray-50">
+                          <p className="text-xs font-medium truncate">{img.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeImage(index)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
