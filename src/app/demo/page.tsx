@@ -550,6 +550,7 @@ function DemoPageContent() {
 
           // Déduire un crédit
           if (user && refreshCredits) {
+            await CreditsService.useCredit(user.uid)
             await refreshCredits()
           }
 
@@ -1077,6 +1078,12 @@ Exemple de format attendu :
   // Fonction pour rechercher des maladies rares
   const searchForRareDiseases = async () => {
     if (!analysisData || analysisData.isDemo) return
+    
+    // Vérifier les crédits
+    if (!user || !userCredits || userCredits.credits < 1) {
+      toast.error("Crédits insuffisants pour la recherche de maladies rares")
+      return
+    }
 
     setIsSearchingRareDisease(true)
     setShowRareDiseaseSection(true)
@@ -1100,6 +1107,7 @@ Exemple de format attendu :
       
       // Déduire un crédit
       if (user && refreshCredits) {
+        await CreditsService.useCredit(user.uid)
         await refreshCredits()
       }
       
@@ -1178,7 +1186,9 @@ Exemple de format attendu :
       )
 
       // Déduire 2 crédits
-      if (refreshCredits) {
+      if (user && refreshCredits) {
+        await CreditsService.useCredit(user.uid)
+        await CreditsService.useCredit(user.uid) // 2ème crédit
         await refreshCredits()
       }
 
@@ -1274,7 +1284,8 @@ Exemple de format attendu :
       )
 
       // Déduire 1 crédit
-      if (refreshCredits) {
+      if (user && refreshCredits) {
+        await CreditsService.useCredit(user.uid)
         await refreshCredits()
       }
 

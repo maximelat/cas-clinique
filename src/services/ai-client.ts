@@ -22,6 +22,16 @@ interface SectionContent {
   content: string;
 }
 
+const sectionTitles = {
+  CLINICAL_CONTEXT: "1. Contexte clinique",
+  KEY_DATA: "2. Données clés",
+  DIAGNOSTIC_HYPOTHESES: "3. Hypothèses diagnostiques",
+  COMPLEMENTARY_EXAMS: "4. Examens complémentaires recommandés",
+  THERAPEUTIC_DECISIONS: "5. Décisions thérapeutiques",
+  PROGNOSIS_FOLLOWUP: "6. Pronostic & suivi",
+  PATIENT_EXPLANATIONS: "7. Explications au patient"
+};
+
 export class AIClientService {
   private perplexityApiKey: string | undefined;
   private openaiApiKey: string | undefined;
@@ -328,63 +338,58 @@ RAPPELS IMPORTANTS:
         console.log('Analyse des images terminée');
       }
 
-      // Étape 2 : Recherche académique avec Perplexity (incluant le cas + résultats images)
-      progressCallback?.('Recherche académique dans la littérature médicale...');
-      console.log('Début recherche Perplexity...');
+      // Étape 2 : Analyse clinique avec o3 EN PREMIER
+      progressCallback?.('Analyse clinique avec o3...');
+      console.log('Début analyse clinique avec o3...');
       
-      let searchContent = caseText;
+      // Construire le contexte pour o3
+      let o3Context = caseText;
       if (imageAnalyses) {
-        searchContent += `\n\nRÉSULTATS D'ANALYSE D'IMAGERIE:${imageAnalyses}`;
+        o3Context += `\n\n=== ANALYSES D'IMAGERIE MÉDICALE ===\n${imageAnalyses}`;
       }
       
-      const perplexityReport = await this.searchWithPerplexity(searchContent);
-      console.log('Recherche Perplexity terminée');
+      const o3Analysis = await this.analyzeWithO3Simple(o3Context);
+      console.log('Analyse o3 terminée');
       
-      // Étape 3 : Analyser les références avec GPT-4o
-      progressCallback?.('Analyse des références académiques...');
-      console.log('Analyse des références avec GPT-4o...');
-      const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
-      console.log('Analyse GPT-4o terminée');
-      
-      // Étape 4 : Analyse clinique complète avec o3
-      progressCallback?.('Analyse clinique complète...');
-      console.log('Début analyse clinique complète avec o3...');
-      
-      // Construire le contexte complet pour l'analyse clinique de manière structurée
-      let completeAnalysisContext = `=== INFORMATIONS SOURCÉES (issues de la recherche académique) ===
-${perplexityReport.answer}
-
-=== ANALYSE DÉTAILLÉE DES RÉFÉRENCES ===
-${referencesAnalysis.analysis}`;
-      
-      if (imageAnalyses) {
-        completeAnalysisContext += `\n\n=== ANALYSES D'IMAGERIE MÉDICALE ===
-${imageAnalyses}`;
-      }
-      
-      // Ne pas répéter le cas clinique ici, il sera passé séparément à analyzeWithO3
-      
-      console.log('Longueur du contexte complet:', completeAnalysisContext.length);
-      const fullAnalysis = await this.analyzeWithO3(completeAnalysisContext, caseText);
-      console.log('Analyse clinique complète terminée');
-      
-      // Post-traiter l'analyse pour vérifier la cohérence des références
-      const validRefs = referencesAnalysis.references.map(r => r.label);
-      const processedAnalysis = this.postProcessReferences(fullAnalysis, validRefs);
-      
-      // Étape 5 : Parser les sections
-      console.log('Parsing des sections...');
-      const sections = this.parseSections(processedAnalysis);
+      // Parser les sections immédiatement
+      const sections = this.parseSections(o3Analysis);
       console.log('Sections parsées:', sections.length);
       
       // Appeler le callback pour chaque section
       sections.forEach((section, index) => {
         sectionCallback?.(section, index, sections.length);
       });
+
+      // Étape 3 : Recherche académique avec Perplexity basée sur l'analyse o3
+      progressCallback?.('Recherche académique dans la littérature médicale...');
+      console.log('Début recherche Perplexity basée sur l\'analyse o3...');
+      
+      // Construire un prompt enrichi pour Perplexity basé sur l'analyse o3
+      const perplexityPrompt = `Recherche académique approfondie basée sur cette analyse clinique:
+
+CAS CLINIQUE INITIAL:
+${caseText}
+
+ANALYSE CLINIQUE (par o3):
+${sections.map(s => `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`).join('\n\n')}
+
+INSTRUCTIONS:
+1. Recherche des sources académiques récentes (2020-2025) pour valider et enrichir cette analyse
+2. Focus sur les hypothèses diagnostiques mentionnées
+3. Trouver des guidelines et recommandations pour les examens et traitements proposés
+4. Identifier des études de cas similaires
+5. Citer TOUTES les sources avec [1], [2], etc.`;
+      
+      const perplexityReport = await this.searchWithPerplexity(perplexityPrompt);
+      console.log('Recherche Perplexity terminée');
+      
+      // Étape 4 : Extraire les références directement sans analyse GPT-4o intermédiaire
+      const references = this.extractReferences(perplexityReport);
+      console.log('Références extraites:', references.length);
       
       return {
         sections,
-        references: referencesAnalysis.references,
+        references,
         perplexityReport,
         requestChain: this.requestChain.length > 0 ? this.requestChain : undefined,
         imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
@@ -393,6 +398,101 @@ ${imageAnalyses}`;
       console.error('Erreur complète dans analyzeClinicalCase:', error);
       console.error('Stack trace:', error.stack);
       throw error;
+    }
+  }
+
+  // Nouvelle méthode simplifiée pour o3 sans références
+  private async analyzeWithO3Simple(clinicalCase: string): Promise<string> {
+    try {
+      const prompt = `Tu es un expert médical. Analyse ce cas clinique de manière approfondie.
+
+CAS CLINIQUE:
+${clinicalCase}
+
+INSTRUCTIONS:
+1. Rédige une analyse clinique complète et structurée
+2. Utilise OBLIGATOIREMENT le format exact ci-dessous pour chaque section
+3. NE PAS ajouter de références [1], [2], etc. dans cette analyse
+4. Reste factuel et basé sur les données cliniques fournies
+
+FORMAT OBLIGATOIRE (respecte EXACTEMENT cette structure):
+
+## CLINICAL_CONTEXT:
+[Résume le contexte clinique en détail]
+
+## KEY_DATA:
+[Liste les données clés sous forme de points bullet avec - ]
+
+## DIAGNOSTIC_HYPOTHESES:
+[Liste et argumente les hypothèses diagnostiques principales et différentielles]
+
+## COMPLEMENTARY_EXAMS:
+[Recommande les examens complémentaires nécessaires avec justification]
+
+## THERAPEUTIC_DECISIONS:
+[Propose les décisions thérapeutiques appropriées]
+
+## PROGNOSIS_FOLLOWUP:
+[Évalue le pronostic et le plan de suivi]
+
+## PATIENT_EXPLANATIONS:
+[Formule les explications claires pour le patient]
+
+RAPPELS IMPORTANTS:
+- Commence TOUJOURS chaque section par "## SECTION_NAME:" exactement
+- NE JAMAIS numéroter les sections
+- Intègre les résultats d'imagerie dans les sections appropriées
+- Reste concis et structuré`;
+
+      // Sauvegarder la requête
+      this.requestChain.push({
+        timestamp: new Date().toISOString(),
+        model: 'OpenAI o3',
+        type: 'Analyse clinique initiale',
+        request: prompt,
+        response: ''
+      });
+
+      if (this.useFirebaseFunctions) {
+        console.log('Analyse avec o3 via Firebase Functions...');
+        const { analyzeWithO3ViaFunction } = await import('@/lib/firebase-functions');
+        const response = await analyzeWithO3ViaFunction(prompt);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = response;
+        
+        return response;
+      } else {
+        // Mode développement - appel direct o3
+        console.log('Appel API o3 direct (mode dev)...');
+        
+        const response = await axios.post(
+          'https://api.openai.com/v1/responses',
+          {
+            model: 'o3-2025-04-16',
+            prompt: prompt,
+            max_output_tokens: 10000,
+            temperature: 0.3
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const outputText = response.data.output[1].content[0].text || '';
+        console.log('Réponse o3 dev, usage:', response.data.usage);
+        
+        // Sauvegarder la réponse
+        this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
+        
+        return outputText;
+      }
+    } catch (error: any) {
+      console.error('Erreur OpenAI détaillée:', error);
+      throw new Error('Erreur lors de l\'analyse OpenAI: ' + error.message);
     }
   }
 
@@ -1174,7 +1274,7 @@ IMPORTANT: Fournis un rapport COMPLET et DÉTAILLÉ. Ne coupe PAS le contenu.`;
     }
   }
 
-  // Méthode pour la REPRISE APPROFONDIE (2 crédits) - refait tout avec Perplexity
+  // Méthode pour la REPRISE APPROFONDIE (2 crédits) - refait tout avec o3 puis Perplexity
   async deepAnalysis(
     fullContext: {
       initialCase: string,
@@ -1210,53 +1310,61 @@ IMPORTANT: Fournis un rapport COMPLET et DÉTAILLÉ. Ne coupe PAS le contenu.`;
         }
       }
 
-      // Étape 2 : Recherche Perplexity exhaustive
-      progressCallback?.('Recherche académique exhaustive...');
+      // Étape 2 : Analyse o3 approfondie avec tout le contexte
+      progressCallback?.('Analyse clinique approfondie avec o3...');
       
-      const deepSearchPrompt = `REPRISE APPROFONDIE - Recherche exhaustive
+      let o3Context = `CAS CLINIQUE ENRICHI:
+${fullContext.currentCase}
 
-CAS CLINIQUE INITIAL:
-${fullContext.initialCase}
-
-MODIFICATIONS APPORTÉES:
+MODIFICATIONS ET INFORMATIONS COMPLÉMENTAIRES:
 ${fullContext.modifications.map((m: any) => `- ${m.sectionType}: ${m.additionalInfo}`).join('\n')}
 
 ANALYSE PRÉCÉDENTE:
-${fullContext.sections.map((s: any) => `${s.type}:\n${s.content}`).join('\n\n')}
+${fullContext.sections.map((s: any) => `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`).join('\n\n')}`;
 
-${imageAnalyses ? `NOUVELLES ANALYSES D'IMAGERIE:${imageAnalyses}` : ''}
-
-INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
-1. Explorer TOUS les diagnostics différentiels, même rares
-2. Rechercher les dernières avancées thérapeutiques (2023-2025)
-3. Identifier les essais cliniques en cours
-4. Inclure les recommandations internationales récentes
-5. Chercher les syndromes et associations pathologiques`;
-
-      const perplexityReport = await this.searchWithPerplexity(deepSearchPrompt);
+      if (imageAnalyses) {
+        o3Context += `\n\nNOUVELLES ANALYSES D'IMAGERIE:${imageAnalyses}`;
+      }
       
-      // Étape 3 : Analyser les références
-      progressCallback?.('Analyse des références approfondies...');
-      const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
-      
-      // Étape 4 : Analyse o3 approfondie
-      progressCallback?.('Analyse clinique approfondie...');
-      
-      let completeContext = `RECHERCHE ACADÉMIQUE APPROFONDIE:\n${perplexityReport.answer}\n\n`;
-      completeContext += `ANALYSE DES RÉFÉRENCES:\n${referencesAnalysis.analysis}\n\n`;
-      completeContext += `HISTORIQUE COMPLET:\n${JSON.stringify(fullContext)}\n\n`;
-      
-      const fullAnalysis = await this.analyzeWithO3(completeContext, fullContext.currentCase);
-      
-      const sections = this.parseSections(fullAnalysis);
+      const o3Analysis = await this.analyzeWithO3Simple(o3Context);
+      const sections = this.parseSections(o3Analysis);
       
       sections.forEach((section, index) => {
         sectionCallback?.(section, index, sections.length);
       });
+
+      // Étape 3 : Recherche Perplexity exhaustive basée sur la nouvelle analyse o3
+      progressCallback?.('Recherche académique exhaustive...');
+      
+      const deepSearchPrompt = `REPRISE APPROFONDIE - Recherche exhaustive basée sur cette analyse clinique complète:
+
+CAS CLINIQUE INITIAL:
+${fullContext.initialCase}
+
+ANALYSE CLINIQUE APPROFONDIE (par o3):
+${sections.map(s => `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`).join('\n\n')}
+
+MODIFICATIONS APPORTÉES:
+${fullContext.modifications.map((m: any) => `- ${m.sectionType}: ${m.additionalInfo}`).join('\n')}
+
+INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
+1. Explorer TOUS les diagnostics différentiels mentionnés, même rares
+2. Rechercher les dernières avancées thérapeutiques (2023-2025)
+3. Identifier les essais cliniques en cours pour les pathologies suspectées
+4. Inclure les recommandations internationales récentes
+5. Chercher les syndromes et associations pathologiques
+6. Valider les examens complémentaires proposés avec les dernières guidelines
+7. Citer TOUTES les sources avec [1], [2], etc.`;
+
+      const perplexityReport = await this.searchWithPerplexity(deepSearchPrompt);
+      
+      // Étape 4 : Extraire les références
+      progressCallback?.('Analyse des références...');
+      const references = this.extractReferences(perplexityReport);
       
       return {
         sections,
-        references: referencesAnalysis.references,
+        references,
         perplexityReport,
         requestChain: this.requestChain,
         imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
