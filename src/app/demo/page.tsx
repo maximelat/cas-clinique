@@ -515,6 +515,168 @@ function DemoPageContent() {
     }
   }
 
+  // Fonction pour exporter l'historique complet (maxime.latry@gmail.com seulement)
+  const exportAllHistory = () => {
+    if (!analysisData) return
+    
+    const date = new Date().toISOString().split('T')[0]
+    const filename = `historique_complet_${date}.json`
+    
+    const allData = {
+      date: new Date().toISOString(),
+      caseTitle: caseTitle || generateCaseTitle(textContent),
+      initialCase: initialCaseContent || textContent,
+      currentCase: textContent,
+      analysis: {
+        sections: analysisData.sections,
+        references: analysisData.references,
+        perplexityReport: analysisData.perplexityReport
+      },
+      modifications: analysisData.modificationHistory || [],
+      images: uploadedImages.map(img => ({
+        name: img.name,
+        type: img.type,
+        size: img.size
+      }))
+    }
+    
+    const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    
+    toast.success('Historique complet exporté')
+  }
+  
+  // Fonction pour exporter la chaîne de requêtes (maxime.latry@gmail.com seulement)
+  const exportRequestChain = () => {
+    if (!requestChain || requestChain.length === 0) {
+      toast.error('Aucune chaîne de requêtes disponible')
+      return
+    }
+    
+    const date = new Date().toISOString().split('T')[0]
+    const filename = `chaine_requetes_${date}.json`
+    
+    const chainData = {
+      date: new Date().toISOString(),
+      caseTitle: caseTitle || generateCaseTitle(textContent),
+      totalRequests: requestChain.length,
+      requests: requestChain
+    }
+    
+    const blob = new Blob([JSON.stringify(chainData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    
+    toast.success('Chaîne de requêtes exportée')
+  }
+  
+  // Fonction pour exporter le rapport de recherche Perplexity
+  const exportPerplexityReport = () => {
+    if (!analysisData?.perplexityReport) {
+      toast.error('Aucun rapport de recherche disponible')
+      return
+    }
+    
+    const date = new Date().toISOString().split('T')[0]
+    const filename = `rapport_recherche_${date}.txt`
+    
+    let content = `RAPPORT DE RECHERCHE MÉDICALE\n`
+    content += `Date: ${new Date().toLocaleDateString('fr-FR')}\n`
+    content += `Cas: ${caseTitle || generateCaseTitle(textContent)}\n`
+    content += `${'='.repeat(60)}\n\n`
+    content += `RECHERCHE PERPLEXITY:\n${'-'.repeat(20)}\n`
+    content += analysisData.perplexityReport.answer || 'Aucun contenu'
+    content += `\n\n${'='.repeat(60)}\n\nSOURCES:\n${'-'.repeat(20)}\n`
+    
+    if (analysisData.perplexityReport.search_results) {
+      analysisData.perplexityReport.search_results.forEach((result: any, idx: number) => {
+        content += `\n[${idx + 1}] ${result.title || 'Sans titre'}\n`
+        content += `URL: ${result.url || 'Non disponible'}\n`
+        if (result.date) content += `Date: ${result.date}\n`
+      })
+    }
+    
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    
+    toast.success('Rapport de recherche exporté')
+  }
+  
+  // Fonction pour exporter en PDF
+  const exportToPDF = async () => {
+    try {
+      const element = document.getElementById('analysis-results')
+      if (!element) {
+        toast.error('Aucun résultat à exporter')
+        return
+      }
+      
+      toast.info('Génération du PDF en cours...')
+      
+      // Ouvrir tous les accordéons temporairement
+      const originalAccordionValues = [...accordionValues]
+      const allAccordionValues = analysisData?.isDemo 
+        ? Object.keys(demoSections).map((_, index) => String(index))
+        : (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((_: any, index: number) => String(index))
+      
+      setAccordionValues(allAccordionValues)
+      setShowInitialCase(true)
+      
+      // Attendre que les accordéons s'ouvrent
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false
+      })
+      
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+      
+      const imgWidth = 210
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      const pageHeight = 295
+      let position = 0
+      
+      while (position < imgHeight) {
+        if (position > 0) pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, -position, imgWidth, imgHeight)
+        position += pageHeight
+      }
+      
+      const date = new Date().toISOString().split('T')[0]
+      pdf.save(`analyse_clinique_${date}.pdf`)
+      
+      // Restaurer l'état des accordéons
+      setAccordionValues(originalAccordionValues)
+      setShowInitialCase(false)
+      
+      toast.success('PDF exporté avec succès')
+    } catch (error) {
+      console.error('Erreur export PDF:', error)
+      toast.error('Erreur lors de l\'export PDF')
+    }
+  }
+
   // Fonction pour générer un titre de cas à partir du contenu
   const generateCaseTitle = (content: string): string => {
     // Extraire les premiers mots significatifs
@@ -724,6 +886,45 @@ Exemple de format attendu :
       toast.error("Erreur lors de l'extraction des données structurées")
     } finally {
       setIsExtractingForm(false)
+    }
+  }
+
+  // Fonction pour rechercher des maladies rares
+  const searchForRareDiseases = async () => {
+    if (!analysisData || analysisData.isDemo) return
+    
+    setIsSearchingRareDisease(true)
+    setShowRareDiseaseSection(true)
+    
+    try {
+      // Préparer le contexte complet pour la recherche
+      const fullContext = {
+        clinicalCase: initialCaseContent || textContent,
+        sections: analysisData.sections,
+        perplexityReport: analysisData.perplexityReport
+      }
+      
+      // Appeler le service de recherche de maladies rares
+      const result = await aiService.searchRareDiseases(
+        fullContext.clinicalCase,
+        JSON.stringify(fullContext.sections),
+        (message) => toast.info(message)
+      )
+      
+      setRareDiseaseData(result)
+      
+      // Déduire un crédit
+      if (user && refreshCredits) {
+        await refreshCredits()
+      }
+      
+      toast.success('Recherche de maladies rares terminée')
+    } catch (error: any) {
+      console.error('Erreur recherche maladies rares:', error)
+      toast.error(error.message || 'Erreur lors de la recherche de maladies rares')
+      setShowRareDiseaseSection(false)
+    } finally {
+      setIsSearchingRareDisease(false)
     }
   }
 
@@ -1182,6 +1383,51 @@ Exemple de format attendu :
                     </Tooltip>
                   </TooltipProvider>
                 )}
+                {/* Boutons spéciaux pour maxime.latry@gmail.com */}
+                {user?.email === 'maxime.latry@gmail.com' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportAllHistory()}
+                      className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-300"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export All (1)
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportRequestChain()}
+                      className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+                    >
+                      <FileDown className="mr-2 h-4 w-4" />
+                      Export Chain
+                    </Button>
+                  </>
+                )}
+                {/* Bouton Rapport de recherche - visible pour tous en mode réel */}
+                {!analysisData?.isDemo && analysisData?.perplexityReport && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportPerplexityReport()}
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Rapport de recherche
+                  </Button>
+                )}
+                {/* Export PDF - visible pour tous */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportToPDF()}
+                  className="bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-300"
+                >
+                  <FileDown className="mr-2 h-4 w-4" />
+                  Export PDF
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1447,6 +1693,110 @@ Exemple de format attendu :
                     </ul>
                   </CardContent>
                 </Card>
+                
+                {/* Section Maladies Rares */}
+                {!analysisData?.isDemo && analysisData?.sections && (
+                  <Card className="mt-8">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50">
+                      <CardTitle className="flex items-center gap-3">
+                        <div className="p-2 bg-white rounded-lg shadow-sm">
+                          <Microscope className="h-5 w-5 text-purple-600" />
+                        </div>
+                        <span>Recherche de maladies rares</span>
+                      </CardTitle>
+                      <CardDescription>
+                        Analyse approfondie pour identifier d'éventuelles pathologies rares
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                      {!showRareDiseaseSection ? (
+                        <div className="text-center py-8">
+                          <p className="text-gray-600 mb-4">
+                            Lancez une recherche avancée pour identifier des maladies rares 
+                            potentiellement en lien avec le cas clinique
+                          </p>
+                          <Button
+                            onClick={searchForRareDiseases}
+                            disabled={isSearchingRareDisease || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                          >
+                            {isSearchingRareDisease ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Recherche en cours...
+                              </>
+                            ) : (
+                              <>
+                                <Search className="mr-2 h-4 w-4" />
+                                Lancer la recherche (1 crédit)
+                              </>
+                            )}
+                          </Button>
+                          {(!user || !userCredits || (userCredits.credits ?? 0) <= 0) && (
+                            <p className="text-sm text-red-600 mt-2">
+                              {!user ? "Connexion requise" : "Crédits insuffisants"}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {rareDiseaseData && (
+                            <div className="space-y-6">
+                              <div className="bg-purple-50 p-4 rounded-lg">
+                                <h4 className="font-semibold text-purple-900 mb-2">
+                                  Maladie rare identifiée : {rareDiseaseData.disease}
+                                </h4>
+                              </div>
+                              
+                              <div className="prose max-w-none">
+                                {renderContentWithReferences(
+                                  rareDiseaseData.report,
+                                  rareDiseaseData.references || []
+                                )}
+                              </div>
+                              
+                              {rareDiseaseData.references?.length > 0 && (
+                                <div className="mt-6 pt-6 border-t">
+                                  <h4 className="font-semibold mb-4 text-purple-900">
+                                    Références spécialisées
+                                  </h4>
+                                  <ul className="space-y-3">
+                                    {rareDiseaseData.references.map((ref: any) => (
+                                      <li key={ref.label} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
+                                        <div className="flex items-start gap-3">
+                                          <span className="text-purple-600 font-bold min-w-[30px]">[{ref.label}]</span>
+                                          <div className="flex-1">
+                                            <p className="font-semibold text-gray-900">{ref.title}</p>
+                                            {ref.authors && (
+                                              <p className="text-sm text-gray-600 mt-1">{ref.authors}</p>
+                                            )}
+                                            {ref.url && (
+                                              <a
+                                                href={ref.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2"
+                                              >
+                                                Consulter
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                </svg>
+                                              </a>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </>
             )}
           </div>

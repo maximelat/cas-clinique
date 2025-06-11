@@ -117,7 +117,7 @@ TODOOOOO:
   - réanalyser si elements cochéset confirme par le medecin 
 
 ---
-es
+Ajouter medgemma 
 
 ---
 
