@@ -1881,7 +1881,7 @@ Exemple de format attendu :
                     className="bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-300"
                   >
                     <History className="mr-2 h-4 w-4" />
-                    Historique ({analysisVersions.length})
+                    Versions ({analysisVersions.length})
                   </Button>
                 )}
                 {/* Boutons spéciaux pour maxime.latry@gmail.com */}
@@ -2151,7 +2151,7 @@ Exemple de format attendu :
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                           <History className="h-5 w-5" />
-                          Historique des versions de l'analyse
+                          Gestion des versions de l'analyse
                         </DialogTitle>
                         <DialogDescription>
                           Comparez les différentes versions de votre analyse clinique

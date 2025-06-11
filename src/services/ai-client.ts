@@ -988,14 +988,28 @@ Rédige une analyse clinique structurée SANS références bibliographiques selo
 7. EXPLICATIONS AU PATIENT
 - Rédige une explication claire et adaptée pour le patient
 
-Format de réponse attendu:
-[SECTION_TYPE:CLINICAL_CONTEXT]
-Contenu de la section...
+Format de réponse OBLIGATOIRE (respecte exactement cette syntaxe):
 
-[SECTION_TYPE:KEY_DATA]
-Contenu de la section...
+## CLINICAL_CONTEXT:
+Contenu de la section contexte clinique...
 
-(etc. pour toutes les sections)`;
+## KEY_DATA:
+Contenu de la section données clés...
+
+## DIAGNOSTIC_HYPOTHESES:
+Contenu de la section hypothèses diagnostiques...
+
+## COMPLEMENTARY_EXAMS:
+Contenu de la section examens complémentaires...
+
+## THERAPEUTIC_DECISIONS:
+Contenu de la section décisions thérapeutiques...
+
+## PROGNOSIS_FOLLOWUP:
+Contenu de la section pronostic et suivi...
+
+## PATIENT_EXPLANATIONS:
+Contenu de la section explications au patient...`;
 
       const analysis = await this.analyzeWithO3(analysisPrompt, '');
       const sections = this.parseSections(analysis);

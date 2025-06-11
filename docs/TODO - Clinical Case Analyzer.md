@@ -160,6 +160,15 @@ TODO :
 TODO
 TODO
 
+1 je pense que dans un résultat on devrait renommer Version pour la gestion des et non pas nommer ça historique
+
+2 le résultats de maladies rare n'est toujours pas bien strcuturé 
+
+3 le résultat de o3 solo est bien strcuturé mais lorsqu'on passe pas preplexity d'abord ça devient mal structuré 
+
+4 les liens ave cid cas fonctionnent mais pas les ?id=analysis pour la gestion des historiques  https://latry.consulting/projet/clinical-case-analyzer/analysis/view/?id=cas-1749629464351-ljfffnloz
+
+___
 
 2 la reprise approfondie et la relance d'analyse devraient mettre à jour les 7 parties et historiser l'ancienne version du resultat (le versionning existe déjà je crois dans le code) comme ça on peut suivre l'évolution de la reflexion facilement 
 
