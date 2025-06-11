@@ -31,6 +31,7 @@ import axios from 'axios'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { getFirestore, collection, addDoc } from 'firebase/firestore'
+import RareDiseaseResults from '@/components/RareDiseaseResults'
 
 // Section titles configuration
 const sectionTitles = {
@@ -456,12 +457,12 @@ function DemoPageContent() {
           setInitialCaseContent(textContent)
           setCaseTitle(generateCaseTitle(textContent))
           
-                  const result = await aiService.analyzeClinicalCase(
-            textContent,
-            (message) => setProgressMessage(message),
-            (section, index, total) => {
+        const result = await aiService.analyzeClinicalCase(
+          textContent,
+          (message) => setProgressMessage(message),
+          (section, index, total) => {
               console.log(`Section ${index + 1}/${total} reçue:`, section.type)
-              setCurrentSections(prev => [...prev, section])
+            setCurrentSections(prev => [...prev, section])
             },
             base64Images.length > 0 ? base64Images : undefined
           )
@@ -621,31 +622,92 @@ function DemoPageContent() {
   // Fonction pour exporter en PDF
   const exportToPDF = async () => {
     try {
-    const element = document.getElementById('analysis-results')
-    if (!element) {
+      const element = document.getElementById('analysis-results')
+      if (!element) {
         toast.error('Aucun résultat à exporter')
-      return
-    }
+        return
+      }
 
       toast.info('Génération du PDF en cours...')
       
-      // Ouvrir tous les accordéons temporairement
+      // Sauvegarder l'état actuel
       const originalAccordionValues = [...accordionValues]
+      const originalShowRareDisease = showRareDiseaseSection
+      const originalShowInitialCase = showInitialCase
+      
+      // Ouvrir tous les accordéons temporairement
       const allAccordionValues = analysisData?.isDemo 
         ? Object.keys(demoSections).map((_, index) => String(index))
         : (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((_: any, index: number) => String(index))
       
+      // Ajouter l'accordéon des références
+      allAccordionValues.push('references')
+      
+      // Ajouter l'accordéon des maladies rares si disponible
+      if (rareDiseaseData) {
+        allAccordionValues.push('rare-references')
+      }
+      
       setAccordionValues(allAccordionValues)
       setShowInitialCase(true)
+      setShowRareDiseaseSection(true)
       
-      // Attendre que les accordéons s'ouvrent
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Attendre que les accordéons s'ouvrent et le DOM se mette à jour
+      await new Promise(resolve => setTimeout(resolve, 800))
       
-      const canvas = await html2canvas(element, {
+      // Créer un clone temporaire pour nettoyer les styles problématiques
+      const clonedElement = element.cloneNode(true) as HTMLElement
+      
+      // Supprimer ou remplacer les couleurs oklch problématiques
+      const allElements = clonedElement.querySelectorAll('*')
+      allElements.forEach((el) => {
+        const styles = window.getComputedStyle(el as Element)
+        const computedStyles: { [key: string]: string } = {}
+        
+        // Vérifier les propriétés de couleur
+        const colorProperties = ['color', 'background-color', 'border-color', 'fill', 'stroke']
+        colorProperties.forEach(prop => {
+          const value = styles.getPropertyValue(prop)
+          if (value && value.includes('oklch')) {
+            // Remplacer oklch par une couleur de fallback
+            if (value.includes('oklch(0.')) {
+              // Couleurs sombres
+              computedStyles[prop] = '#1f2937'
+            } else {
+              // Couleurs par défaut
+              computedStyles[prop] = '#374151'
+            }
+          }
+        })
+        
+        // Appliquer les styles corrigés
+        Object.entries(computedStyles).forEach(([prop, value]) => {
+          (el as HTMLElement).style.setProperty(prop, value, 'important')
+        })
+      })
+      
+      // Ajouter temporairement le clone au DOM (nécessaire pour html2canvas)
+      clonedElement.style.position = 'absolute'
+      clonedElement.style.left = '-9999px'
+      clonedElement.style.width = element.offsetWidth + 'px'
+      document.body.appendChild(clonedElement)
+      
+      const canvas = await html2canvas(clonedElement, {
         scale: 2,
         useCORS: true,
-        logging: false
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          // S'assurer que tous les styles sont appliqués
+          const clonedEl = clonedDoc.getElementById('analysis-results')
+          if (clonedEl) {
+            clonedEl.style.backgroundColor = '#ffffff'
+          }
+        }
       })
+      
+      // Supprimer le clone
+      document.body.removeChild(clonedElement)
       
       const imgData = canvas.toDataURL('image/png')
       const pdf = new jsPDF({
@@ -654,28 +716,57 @@ function DemoPageContent() {
         format: 'a4'
       })
       
-      const imgWidth = 210
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      const pageHeight = 295
-      let position = 0
+      // Ajouter un titre
+      pdf.setFontSize(20)
+      pdf.text('Analyse Clinique', 105, 20, { align: 'center' })
+      pdf.setFontSize(12)
+      pdf.text(new Date().toLocaleDateString('fr-FR'), 105, 30, { align: 'center' })
       
-      while (position < imgHeight) {
-        if (position > 0) pdf.addPage()
-        pdf.addImage(imgData, 'PNG', 0, -position, imgWidth, imgHeight)
-        position += pageHeight
+      // Calculer les dimensions pour l'image
+      const imgWidth = 190 // Marges de 10mm de chaque côté
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      const pageHeight = 270 // Hauteur utilisable (297 - marges)
+      let yPosition = 40 // Commencer après le titre
+      
+      // Ajouter l'image page par page
+      let remainingHeight = imgHeight
+      let sourceY = 0
+      
+      while (remainingHeight > 0) {
+        const currentPageHeight = Math.min(remainingHeight, pageHeight - yPosition)
+        
+        pdf.addImage(
+          imgData, 
+          'PNG', 
+          10, 
+          yPosition, 
+          imgWidth, 
+          imgHeight
+        )
+        
+        remainingHeight -= currentPageHeight
+        sourceY += (currentPageHeight * canvas.width) / imgWidth
+        
+        if (remainingHeight > 0) {
+          pdf.addPage()
+          yPosition = 20 // Marge supérieure pour les pages suivantes
+        }
       }
       
       const date = new Date().toISOString().split('T')[0]
-      pdf.save(`analyse_clinique_${date}.pdf`)
+      const title = analysisData?.title || generateCaseTitle(textContent)
+      const sanitizedTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+      pdf.save(`analyse_clinique_${sanitizedTitle}_${date}.pdf`)
       
-      // Restaurer l'état des accordéons
+      // Restaurer l'état original
       setAccordionValues(originalAccordionValues)
-      setShowInitialCase(false)
+      setShowInitialCase(originalShowInitialCase)
+      setShowRareDiseaseSection(originalShowRareDisease)
       
       toast.success('PDF exporté avec succès')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur export PDF:', error)
-      toast.error('Erreur lors de l\'export PDF')
+      toast.error(`Erreur lors de l'export PDF: ${error.message}`)
     }
   }
 
@@ -861,49 +952,71 @@ Exemple de format attendu :
   "contextePatient": "65 ans, homme..."
 }`;
 
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide.'
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.3,
-          max_tokens: 2000
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${aiService.getOpenAIApiKey()}`,
-            'Content-Type': 'application/json'
-          }
+      // Vérifier si on est en production ou en développement
+      const isProduction = process.env.NODE_ENV === 'production'
+      
+      if (isProduction) {
+        // En production, utiliser Firebase Functions
+        const extractStructuredDataViaFunction = (await import('@/lib/firebase-functions')).extractStructuredDataViaFunction
+        const rawData = await extractStructuredDataViaFunction(textContent)
+        
+        // S'assurer que toutes les valeurs sont des strings
+        const structuredData = {
+          anamnese: rawData.anamnese || 'Non précisé',
+          antecedents: rawData.antecedents || 'Non précisé',
+          examenClinique: rawData.examenClinique || 'Non précisé',
+          examensComplementaires: rawData.examensComplementaires || 'Non précisé',
+          contextePatient: rawData.contextePatient || 'Non précisé'
         }
-      )
+        
+        setStructuredForm(structuredData)
+        toast.success("Extraction des données structurées réussie !")
+      } else {
+        // En développement, appel direct à OpenAI
+        const response = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'Tu es un assistant médical expert en extraction d\'informations cliniques. Réponds UNIQUEMENT en JSON valide.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 2000
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${aiService.getOpenAIApiKey()}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        )
 
-      const rawData = JSON.parse(response.data.choices[0].message.content)
-      console.log('Données extraites:', rawData)
-      
-      // S'assurer que toutes les valeurs sont des strings
-      const structuredData = {
-        anamnese: typeof rawData.anamnese === 'string' ? rawData.anamnese : JSON.stringify(rawData.anamnese || 'Non précisé'),
-        antecedents: typeof rawData.antecedents === 'string' ? rawData.antecedents : JSON.stringify(rawData.antecedents || 'Non précisé'),
-        examenClinique: typeof rawData.examenClinique === 'string' ? rawData.examenClinique : JSON.stringify(rawData.examenClinique || 'Non précisé'),
-        examensComplementaires: typeof rawData.examensComplementaires === 'string' ? rawData.examensComplementaires : JSON.stringify(rawData.examensComplementaires || 'Non précisé'),
-        contextePatient: typeof rawData.contextePatient === 'string' ? rawData.contextePatient : JSON.stringify(rawData.contextePatient || 'Non précisé')
+        const rawData = JSON.parse(response.data.choices[0].message.content)
+        console.log('Données extraites:', rawData)
+        
+        // S'assurer que toutes les valeurs sont des strings
+        const structuredData = {
+          anamnese: rawData.anamnese || 'Non précisé',
+          antecedents: rawData.antecedents || 'Non précisé',
+          examenClinique: rawData.examenClinique || 'Non précisé',
+          examensComplementaires: rawData.examensComplementaires || 'Non précisé',
+          contextePatient: rawData.contextePatient || 'Non précisé'
+        }
+        
+        setStructuredForm(structuredData)
+        toast.success("Extraction des données structurées réussie !")
       }
-      
-      setStructuredForm(structuredData)
-      toast.success("Extraction des données structurées réussie !")
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur extraction:', error)
-      toast.error("Erreur lors de l'extraction des données structurées")
+      toast.error(error.message || "Erreur lors de l'extraction des données structurées")
     } finally {
       setIsExtractingForm(false)
     }
@@ -1336,114 +1449,114 @@ Exemple de format attendu :
               </div>
             ) : (
               <Card className="max-w-4xl mx-auto">
-                <CardHeader>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <CardTitle>Entrez votre cas clinique</CardTitle>
-                      <CardDescription>
-                        Collez ou tapez le cas clinique à analyser
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="demo-toggle" className="text-sm">
-                        Mode démo
-                      </Label>
-                      <Button
-                        id="demo-toggle"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setIsDemoMode(!isDemoMode)}
-                        className="p-1"
-                      >
-                        {isDemoMode ? (
-                          <ToggleRight className="h-6 w-6 text-blue-600" />
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Entrez votre cas clinique</CardTitle>
+                  <CardDescription>
+                    Collez ou tapez le cas clinique à analyser
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="demo-toggle" className="text-sm">
+                    Mode démo
+                  </Label>
+                  <Button
+                    id="demo-toggle"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsDemoMode(!isDemoMode)}
+                    className="p-1"
+                  >
+                    {isDemoMode ? (
+                      <ToggleRight className="h-6 w-6 text-blue-600" />
                         ) : (
                           <ToggleLeft className="h-6 w-6 text-gray-500" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <Label htmlFor="content">Cas clinique</Label>
-                      {isAudioSupported && (
-                        <div className="flex items-center gap-2">
-                          {isRecording && (
-                            <span className="text-sm text-gray-600">
-                              {formatTime(recordingTime)}
-                            </span>
-                          )}
-                          {!isRecording ? (
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <Label htmlFor="content">Cas clinique</Label>
+                  {isAudioSupported && (
+                    <div className="flex items-center gap-2">
+                      {isRecording && (
+                        <span className="text-sm text-gray-600">
+                          {formatTime(recordingTime)}
+                        </span>
+                      )}
+                      {!isRecording ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleStartRecording}
+                              disabled={isTranscribing || isDemoMode}
+                        >
+                          <Mic className="h-4 w-4 mr-2" />
+                          Dicter
+                        </Button>
+                      ) : (
+                        <div className="flex gap-2">
+                          {isPaused ? (
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={handleStartRecording}
-                              disabled={isTranscribing || isDemoMode}
+                              onClick={resumeRecording}
                             >
-                              <Mic className="h-4 w-4 mr-2" />
-                              Dicter
+                              <Play className="h-4 w-4" />
                             </Button>
                           ) : (
-                            <div className="flex gap-2">
-                              {isPaused ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={resumeRecording}
-                                >
-                                  <Play className="h-4 w-4" />
-                                </Button>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={pauseRecording}
-                                >
-                                  <Pause className="h-4 w-4" />
-                                </Button>
-                              )}
-                              <Button
-                                type="button"
-                                variant="default"
-                                size="sm"
-                                onClick={handleStopRecording}
-                              >
-                                <MicOff className="h-4 w-4 mr-2" />
-                                Arrêter
-                              </Button>
-                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={pauseRecording}
+                            >
+                              <Pause className="h-4 w-4" />
+                            </Button>
                           )}
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={handleStopRecording}
+                          >
+                            <MicOff className="h-4 w-4 mr-2" />
+                            Arrêter
+                          </Button>
                         </div>
                       )}
                     </div>
-                    <textarea
-                      id="content"
-                      value={textContent}
+                  )}
+                </div>
+                <textarea
+                  id="content"
+                  value={textContent}
                       onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
-                      placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
+                  placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
                       className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                       disabled={isRecording || isTranscribing || isDemoMode}
-                    />
-                    {recordingError && (
-                      <p className="text-sm text-red-600 mt-2">{recordingError}</p>
-                    )}
-                    {isTranscribing && (
-                      <p className="text-sm text-gray-600 mt-2 animate-pulse">
-                        Transcription en cours...
-                      </p>
-                    )}
+                />
+                {recordingError && (
+                  <p className="text-sm text-red-600 mt-2">{recordingError}</p>
+                )}
+                {isTranscribing && (
+                  <p className="text-sm text-gray-600 mt-2 animate-pulse">
+                    Transcription en cours...
+                  </p>
+                )}
                     {!isDemoMode && !user && (
                       <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
                         <Lock className="h-4 w-4" /> 
                         <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
                       </div>
                     )}
-                  </div>
+              </div>
 
                   {/* Formulaire structuré dans un accordéon */}
                   {!isDemoMode && hasApiKeys && (
@@ -1576,85 +1689,85 @@ Exemple de format attendu :
                     </Accordion>
                   )}
 
-                  {/* Upload d'images */}
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="images">Images médicales (optionnel)</Label>
-                      <div className="mt-2 flex items-center gap-4">
-                        <input
-                          type="file"
-                          id="images"
-                          accept="image/*"
-                          multiple
-                          onChange={handleImageUpload}
-                          className="hidden"
+              {/* Upload d'images */}
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="images">Images médicales (optionnel)</Label>
+                  <div className="mt-2 flex items-center gap-4">
+                    <input
+                      type="file"
+                      id="images"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageUpload}
+                      className="hidden"
                           disabled={isDemoMode}
-                        />
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => document.getElementById('images')?.click()}
+                          disabled={isAnalyzing || isDemoMode}
+                    >
+                      <ImagePlus className="h-4 w-4 mr-2" />
+                      Ajouter des images
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
+                    </span>
+                  </div>
+                </div>
+
+                {uploadedImages.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {uploadedImages.map((img, index) => (
+                      <div key={index} className="relative group">
+                        <div className="border rounded-lg p-3 bg-gray-50">
+                          <p className="text-xs font-medium truncate">{img.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
+                        </div>
                         <Button
                           type="button"
-                          variant="outline"
-                          onClick={() => document.getElementById('images')?.click()}
-                          disabled={isAnalyzing || isDemoMode}
+                          variant="destructive"
+                          size="icon"
+                          className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeImage(index)}
                         >
-                          <ImagePlus className="h-4 w-4 mr-2" />
-                          Ajouter des images
+                          <X className="h-3 w-3" />
                         </Button>
-                        <span className="text-sm text-gray-600">
-                          {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
-                        </span>
                       </div>
-                    </div>
-
-                    {uploadedImages.length > 0 && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {uploadedImages.map((img, index) => (
-                          <div key={index} className="relative group">
-                            <div className="border rounded-lg p-3 bg-gray-50">
-                              <p className="text-xs font-medium truncate">{img.name}</p>
-                              <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="icon"
-                              className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => removeImage(index)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    ))}
                   </div>
+                )}
+              </div>
 
-                  {isAnalyzing && progressMessage && (
-                    <div className="text-center text-sm text-gray-600">
-                      {progressMessage}
-                    </div>
-                  )}
+              {isAnalyzing && progressMessage && (
+                <div className="text-center text-sm text-gray-600">
+                  {progressMessage}
+                </div>
+              )}
 
-                  <div className="flex justify-end">
-                    <Button
-                      onClick={handleAnalyze}
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleAnalyze}
                       disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
-                      className="min-w-[200px]"
-                    >
-                      {isAnalyzing ? (
-                        <>
-                          <Brain className="mr-2 h-4 w-4 animate-pulse" />
-                          Analyse en cours...
-                        </>
-                      ) : (
-                        <>
-                          <Brain className="mr-2 h-4 w-4" />
-                          Analyser le cas
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                  className="min-w-[200px]"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                      Analyse en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="mr-2 h-4 w-4" />
+                      Analyser le cas
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
             )}
           </>
         ) : (
@@ -2276,14 +2389,14 @@ Exemple de format attendu :
                 </Button>
               </div>
             )}
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))
-                  )}
-                                </Accordion>
-                
+                    </AccordionContent>
+                  </AccordionItem>
+                ))
+              )}
+            </Accordion>
+
                 {/* Section Maladies Rares - Placée AVANT les références */}
-                {!analysisData?.isDemo && analysisData?.sections && (
+            {!analysisData?.isDemo && analysisData?.sections && (
                   <Card className="mt-8">
                     <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50">
                       <CardTitle className="flex items-center gap-3">
@@ -2303,23 +2416,23 @@ Exemple de format attendu :
                             Lancez une recherche avancée pour identifier des maladies rares 
                             potentiellement en lien avec le cas clinique
                           </p>
-                          <Button
+                <Button
                             onClick={searchForRareDiseases}
                             disabled={isSearchingRareDisease || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
                             className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                          >
-                            {isSearchingRareDisease ? (
-                              <>
+                >
+                  {isSearchingRareDisease ? (
+                    <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Recherche en cours...
-                              </>
-                            ) : (
-                              <>
+                      Recherche en cours...
+                    </>
+                  ) : (
+                    <>
                                 <Search className="mr-2 h-4 w-4" />
                                 Lancer la recherche (1 crédit)
-                              </>
-                            )}
-                          </Button>
+                    </>
+                  )}
+                </Button>
                           {(!user || !userCredits || (userCredits.credits ?? 0) <= 0) && (
                             <p className="text-sm text-red-600 mt-2">
                               {!user ? "Connexion requise" : "Crédits insuffisants"}
@@ -2350,7 +2463,7 @@ Exemple de format attendu :
                                 <div className="text-center">
                                   <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
                                     <Globe className="w-6 h-6 text-purple-600 animate-pulse" />
-                                  </div>
+              </div>
                                   <p className="text-xs text-gray-600">Orphanet</p>
                                 </div>
                                 <div className="text-center">
@@ -2378,81 +2491,12 @@ Exemple de format attendu :
                               </div>
                             </div>
                           ) : rareDiseaseData && (
-                            <div className="space-y-6">
-                              <div className="bg-purple-50 p-4 rounded-lg">
-                                <h4 className="font-semibold text-purple-900 mb-2">
-                                  Maladie rare identifiée : {rareDiseaseData.disease}
-                                </h4>
-                              </div>
-                              
-                              <div className="prose max-w-none">
-                                {renderContentWithReferences(
-                                  rareDiseaseData.report,
-                                  rareDiseaseData.references || []
-                                )}
-                              </div>
-                              
-                              {rareDiseaseData.references?.length > 0 && (
-                                <Accordion type="multiple" className="mt-6">
-                                  <AccordionItem value="rare-references" className="border rounded-lg">
-                                    <AccordionTrigger className="px-4 hover:no-underline bg-purple-50">
-                                      <span className="text-left font-medium flex items-center gap-2 text-purple-900">
-                                        <BookOpen className="h-4 w-4" />
-                                        Références spécialisées ({rareDiseaseData.references.length})
-                                      </span>
-                                    </AccordionTrigger>
-                                    <AccordionContent className="px-4 pb-4">
-                                      <ul className="space-y-4 mt-4">
-                                        {rareDiseaseData.references.map((ref: any) => (
-                                          <li key={ref.label} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
-                                            <div className="flex items-start gap-3">
-                                              <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                                              <div className="flex-1">
-                                                <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                                                {ref.authors && (
-                                                  <p className="text-sm text-gray-700 mb-1">
-                                                    <span className="font-medium">Auteurs :</span> {ref.authors}
-                                                  </p>
-                                                )}
-                                                {ref.journal && (
-                                                  <p className="text-sm text-gray-700 mb-1">
-                                                    <span className="font-medium">Journal :</span> {ref.journal}
-                                                    {ref.year && ` (${ref.year})`}
-                                                  </p>
-                                                )}
-                                                {ref.date && !ref.year && (
-                                                  <p className="text-sm text-gray-700 mb-1">
-                                                    <span className="font-medium">Date :</span> {new Date(ref.date).toLocaleDateString('fr-FR')}
-                                                  </p>
-                                                )}
-                                                {ref.url && (
-                                                  <a
-                                                    href={ref.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
-                                                  >
-                                                    Consulter la source
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                    </svg>
-                                                  </a>
-                                                )}
-                                              </div>
-                                            </div>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    </AccordionContent>
-                                  </AccordionItem>
-                                </Accordion>
-                              )}
-                            </div>
+                            <RareDiseaseResults data={rareDiseaseData} />
                           )}
                         </>
                       )}
-                    </CardContent>
-                  </Card>
+                  </CardContent>
+                </Card>
                 )}
                 
                 {/* Références bibliographiques - Placées APRÈS la section maladies rares */}
@@ -2489,17 +2533,17 @@ Exemple de format attendu :
                                   </p>
                                 )}
                                 {ref.url && (
-                                  <a
-                                    href={ref.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                <a
+                                  href={ref.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
-                                  >
-                                    Consulter la source
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                    </svg>
-                                  </a>
+                                >
+                                  Consulter la source
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
                                 )}
                               </div>
                             </div>

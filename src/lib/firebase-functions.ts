@@ -24,6 +24,19 @@ interface TranscribeAudioRequest {
   audioBase64: string;
 }
 
+interface ExtractStructuredDataRequest {
+  caseText: string;
+}
+
+interface ExtractStructuredDataResponse {
+  anamnese: string;
+  antecedents: string;
+  examenClinique: string;
+  examensComplementaires: string;
+  contextePatient: string;
+  error?: string;
+}
+
 // Initialiser Firebase Functions
 let functionsInstance: any = null;
 
@@ -158,5 +171,28 @@ export async function transcribeAudioViaFunction(audioBase64: string): Promise<s
   } catch (error: any) {
     console.error('Erreur Firebase Function transcription:', error);
     throw new Error('Erreur lors de la transcription: ' + error.message);
+  }
+}
+
+export async function extractStructuredDataViaFunction(caseText: string): Promise<ExtractStructuredDataResponse> {
+  const functions = getFunctionsInstance();
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
+  const extractData = httpsCallable<ExtractStructuredDataRequest, ExtractStructuredDataResponse>(
+    functions, 
+    'extractStructuredData'
+  );
+
+  try {
+    const result = await extractData({ caseText });
+    if (result.data.error) {
+      throw new Error(result.data.error);
+    }
+    return result.data;
+  } catch (error: any) {
+    console.error('Erreur Firebase Function extraction:', error);
+    throw new Error('Erreur lors de l\'extraction des données: ' + error.message);
   }
 } 
