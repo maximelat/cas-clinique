@@ -272,7 +272,7 @@ RÈGLES IMPÉRATIVES:
     progressCallback?: (message: string) => void,
     sectionCallback?: (section: any, index: number, total: number) => void,
     images?: { base64: string, type: string }[]
-  ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[] }> {
+  ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[], imageAnalyses?: string[] }> {
     if (!this.hasApiKeys()) {
       throw new Error('Les clés API ne sont pas configurées');
     }
@@ -283,6 +283,7 @@ RÈGLES IMPÉRATIVES:
     try {
       // Étape 1 : Analyser les images EN PREMIER si présentes
       let imageAnalyses = '';
+      const imageAnalysesArray: string[] = [];
       if (images && images.length > 0) {
         progressCallback?.('Analyse des images médicales...');
         console.log(`Analyse de ${images.length} images...`);
@@ -290,10 +291,13 @@ RÈGLES IMPÉRATIVES:
           try {
             progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
             const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type);
+            imageAnalysesArray.push(imageAnalysis);
             imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
           } catch (imageError: any) {
             console.error(`Erreur lors de l'analyse de l'image ${i + 1}:`, imageError.message);
-            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\nErreur lors de l'analyse de cette image.`;
+            const errorMsg = 'Erreur lors de l\'analyse de cette image.';
+            imageAnalysesArray.push(errorMsg);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${errorMsg}`;
           }
         }
         console.log('Analyse des images terminée');
@@ -349,7 +353,8 @@ RÈGLES IMPÉRATIVES:
         sections,
         references: referencesAnalysis.references,
         perplexityReport,
-        requestChain: this.requestChain.length > 0 ? this.requestChain : undefined
+        requestChain: this.requestChain.length > 0 ? this.requestChain : undefined,
+        imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
       };
     } catch (error: any) {
       console.error('Erreur complète dans analyzeClinicalCase:', error);
@@ -1030,22 +1035,26 @@ Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur le
     },
     progressCallback?: (message: string) => void,
     sectionCallback?: (section: any, index: number, total: number) => void
-  ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[] }> {
+  ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[], imageAnalyses?: string[] }> {
     this.clearRequestChain();
 
     try {
       // Étape 1 : Analyser les nouvelles images si présentes
       let imageAnalyses = '';
+      const imageAnalysesArray: string[] = [];
       if (fullContext.images && fullContext.images.length > 0) {
         progressCallback?.('Analyse des images médicales...');
         for (let i = 0; i < fullContext.images.length; i++) {
           try {
             progressCallback?.(`Analyse de l'image ${i + 1}/${fullContext.images.length}...`);
             const imageAnalysis = await this.analyzeImageWithO3(fullContext.images[i].base64, fullContext.images[i].type);
+            imageAnalysesArray.push(imageAnalysis);
             imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${fullContext.images[i].type}):\n${imageAnalysis}`;
           } catch (imageError: any) {
             console.error(`Erreur lors de l'analyse de l'image ${i + 1}:`, imageError.message);
-            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${fullContext.images[i].type}):\nErreur lors de l'analyse.`;
+            const errorMsg = 'Erreur lors de l\'analyse.';
+            imageAnalysesArray.push(errorMsg);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${fullContext.images[i].type}):\n${errorMsg}`;
           }
         }
       }
@@ -1098,7 +1107,8 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
         sections,
         references: referencesAnalysis.references,
         perplexityReport,
-        requestChain: this.requestChain
+        requestChain: this.requestChain,
+        imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
       };
     } catch (error: any) {
       console.error('Erreur reprise approfondie:', error);
