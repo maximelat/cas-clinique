@@ -621,42 +621,46 @@ function AnalysisView() {
                   )}
                   {/* Bouton reprise approfondie */}
                   {analysis.modificationHistory && analysis.modificationHistory.length > 0 && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDeepReanalysis}
+                            disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
+                            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Reprise approfondie
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Lancer une recherche sourcée sur la base du contenu disponible et du dossier initial</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {/* Nouveau bouton pour relancer l'analyse complète */}
+                  <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={handleDeepReanalysis}
+                          onClick={handleCompleteReanalysis}
                           disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
-                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                          className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
                         >
                           <RefreshCw className="mr-2 h-4 w-4" />
-                          Reprise approfondie
+                          Relancer l'analyse (1 crédit)
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Lancer une recherche sourcée sur la base du contenu disponible et du dossier initial</p>
+                        <p>Reprendre le dossier actuel et actualiser l'analyse</p>
                       </TooltipContent>
                     </Tooltip>
-                  )}
-                  {/* Nouveau bouton pour relancer l'analyse complète */}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleCompleteReanalysis}
-                        disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
-                        className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
-                      >
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Relancer l'analyse (1 crédit)
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Reprendre le dossier actuel et actualiser l'analyse</p>
-                    </TooltipContent>
-                  </Tooltip>
+                  </TooltipProvider>
                   {analysis.perplexityReport && (
                     <Button
                       variant="outline"

@@ -1671,170 +1671,169 @@ Exemple de format attendu :
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
-        <div className="container mx-auto px-4 pt-8">
-          <div className="flex items-center justify-between mb-6">
-            <Link href="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Retour
-              </Button>
-            </Link>
-            <Link href="/history">
-              <Button variant="outline" size="sm" disabled={!user}>
-                <History className="mr-2 h-4 w-4" />
-                Historique
-              </Button>
-            </Link>
+      <div className="container mx-auto px-4 pt-8">
+        <div className="flex items-center justify-between mb-6">
+          <Link href="/">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Retour
+            </Button>
+          </Link>
+          <Link href="/history">
+            <Button variant="outline" size="sm" disabled={!user}>
+              <History className="mr-2 h-4 w-4" />
+              Historique
+            </Button>
+          </Link>
+        </div>
+
+        {/* Bannière orange MODE DÉMO */}
+        {isDemoMode && (
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 max-w-4xl mx-auto">
+            <div className="flex">
+              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 text-orange-600" />
+              <div className="text-sm text-orange-800">
+                <p className="font-medium mb-1">Mode démonstration activé</p>
+                <p>Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités.</p>
+              </div>
+            </div>
           </div>
+        )}
 
-          {/* Bannière orange MODE DÉMO */}
-          {isDemoMode && (
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 max-w-4xl mx-auto">
-              <div className="flex">
-                <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 text-orange-600" />
-                <div className="text-sm text-orange-800">
-                  <p className="font-medium mb-1">Mode démonstration activé</p>
-                  <p>Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités.</p>
-                </div>
-              </div>
+        {/* Popup d'information au premier usage */}
+        {showDemoInfo && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-xl max-w-md shadow-2xl">
+              <h2 className="text-orange-500 font-bold text-2xl mb-4 text-center">Mode Démonstration</h2>
+              <p className="text-gray-700 mb-6 text-center">
+                Vous utilisez le mode démonstration. Les données sont préremplies et non modifiables. 
+                Pour analyser vos propres cas cliniques, connectez-vous pour utiliser le mode réel.
+              </p>
+              <button 
+                className="w-full bg-orange-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-orange-600 transition-colors"
+                onClick={() => setShowDemoInfo(false)}
+              >
+                J'ai compris
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Popup d'information au premier usage */}
-          {showDemoInfo && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-              <div className="bg-white p-8 rounded-xl max-w-md shadow-2xl">
-                <h2 className="text-orange-500 font-bold text-2xl mb-4 text-center">Mode Démonstration</h2>
-                <p className="text-gray-700 mb-6 text-center">
-                  Vous utilisez le mode démonstration. Les données sont préremplies et non modifiables. 
-                  Pour analyser vos propres cas cliniques, connectez-vous pour utiliser le mode réel.
-                </p>
-                <button 
-                  className="w-full bg-orange-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-orange-600 transition-colors"
-                  onClick={() => setShowDemoInfo(false)}
-                >
-                  J'ai compris
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!showResults ? (
-            <Card className="max-w-4xl mx-auto">
-              <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle>Entrez votre cas clinique</CardTitle>
-                    <CardDescription>
-                      Collez ou tapez le cas clinique à analyser
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="demo-toggle" className="text-sm">
-                      Mode démo
-                    </Label>
-                    <Button
-                      id="demo-toggle"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setIsDemoMode(!isDemoMode)}
-                      className="p-1"
-                    >
-                      {isDemoMode ? (
-                        <ToggleRight className="h-6 w-6 text-blue-600" />
-                      ) : (
-                        <ToggleLeft className="h-6 w-6 text-gray-500" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
+        {!showResults ? (
+          <Card className="max-w-4xl mx-auto">
+            <CardHeader>
+              <div className="flex justify-between items-center">
                 <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <Label htmlFor="content">Cas clinique</Label>
-                    {isAudioSupported && (
-                      <div className="flex items-center gap-2">
-                        {isRecording && (
-                          <span className="text-sm text-gray-600">
-                            {formatTime(recordingTime)}
-                          </span>
-                        )}
-                        {!isRecording ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleStartRecording}
-                            disabled={isTranscribing || isDemoMode}
-                          >
-                            <Mic className="h-4 w-4 mr-2" />
-                            Dicter
-                          </Button>
-                        ) : (
-                          <div className="flex gap-2">
-                            {isPaused ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={resumeRecording}
-                              >
-                                <Play className="h-4 w-4" />
-                              </Button>
-                            ) : (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={pauseRecording}
-                              >
-                                <Pause className="h-4 w-4" />
-                              </Button>
-                            )}
+                  <CardTitle>Entrez votre cas clinique</CardTitle>
+                  <CardDescription>
+                    Collez ou tapez le cas clinique à analyser
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="demo-toggle" className="text-sm">
+                    Mode démo
+                  </Label>
+                  <Button
+                    id="demo-toggle"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsDemoMode(!isDemoMode)}
+                    className="p-1"
+                  >
+                    {isDemoMode ? (
+                      <ToggleRight className="h-6 w-6 text-blue-600" />
+                    ) : (
+                      <ToggleLeft className="h-6 w-6 text-gray-500" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <Label htmlFor="content">Cas clinique</Label>
+                  {isAudioSupported && (
+                    <div className="flex items-center gap-2">
+                      {isRecording && (
+                        <span className="text-sm text-gray-600">
+                          {formatTime(recordingTime)}
+                        </span>
+                      )}
+                      {!isRecording ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleStartRecording}
+                          disabled={isTranscribing || isDemoMode}
+                        >
+                          <Mic className="h-4 w-4 mr-2" />
+                          Dicter
+                        </Button>
+                      ) : (
+                        <div className="flex gap-2">
+                          {isPaused ? (
                             <Button
                               type="button"
-                              variant="default"
+                              variant="outline"
                               size="sm"
-                              onClick={handleStopRecording}
+                              onClick={resumeRecording}
                             >
-                              <MicOff className="h-4 w-4 mr-2" />
-                              Arrêter
+                              <Play className="h-4 w-4" />
                             </Button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <textarea
-                    id="content"
-                    value={textContent}
-                    onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
-                    placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
-                    className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                    disabled={isRecording || isTranscribing || isDemoMode}
-                  />
-                  {recordingError && (
-                    <p className="text-sm text-red-600 mt-2">{recordingError}</p>
-                  )}
-                  {isTranscribing && (
-                    <p className="text-sm text-gray-600 mt-2 animate-pulse">
-                      Transcription en cours...
-                    </p>
-                  )}
-                  {!isDemoMode && !user && (
-                    <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
-                      <Lock className="h-4 w-4" /> 
-                      <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={pauseRecording}
+                            >
+                              <Pause className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={handleStopRecording}
+                          >
+                            <MicOff className="h-4 w-4 mr-2" />
+                            Arrêter
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
-                  
-                              </div>
+                </div>
+                <textarea
+                  id="content"
+                  value={textContent}
+                  onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
+                  placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
+                  className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                  disabled={isRecording || isTranscribing || isDemoMode}
+                />
+                {recordingError && (
+                  <p className="text-sm text-red-600 mt-2">{recordingError}</p>
+                )}
+                {isTranscribing && (
+                  <p className="text-sm text-gray-600 mt-2 animate-pulse">
+                    Transcription en cours...
+                  </p>
+                )}
+                {!isDemoMode && !user && (
+                  <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
+                    <Lock className="h-4 w-4" /> 
+                    <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
+                  </div>
+                )}
+              </div>
 
-                {/* Formulaire structuré dans un accordéon */}
+              {/* Formulaire structuré dans un accordéon */}
                 {!isDemoMode && hasApiKeys && (
-                                  <Accordion type="multiple" className="mt-4 border rounded-lg">
-                  <AccordionItem value="structured-form" className="border-0">
+                  <Accordion type="multiple" className="mt-4 border rounded-lg">
+                    <AccordionItem value="structured-form" className="border-0">
                       <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-white rounded-lg shadow-sm">
@@ -2113,43 +2112,47 @@ Exemple de format attendu :
                     )}
                     {/* Bouton reprise approfondie */}
                     {!analysisData?.isDemo && analysisData?.modificationHistory && analysisData.modificationHistory.length > 0 && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleDeepReanalysis}
-                            disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
-                            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
-                          >
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            Reprise approfondie
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Lancer une recherche sourcée sur la base du contenu disponible et du dossier initial</p>
-                        </TooltipContent>
-                      </Tooltip>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleDeepReanalysis}
+                              disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Reprise approfondie
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Lancer une recherche sourcée sur la base du contenu disponible et du dossier initial</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                     {/* Nouveau bouton pour relancer l'analyse complète */}
                     {!analysisData?.isDemo && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleCompleteReanalysis}
-                            disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
-                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
-                          >
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            Relancer l'analyse (1 crédit)
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Reprendre le dossier actuel et actualiser l'analyse</p>
-                        </TooltipContent>
-                      </Tooltip>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleCompleteReanalysis}
+                              disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                              className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Relancer l'analyse (1 crédit)
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Reprendre le dossier actuel et actualiser l'analyse</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                     {/* Bouton Export All pour maxime.latry@gmail.com uniquement */}
                     {user?.email === 'maxime.latry@gmail.com' && analysisHistory.length > 0 && (
@@ -2739,6 +2742,7 @@ Exemple de format attendu :
           </div>
         </div>
       </div>
+    </div>
   )
 }
 
