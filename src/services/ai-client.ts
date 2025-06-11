@@ -271,8 +271,7 @@ RÈGLES IMPÉRATIVES:
     caseText: string, 
     progressCallback?: (message: string) => void,
     sectionCallback?: (section: any, index: number, total: number) => void,
-    images?: { base64: string, type: string }[],
-    additionalContent?: string // Pour inclure le contenu ajouté par l'utilisateur
+    images?: { base64: string, type: string }[]
   ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[] }> {
     if (!this.hasApiKeys()) {
       throw new Error('Les clés API ne sont pas configurées');
@@ -282,25 +281,7 @@ RÈGLES IMPÉRATIVES:
     this.clearRequestChain();
 
     try {
-      // Préparer le contenu complet pour la recherche académique
-      let fullSearchContent = caseText;
-      if (additionalContent) {
-        fullSearchContent += `\n\nINFORMATIONS COMPLÉMENTAIRES AJOUTÉES:\n${additionalContent}`;
-      }
-
-      // Étape 1 : Recherche académique complète avec Perplexity (incluant tout le contenu)
-      progressCallback?.('Recherche académique complète dans la littérature médicale...');
-      console.log('Début recherche Perplexity avec contenu complet...');
-      const perplexityReport = await this.searchWithPerplexity(fullSearchContent);
-      console.log('Recherche Perplexity terminée, rapport:', perplexityReport);
-      
-      // Étape 2 : Analyser les références avec GPT-4o
-      progressCallback?.('Analyse des références académiques...');
-      console.log('Analyse des références avec GPT-4o...');
-      const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
-      console.log('Analyse GPT-4o terminée');
-      
-      // Étape 3 : Analyser les images si présentes
+      // Étape 1 : Analyser les images EN PREMIER si présentes
       let imageAnalyses = '';
       if (images && images.length > 0) {
         progressCallback?.('Analyse des images médicales...');
@@ -318,26 +299,40 @@ RÈGLES IMPÉRATIVES:
         console.log('Analyse des images terminée');
       }
 
-      // Étape 4 : Analyse clinique complète avec o3 (utilisant TOUT : recherche académique + références + images + contenu ajouté)
+      // Étape 2 : Recherche académique avec Perplexity (incluant le cas + résultats images)
+      progressCallback?.('Recherche académique dans la littérature médicale...');
+      console.log('Début recherche Perplexity...');
+      
+      let searchContent = caseText;
+      if (imageAnalyses) {
+        searchContent += `\n\nRÉSULTATS D'ANALYSE D'IMAGERIE:${imageAnalyses}`;
+      }
+      
+      const perplexityReport = await this.searchWithPerplexity(searchContent);
+      console.log('Recherche Perplexity terminée');
+      
+      // Étape 3 : Analyser les références avec GPT-4o
+      progressCallback?.('Analyse des références académiques...');
+      console.log('Analyse des références avec GPT-4o...');
+      const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
+      console.log('Analyse GPT-4o terminée');
+      
+      // Étape 4 : Analyse clinique complète avec o3
       progressCallback?.('Analyse clinique complète...');
       console.log('Début analyse clinique complète avec o3...');
       
       // Construire le contexte complet pour l'analyse clinique
-      let completeAnalysisContext = `RECHERCHE ACADÉMIQUE COMPLÈTE:\n${perplexityReport.answer}\n\n`;
-      completeAnalysisContext += `ANALYSE DÉTAILLÉE DES RÉFÉRENCES:\n${referencesAnalysis.analysis}\n\n`;
+      let completeAnalysisContext = `RECHERCHE ACADÉMIQUE:\n${perplexityReport.answer}\n\n`;
+      completeAnalysisContext += `ANALYSE DES RÉFÉRENCES:\n${referencesAnalysis.analysis}\n\n`;
       
       if (imageAnalyses) {
         completeAnalysisContext += `ANALYSES D'IMAGERIE MÉDICALE:${imageAnalyses}\n\n`;
       }
       
-      if (additionalContent) {
-        completeAnalysisContext += `INFORMATIONS COMPLÉMENTAIRES FOURNIES:\n${additionalContent}\n\n`;
-      }
-      
-      completeAnalysisContext += `\nCAS CLINIQUE INITIAL:\n${caseText}`;
+      completeAnalysisContext += `CAS CLINIQUE:\n${caseText}`;
       
       console.log('Longueur du contexte complet:', completeAnalysisContext.length);
-      const fullAnalysis = await this.analyzeWithO3(completeAnalysisContext, fullSearchContent);
+      const fullAnalysis = await this.analyzeWithO3(completeAnalysisContext, caseText);
       console.log('Analyse clinique complète terminée');
       
       // Étape 5 : Parser les sections
@@ -354,7 +349,7 @@ RÈGLES IMPÉRATIVES:
         sections,
         references: referencesAnalysis.references,
         perplexityReport,
-        requestChain: this.requestChain.length > 0 ? this.getRequestChain() : undefined
+        requestChain: this.requestChain.length > 0 ? this.requestChain : undefined
       };
     } catch (error: any) {
       console.error('Erreur complète dans analyzeClinicalCase:', error);
@@ -1020,6 +1015,157 @@ Si aucune maladie rare ne semble correspondre, explique pourquoi et reste sur le
     } catch (error: any) {
       console.error('Erreur recherche maladies rares:', error);
       throw new Error('Erreur lors de la recherche de maladies rares: ' + error.message);
+    }
+  }
+
+  // Méthode pour la REPRISE APPROFONDIE (2 crédits) - refait tout avec Perplexity
+  async deepAnalysis(
+    fullContext: {
+      initialCase: string,
+      currentCase: string,
+      sections: any[],
+      perplexityReport: any,
+      modifications: any[],
+      images?: { base64: string, type: string }[]
+    },
+    progressCallback?: (message: string) => void,
+    sectionCallback?: (section: any, index: number, total: number) => void
+  ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[] }> {
+    this.clearRequestChain();
+
+    try {
+      // Étape 1 : Analyser les nouvelles images si présentes
+      let imageAnalyses = '';
+      if (fullContext.images && fullContext.images.length > 0) {
+        progressCallback?.('Analyse des images médicales...');
+        for (let i = 0; i < fullContext.images.length; i++) {
+          try {
+            progressCallback?.(`Analyse de l'image ${i + 1}/${fullContext.images.length}...`);
+            const imageAnalysis = await this.analyzeImageWithO3(fullContext.images[i].base64, fullContext.images[i].type);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${fullContext.images[i].type}):\n${imageAnalysis}`;
+          } catch (imageError: any) {
+            console.error(`Erreur lors de l'analyse de l'image ${i + 1}:`, imageError.message);
+            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${fullContext.images[i].type}):\nErreur lors de l'analyse.`;
+          }
+        }
+      }
+
+      // Étape 2 : Recherche Perplexity exhaustive
+      progressCallback?.('Recherche académique exhaustive...');
+      
+      const deepSearchPrompt = `REPRISE APPROFONDIE - Recherche exhaustive
+
+CAS CLINIQUE INITIAL:
+${fullContext.initialCase}
+
+MODIFICATIONS APPORTÉES:
+${fullContext.modifications.map((m: any) => `- ${m.sectionType}: ${m.additionalInfo}`).join('\n')}
+
+ANALYSE PRÉCÉDENTE:
+${fullContext.sections.map((s: any) => `${s.type}:\n${s.content}`).join('\n\n')}
+
+${imageAnalyses ? `NOUVELLES ANALYSES D'IMAGERIE:${imageAnalyses}` : ''}
+
+INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
+1. Explorer TOUS les diagnostics différentiels, même rares
+2. Rechercher les dernières avancées thérapeutiques (2023-2025)
+3. Identifier les essais cliniques en cours
+4. Inclure les recommandations internationales récentes
+5. Chercher les syndromes et associations pathologiques`;
+
+      const perplexityReport = await this.searchWithPerplexity(deepSearchPrompt);
+      
+      // Étape 3 : Analyser les références
+      progressCallback?.('Analyse des références approfondies...');
+      const referencesAnalysis = await this.analyzeReferencesWithGPT4(perplexityReport);
+      
+      // Étape 4 : Analyse o3 approfondie
+      progressCallback?.('Analyse clinique approfondie...');
+      
+      let completeContext = `RECHERCHE ACADÉMIQUE APPROFONDIE:\n${perplexityReport.answer}\n\n`;
+      completeContext += `ANALYSE DES RÉFÉRENCES:\n${referencesAnalysis.analysis}\n\n`;
+      completeContext += `HISTORIQUE COMPLET:\n${JSON.stringify(fullContext)}\n\n`;
+      
+      const fullAnalysis = await this.analyzeWithO3(completeContext, fullContext.currentCase);
+      
+      const sections = this.parseSections(fullAnalysis);
+      
+      sections.forEach((section, index) => {
+        sectionCallback?.(section, index, sections.length);
+      });
+      
+      return {
+        sections,
+        references: referencesAnalysis.references,
+        perplexityReport,
+        requestChain: this.requestChain
+      };
+    } catch (error: any) {
+      console.error('Erreur reprise approfondie:', error);
+      throw error;
+    }
+  }
+
+  // Méthode pour la RELANCE ANALYSE (1 crédit) - o3 seulement, PAS de Perplexity
+  async relaunchAnalysis(
+    currentData: {
+      sections: any[],
+      references: any[],
+      modifications: string,
+      images?: { base64: string, type: string }[]
+    },
+    progressCallback?: (message: string) => void
+  ): Promise<{ sections: any[], requestChain?: any[] }> {
+    this.clearRequestChain();
+
+    try {
+      progressCallback?.('Mise à jour de l\'analyse clinique...');
+
+      // Analyser les nouvelles images si présentes
+      let newImageAnalyses = '';
+      if (currentData.images && currentData.images.length > 0) {
+        progressCallback?.('Analyse des nouvelles images...');
+        for (let i = 0; i < currentData.images.length; i++) {
+          try {
+            const imageAnalysis = await this.analyzeImageWithO3(currentData.images[i].base64, currentData.images[i].type);
+            newImageAnalyses += `\n\nNOUVELLE IMAGE ${i + 1} (${currentData.images[i].type}):\n${imageAnalysis}`;
+          } catch (imageError: any) {
+            console.error(`Erreur analyse image ${i + 1}:`, imageError.message);
+          }
+        }
+      }
+
+      // Construire le contexte pour o3 SEULEMENT
+      let updateContext = `SECTIONS ACTUELLES:\n`;
+      currentData.sections.forEach(section => {
+        updateContext += `\n${section.type}:\n${section.content}\n`;
+      });
+      
+      updateContext += `\n\nRÉFÉRENCES ACTUELLES:\n`;
+      currentData.references.forEach(ref => {
+        updateContext += `[${ref.label}] ${ref.title} - ${ref.url}\n`;
+      });
+      
+      if (currentData.modifications) {
+        updateContext += `\n\nMODIFICATIONS RÉCENTES:\n${currentData.modifications}`;
+      }
+      
+      if (newImageAnalyses) {
+        updateContext += `\n\nNOUVELLES ANALYSES D'IMAGES:${newImageAnalyses}`;
+      }
+      
+      updateContext += `\n\nINSTRUCTIONS: Mets à jour l'analyse en intégrant les modifications et nouvelles informations. Garde le même format de sections.`;
+
+      const updatedAnalysis = await this.analyzeWithO3(updateContext, '');
+      const sections = this.parseSections(updatedAnalysis);
+      
+             return {
+         sections,
+         requestChain: this.requestChain
+       };
+    } catch (error: any) {
+      console.error('Erreur relance analyse:', error);
+      throw error;
     }
   }
 

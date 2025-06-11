@@ -455,23 +455,14 @@ function DemoPageContent() {
           setInitialCaseContent(textContent)
           setCaseTitle(generateCaseTitle(textContent))
           
-                  // Collecter tout le contenu additionnel
-          let additionalContent = ''
-          if (analysisData?.modificationHistory && analysisData.modificationHistory.length > 0) {
-            additionalContent = analysisData.modificationHistory
-              .map((mod: any) => `[${mod.sectionType}]: ${mod.additionalInfo}`)
-              .join('\n\n')
-          }
-          
-          const result = await aiService.analyzeClinicalCase(
+                  const result = await aiService.analyzeClinicalCase(
             textContent,
             (message) => setProgressMessage(message),
             (section, index, total) => {
               console.log(`Section ${index + 1}/${total} reçue:`, section.type)
               setCurrentSections(prev => [...prev, section])
             },
-            base64Images.length > 0 ? base64Images : undefined,
-            additionalContent || undefined
+            base64Images.length > 0 ? base64Images : undefined
           )
 
           // Sauvegarder en base de données
@@ -945,50 +936,6 @@ Exemple de format attendu :
     setProgressMessage("Reprise approfondie en cours...")
     
     try {
-      // Collecter tout le contenu disponible
-      const fullContent = {
-        initialCase: initialCaseContent || textContent,
-        currentCase: textContent,
-        sections: analysisData.sections,
-        perplexityReport: analysisData.perplexityReport,
-        modifications: analysisData.modificationHistory || [],
-        images: uploadedImages
-      }
-      
-      // Prompt spécial pour reprise approfondie
-      const deepAnalysisPrompt = `REPRISE APPROFONDIE - Analyse complète et détaillée
-
-CAS CLINIQUE INITIAL:
-${fullContent.initialCase}
-
-MODIFICATIONS APPORTÉES:
-${fullContent.modifications.map((m: any) => `- ${m.sectionType}: ${m.additionalInfo}`).join('\n')}
-
-ANALYSE PRÉCÉDENTE:
-${fullContent.sections.map((s: any) => `${s.type}:\n${s.content}`).join('\n\n')}
-
-RECHERCHE ACADÉMIQUE INITIALE:
-${fullContent.perplexityReport.answer}
-
-INSTRUCTIONS POUR LA REPRISE APPROFONDIE:
-1. Faire une nouvelle recherche académique EXHAUSTIVE en incluant :
-   - Toutes les informations du cas initial
-   - Les modifications et ajouts
-   - Les résultats de la première analyse
-   
-2. Explorer TOUS les aspects suivants :
-   - Diagnostics différentiels rares ou atypiques
-   - Syndromes et associations pathologiques
-   - Dernières avancées thérapeutiques (2023-2025)
-   - Essais cliniques en cours
-   - Recommandations internationales récentes
-   
-3. Fournir une analyse PLUS DÉTAILLÉE que la première avec :
-   - Plus de références académiques récentes
-   - Arbres décisionnels complets
-   - Scores et critères diagnostiques
-   - Protocoles thérapeutiques détaillés`
-
       // Convertir les images en base64 si nécessaire
       let base64Images: { base64: string, type: string, name: string }[] = []
       if (uploadedImages.length > 0) {
@@ -1012,16 +959,24 @@ INSTRUCTIONS POUR LA REPRISE APPROFONDIE:
         }
       }
       
-      // Lancer l'analyse approfondie
-      const result = await aiService.analyzeClinicalCase(
-        deepAnalysisPrompt,
+      // Préparer le contexte complet
+      const fullContext = {
+        initialCase: initialCaseContent || textContent,
+        currentCase: textContent,
+        sections: analysisData.sections,
+        perplexityReport: analysisData.perplexityReport,
+        modifications: analysisData.modificationHistory || [],
+        images: base64Images.length > 0 ? base64Images : undefined
+      }
+      
+      // Lancer la reprise approfondie avec la nouvelle méthode
+      const result = await aiService.deepAnalysis(
+        fullContext,
         (message) => setProgressMessage(message),
         (section, index, total) => {
           console.log(`Section approfondie ${index + 1}/${total} reçue:`, section.type)
           setCurrentSections(prev => [...prev, section])
-        },
-        base64Images.length > 0 ? base64Images : undefined,
-        JSON.stringify(fullContent.modifications)
+        }
       )
 
       // Déduire 2 crédits
@@ -1057,17 +1012,6 @@ INSTRUCTIONS POUR LA REPRISE APPROFONDIE:
     setProgressMessage("Relance de l'analyse en cours...")
     
     try {
-      // Utiliser le cas actuel avec toutes les modifications
-      const currentFullCase = textContent
-      
-      // Collecter le contenu additionnel
-      let additionalContent = ''
-      if (analysisData.modificationHistory && analysisData.modificationHistory.length > 0) {
-        additionalContent = analysisData.modificationHistory
-          .map((mod: any) => `[${mod.sectionType}]: ${mod.additionalInfo}`)
-          .join('\n\n')
-      }
-      
       // Convertir les images en base64 si nécessaire
       let base64Images: { base64: string, type: string, name: string }[] = []
       if (uploadedImages.length > 0) {
@@ -1091,16 +1035,26 @@ INSTRUCTIONS POUR LA REPRISE APPROFONDIE:
         }
       }
       
-      // Relancer l'analyse standard
-      const result = await aiService.analyzeClinicalCase(
-        currentFullCase,
-        (message) => setProgressMessage(message),
-        (section, index, total) => {
-          console.log(`Section ${index + 1}/${total} reçue:`, section.type)
-          setCurrentSections(prev => [...prev, section])
-        },
-        base64Images.length > 0 ? base64Images : undefined,
-        additionalContent || undefined
+      // Collecter les modifications
+      let modifications = ''
+      if (analysisData.modificationHistory && analysisData.modificationHistory.length > 0) {
+        modifications = analysisData.modificationHistory
+          .map((mod: any) => `[${mod.sectionType}]: ${mod.additionalInfo}`)
+          .join('\n\n')
+      }
+      
+      // Préparer les données actuelles
+      const currentData = {
+        sections: analysisData.sections,
+        references: analysisData.references,
+        modifications: modifications,
+        images: base64Images.length > 0 ? base64Images : undefined
+      }
+      
+      // Relancer avec la méthode qui n'utilise que o3
+      const result = await aiService.relaunchAnalysis(
+        currentData,
+        (message) => setProgressMessage(message)
       )
 
       // Déduire 1 crédit
@@ -1108,12 +1062,11 @@ INSTRUCTIONS POUR LA REPRISE APPROFONDIE:
         await refreshCredits()
       }
 
-      // Mettre à jour avec les nouveaux résultats
+      // Mettre à jour uniquement les sections (pas de nouvelle recherche Perplexity)
       setAnalysisData({
         ...analysisData,
         sections: result.sections,
-        references: result.references,
-        perplexityReport: result.perplexityReport,
+        // On garde les références et perplexityReport existants
         requestChain: result.requestChain,
         lastRelaunched: new Date().toISOString()
       })
