@@ -207,6 +207,7 @@ function DemoPageContent() {
   const [expandAllAccordions, setExpandAllAccordions] = useState(false)
   const [accordionValues, setAccordionValues] = useState<string[]>([])
   const [editingPreviousSection, setEditingPreviousSection] = useState<{ [key: string]: boolean }>({})
+  const [editedPreviousInfo, setEditedPreviousInfo] = useState<{ [key: string]: string }>({})
   const [editingInitialCase, setEditingInitialCase] = useState(false)
   const [editedInitialCase, setEditedInitialCase] = useState("")
   
@@ -704,38 +705,56 @@ function DemoPageContent() {
 
   // Fonction pour afficher le contenu avec les références
   const renderContentWithReferences = (content: string, references: any[]) => {
-    const processContent = (text: string) => {
-      let processedText = text
-      
-      // Remplacer les références [1], [2], etc. par des liens
-      references.forEach(ref => {
-        const regex = new RegExp(`\\[${ref.label}\\]`, 'g')
-        processedText = processedText.replace(
-          regex,
-          `<a href="#ref-${ref.label}" class="text-blue-600 hover:text-blue-800 font-semibold">[${ref.label}]</a>`
-        )
-      })
-      
-      return processedText
-    }
-
+    // Diviser le contenu en segments pour gérer les références séparément
+    const parts = content.split(/(\[\d+\])/g)
+    
     return (
       <div className="prose max-w-none">
-        <ReactMarkdown 
-          remarkPlugins={[remarkGfm]}
-          components={{
-            p: ({node, ...props}) => <p className="mb-4 text-gray-700 leading-relaxed" {...props} />,
-            ul: ({node, ...props}) => <ul className="list-disc pl-6 mb-4 space-y-2" {...props} />,
-            ol: ({node, ...props}) => <ol className="list-decimal pl-6 mb-4 space-y-2" {...props} />,
-            li: ({node, ...props}) => <li className="text-gray-700" {...props} />,
-            strong: ({node, ...props}) => <strong className="font-semibold text-gray-900" {...props} />,
-            h1: ({node, ...props}) => <h1 className="text-2xl font-bold mb-4 text-gray-900" {...props} />,
-            h2: ({node, ...props}) => <h2 className="text-xl font-semibold mb-3 text-gray-900" {...props} />,
-            h3: ({node, ...props}) => <h3 className="text-lg font-semibold mb-2 text-gray-900" {...props} />,
-          }}
-        >
-          {processContent(content)}
-        </ReactMarkdown>
+        {parts.map((part, index) => {
+          // Vérifier si c'est une référence [1], [2], etc.
+          const refMatch = part.match(/^\[(\d+)\]$/)
+          if (refMatch) {
+            const refNum = refMatch[1]
+            const ref = references.find(r => r.label === refNum)
+            if (ref) {
+              return (
+                <a
+                  key={index}
+                  href={`#ref-${refNum}`}
+                  className="text-blue-600 hover:text-blue-800 font-semibold"
+                >
+                  [{refNum}]
+                </a>
+              )
+            }
+          }
+          
+          // Sinon, c'est du contenu normal - utiliser ReactMarkdown
+          return (
+            <ReactMarkdown 
+              key={index}
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p: ({node, children, ...props}) => {
+                  // Ne pas wrapper dans <p> si c'est déjà inline
+                  if (typeof children === 'string' && !children.includes('\n')) {
+                    return <span {...props}>{children}</span>
+                  }
+                  return <p className="mb-4 text-gray-700 leading-relaxed" {...props}>{children}</p>
+                },
+                ul: ({node, ...props}) => <ul className="list-disc pl-6 mb-4 space-y-2" {...props} />,
+                ol: ({node, ...props}) => <ol className="list-decimal pl-6 mb-4 space-y-2" {...props} />,
+                li: ({node, ...props}) => <li className="text-gray-700" {...props} />,
+                strong: ({node, ...props}) => <strong className="font-semibold text-gray-900" {...props} />,
+                h1: ({node, ...props}) => <h1 className="text-2xl font-bold mb-4 text-gray-900" {...props} />,
+                h2: ({node, ...props}) => <h2 className="text-xl font-semibold mb-3 text-gray-900" {...props} />,
+                h3: ({node, ...props}) => <h3 className="text-lg font-semibold mb-2 text-gray-900" {...props} />,
+              }}
+            >
+              {part}
+            </ReactMarkdown>
+          )
+        })}
       </div>
     )
   }
@@ -1063,13 +1082,15 @@ Exemple de format attendu :
       }
 
       // Mettre à jour uniquement les sections (pas de nouvelle recherche Perplexity)
-      setAnalysisData({
+      const updatedData = {
         ...analysisData,
         sections: result.sections,
         // On garde les références et perplexityReport existants
         requestChain: result.requestChain,
         lastRelaunched: new Date().toISOString()
-      })
+      }
+      setAnalysisData(updatedData)
+      setCurrentSections(result.sections) // Forcer la mise à jour de l'affichage
       setRequestChain(result.requestChain || [])
       
       toast.success("Analyse relancée avec succès !")
@@ -1723,35 +1744,64 @@ Exemple de format attendu :
                               </p>
                             </div>
                           ) : (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                              {uploadedImages.map((img, index) => (
-                                <div key={index} className="relative group">
-                                  <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                                    <img
-                                      src={img.preview}
-                                      alt={img.name}
-                                      className="w-full h-full object-cover"
-                                    />
+                            <div className="space-y-4">
+                              {uploadedImages.map((img, index) => {
+                                // Trouver l'analyse correspondante si elle existe
+                                const imageAnalysis = analysisData?.imageAnalyses?.[index]
+                                
+                                return (
+                                  <div key={index} className="border rounded-lg p-4 bg-white">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                      {/* Image */}
+                                      <div className="relative group">
+                                        <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                                          <img
+                                            src={img.preview}
+                                            alt={img.name}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        </div>
+                                        <div className="mt-2">
+                                          <p className="text-xs font-medium truncate">{img.name}</p>
+                                          <p className="text-xs text-gray-500">
+                                            {img.type === 'medical' && 'Imagerie médicale'}
+                                            {img.type === 'biology' && 'Résultats biologiques'}
+                                            {img.type === 'ecg' && 'ECG'}
+                                            {img.type === 'other' && 'Autre'}
+                                          </p>
+                                        </div>
+                                        <Button
+                                          size="icon"
+                                          variant="destructive"
+                                          className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                          onClick={() => removeImage(index)}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                      
+                                      {/* Analyse de l'image */}
+                                      <div className="md:col-span-2">
+                                        <h5 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                          <Microscope className="h-4 w-4" />
+                                          Analyse de l'image
+                                        </h5>
+                                        {imageAnalysis ? (
+                                          <div className="prose prose-sm max-w-none">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                              {imageAnalysis}
+                                            </ReactMarkdown>
+                                          </div>
+                                        ) : (
+                                          <div className="text-sm text-gray-500 italic bg-gray-50 p-3 rounded">
+                                            L'analyse de cette image sera disponible après la prochaine analyse
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="mt-2">
-                                    <p className="text-xs font-medium truncate">{img.name}</p>
-                                    <p className="text-xs text-gray-500">
-                                      {img.type === 'medical' && 'Imagerie médicale'}
-                                      {img.type === 'biology' && 'Résultats biologiques'}
-                                      {img.type === 'ecg' && 'ECG'}
-                                      {img.type === 'other' && 'Autre'}
-                                    </p>
-                                  </div>
-                                  <Button
-                                    size="icon"
-                                    variant="destructive"
-                                    className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    onClick={() => removeImage(index)}
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
                           )}
                           
@@ -1834,8 +1884,85 @@ Exemple de format attendu :
                               {analysisData.modificationHistory
                                 .filter((mod: any) => mod.sectionType === section.type)
                                 .map((mod: any, idx: number) => (
-                                  <div key={idx} className="text-sm text-blue-700 mb-2">
-                                    • {mod.additionalInfo}
+                                  <div key={idx} className="relative">
+                                    {editingPreviousSection[`${section.type}-${idx}`] ? (
+                                      <div className="space-y-2">
+                                        <textarea
+                                          value={editedPreviousInfo[`${section.type}-${idx}`] || mod.additionalInfo}
+                                          onChange={(e) => setEditedPreviousInfo({
+                                            ...editedPreviousInfo,
+                                            [`${section.type}-${idx}`]: e.target.value
+                                          })}
+                                          className="w-full p-2 border rounded text-sm h-20 resize-none"
+                                        />
+                                        <div className="flex gap-2">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                              // Mettre à jour la modification
+                                              const updatedHistory = analysisData.modificationHistory.map((m: any, i: number) => {
+                                                if (m.sectionType === section.type && i === idx) {
+                                                  return {
+                                                    ...m,
+                                                    additionalInfo: editedPreviousInfo[`${section.type}-${idx}`]
+                                                  }
+                                                }
+                                                return m
+                                              })
+                                              setAnalysisData({
+                                                ...analysisData,
+                                                modificationHistory: updatedHistory
+                                              })
+                                              setEditingPreviousSection({
+                                                ...editingPreviousSection,
+                                                [`${section.type}-${idx}`]: false
+                                              })
+                                              toast.success("Modification mise à jour")
+                                            }}
+                                          >
+                                            <Check className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                              setEditingPreviousSection({
+                                                ...editingPreviousSection,
+                                                [`${section.type}-${idx}`]: false
+                                              })
+                                              setEditedPreviousInfo({
+                                                ...editedPreviousInfo,
+                                                [`${section.type}-${idx}`]: mod.additionalInfo
+                                              })
+                                            }}
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-sm text-blue-700 mb-2 group flex items-start justify-between">
+                                        <span>• {mod.additionalInfo}</span>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="opacity-0 group-hover:opacity-100 ml-2"
+                                          onClick={() => {
+                                            setEditingPreviousSection({
+                                              ...editingPreviousSection,
+                                              [`${section.type}-${idx}`]: true
+                                            })
+                                            setEditedPreviousInfo({
+                                              ...editedPreviousInfo,
+                                              [`${section.type}-${idx}`]: mod.additionalInfo
+                                            })
+                                          }}
+                                        >
+                                          <Edit className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                             </div>
@@ -1967,52 +2094,59 @@ Exemple de format attendu :
                               </div>
                               
                               {rareDiseaseData.references?.length > 0 && (
-                                <div className="mt-6 pt-6 border-t">
-                                  <h4 className="font-semibold mb-4 text-purple-900">
-                                    Références spécialisées
-                                  </h4>
-                                  <ul className="space-y-4">
-                                    {rareDiseaseData.references.map((ref: any) => (
-                                      <li key={ref.label} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
-                                        <div className="flex items-start gap-3">
-                                          <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                                          <div className="flex-1">
-                                            <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                                            {ref.authors && (
-                                              <p className="text-sm text-gray-700 mb-1">
-                                                <span className="font-medium">Auteurs :</span> {ref.authors}
-                                              </p>
-                                            )}
-                                            {ref.journal && (
-                                              <p className="text-sm text-gray-700 mb-1">
-                                                <span className="font-medium">Journal :</span> {ref.journal}
-                                                {ref.year && ` (${ref.year})`}
-                                              </p>
-                                            )}
-                                            {ref.date && !ref.year && (
-                                              <p className="text-sm text-gray-700 mb-1">
-                                                <span className="font-medium">Date :</span> {new Date(ref.date).toLocaleDateString('fr-FR')}
-                                              </p>
-                                            )}
-                                            {ref.url && (
-                                              <a
-                                                href={ref.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
-                                              >
-                                                Consulter la source
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                </svg>
-                                              </a>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
+                                <Accordion type="multiple" className="mt-6">
+                                  <AccordionItem value="rare-references" className="border rounded-lg">
+                                    <AccordionTrigger className="px-4 hover:no-underline bg-purple-50">
+                                      <span className="text-left font-medium flex items-center gap-2 text-purple-900">
+                                        <BookOpen className="h-4 w-4" />
+                                        Références spécialisées ({rareDiseaseData.references.length})
+                                      </span>
+                                    </AccordionTrigger>
+                                    <AccordionContent className="px-4 pb-4">
+                                      <ul className="space-y-4 mt-4">
+                                        {rareDiseaseData.references.map((ref: any) => (
+                                          <li key={ref.label} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
+                                            <div className="flex items-start gap-3">
+                                              <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                                              <div className="flex-1">
+                                                <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                                                {ref.authors && (
+                                                  <p className="text-sm text-gray-700 mb-1">
+                                                    <span className="font-medium">Auteurs :</span> {ref.authors}
+                                                  </p>
+                                                )}
+                                                {ref.journal && (
+                                                  <p className="text-sm text-gray-700 mb-1">
+                                                    <span className="font-medium">Journal :</span> {ref.journal}
+                                                    {ref.year && ` (${ref.year})`}
+                                                  </p>
+                                                )}
+                                                {ref.date && !ref.year && (
+                                                  <p className="text-sm text-gray-700 mb-1">
+                                                    <span className="font-medium">Date :</span> {new Date(ref.date).toLocaleDateString('fr-FR')}
+                                                  </p>
+                                                )}
+                                                {ref.url && (
+                                                  <a
+                                                    href={ref.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
+                                                  >
+                                                    Consulter la source
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                    </svg>
+                                                  </a>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </AccordionContent>
+                                  </AccordionItem>
+                                </Accordion>
                               )}
                             </div>
                           )}
@@ -2023,49 +2157,59 @@ Exemple de format attendu :
                 )}
                 
                 {/* Références bibliographiques - Placées APRÈS la section maladies rares */}
-                <Card className="mt-8">
-                  <CardHeader>
-                    <CardTitle>Références bibliographiques</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-4">
-                      {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
-                        <li key={ref.label} id={`ref-${ref.label}`} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
-                          <div className="flex items-start gap-3">
-                            <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                            <div className="flex-1">
-                              <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                              {ref.authors && (
-                                <p className="text-sm text-gray-700 mb-1">
-                                  <span className="font-medium">Auteurs :</span> {ref.authors}
-                                </p>
-                              )}
-                              {ref.journal && (
-                                <p className="text-sm text-gray-700 mb-1">
-                                  <span className="font-medium">Journal :</span> {ref.journal}
-                                  {ref.year && ` (${ref.year})`}
-                                </p>
-                              )}
-                              {ref.url && (
-                                <a
-                                  href={ref.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
-                                >
-                                  Consulter la source
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
-                              )}
+                <Accordion type="multiple" className="mt-8">
+                  <AccordionItem value="references" className="border rounded-lg">
+                    <AccordionTrigger className="px-6 hover:no-underline bg-gray-50">
+                      <span className="text-left font-medium flex items-center gap-2">
+                        <BookOpen className="h-4 w-4" />
+                        Références bibliographiques ({(analysisData?.isDemo ? demoReferences : analysisData?.references || []).length})
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-6 pb-6">
+                      <ul className="space-y-4 mt-4">
+                        {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
+                          <li key={ref.label} id={`ref-${ref.label}`} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
+                            <div className="flex items-start gap-3">
+                              <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                              <div className="flex-1">
+                                <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                                {ref.authors && (
+                                  <p className="text-sm text-gray-700 mb-1">
+                                    <span className="font-medium">Auteurs :</span> {ref.authors}
+                                  </p>
+                                )}
+                                {ref.journal && (
+                                  <p className="text-sm text-gray-700 mb-1">
+                                    <span className="font-medium">Journal :</span> {ref.journal}
+                                    {ref.year && ` (${ref.year})`}
+                                  </p>
+                                )}
+                                {ref.date && !ref.year && (
+                                  <p className="text-sm text-gray-700 mb-1">
+                                    <span className="font-medium">Date :</span> {new Date(ref.date).toLocaleDateString('fr-FR')}
+                                  </p>
+                                )}
+                                {ref.url && (
+                                  <a
+                                    href={ref.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                                  >
+                                    Consulter la source
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
+                          </li>
+                        ))}
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </>
             )}
           </div>

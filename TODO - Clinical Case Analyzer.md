@@ -104,7 +104,7 @@ Tooltips - J'ai installé le composant tooltip mais rencontré des erreurs de sy
 Édition du dossier initial - Tentative d'implémentation mais erreurs de syntaxe
 Voir les anciennes versions - Tentative d'ajouter un bouton "Voir" mais erreurs de syntaxe
 
-TODOOOOO:
+DONE :
 
 1 
 la requette perplexity ""Recherche académique"," doit venir juste avant la recherche "Analyse clinique complète"
@@ -123,6 +123,27 @@ relancer l'analyse 1 crédit
 5
 les références spécialisées ne sont pas au meme format correctemet mis en forme avec titre date et auteurs 
 
+TODOOOO : 
+
+
+1 j'ai l'impression que lorsqu'on relance l'analyse ça ne remplace pas ou ne met pas à jour la version affichée
+
+2 de plus les données ajoutées. manuellement ou fournie par la recherche ne sont pas éditable comme le dossier initial l'est 
+
+3 j'aimerais que tu affiche l'analyse de l'image à côté de l'image dans le dossier initial
+
+4 il y a un problème de html dans la réponse affichée 
+
+"utres antiplaquettaires, bêta-bloquant, IEC, statine) et un programme de réadaptation cardiaque. Cela réduit fortement le risque de récidive et aide votre cœur à récupérer. Si vous avez des questions, n’hésitez pas, nous vous accompagnerons à chaque étape. »
+
+Références : <a href="#ref-1" class="text-blue-600 hover:text-blue-800 font-semibold">[1]</a> <a href="#ref-2" class="text-blue-600 hover:text-blue-800 font-semibold">[2]</a> <a href="#ref-4" class="text-blue-600 hover:text-blue-800 font-semibold">[4]</a> <a href="#ref-6" class="text-blue-600 hover:text-blue-800 font-semibold">[6]</a> <a href="#ref-8" class="text-blue-600 hover:text-blue-800 font-semibold">[8]</a> <a href="#ref-9" class="text-blue-600 hover:text-blue-800 font-semibold">[9]</a> <a href="#ref-10" class="text-blue-600 hover:text-blue-800 font-semibold">[10]</a>
+" 
+
+de plus il n'est pas affiché les auteurs et la date pour les références bibliographique comme c'était le cas avant ni meme pour la références spécialisées 
+
+d'ailleurs met un menu déroulant pour ces deux listes de références une fois que tu auras résolu le sujet 
+
+
 ### 5. Checklist des symptômes par diagnostic
 **Contexte** : Guider le médecin dans la validation des hypothèses
 - [ ] **Système de validation symptômes/signes**
@@ -131,10 +152,10 @@ les références spécialisées ne sont pas au meme format correctemet mis en fo
   - Score de correspondance diagnostic/patient
   - Alerte si critères majeurs manquants
   - Suggestion d'examens pour confirmer/
-  - réanalyser si elements cochéset confirme par le medecin 
+  - réanalyser si elements cochés et confirmé par le medecin jusqu'à validation complète d'une patho (cette validation finale n'est possible que par le médecin mais suggérée par le model)
 
 ---
-Ajouter medgemma 
+### 6. Ajouter medgemma !!
 
 ---
 
@@ -155,37 +176,6 @@ Ajouter medgemma
 
 ## 🏥 Fonctionnalités métier médicales
 
-8 > ajouter le rapport maladie rare à l’export pdf
-
-### 9. Notion de faisabilité clinique
-**Contexte** : Adapter les recommandations au contexte pratique
-- [ ] **Indicateur de faisabilité pour chaque recommandation**
-  - **Quotidien clinique** : Ce qui est réalisable immédiatement
-  - **Meilleur des mondes** : Recommandations idéales
-  - Filtres par type d'établissement (CHU, clinique, cabinet)
-  - Coût estimé des examens
-  - Délais d'obtention des résultats
-
-### 10. Évolution par étapes du dossier patient
-**Contexte** : Suivre la progression de l'analyse selon les étapes cliniques
-- [ ] **Système d'étapes progressives**
-  - **Étape 1** : Triage initial (plainte + constantes)
-  - **Étape 2** : Anamnèse complète + antécédents
-  - **Étape 3** : Examen physique
-  - **Étape 4** : Examens complémentaires + imagerie
-  - Chaque étape met à jour l'analyse globale
-  - Probabilités diagnostiques réajustées à chaque étape
-
-### 11. Adaptation par spécialité médicale
-**Contexte** : Personnaliser l'analyse selon la discipline
-- [ ] **Modules spécialisés**
-  - Sélection de la spécialité (Cardio, Neuro, Gastro, etc.)
-  - Protocoles et référentiels spécifiques
-  - Examens privilégiés par spécialité
-  - Vocabulaire et classifications adaptés
-  - Guidelines spécialisées
-
----
 
 ## 📄 Export et documentation
 
@@ -198,15 +188,8 @@ Ajouter medgemma
   - Évaluation de faisabilité
   - QR code vers version numérique
   - Mise en page professionnelle
+  
 
-### 13. Affichage des sources dans les résultats
-**Contexte** : Améliorer la traçabilité des informations
-- [ ] **Système de sources amélioré**
-  - Nom des sources d'information actuellement ce nest ecrit que « source» au lieu du titre de larticle 
-  - Niveau de confiance des informations
-  - Date de publication des références
-  - Impact factor des journaux
-  - Filtrage par type de source (Guidelines, études, expert)
 
 ---
 
@@ -222,6 +205,39 @@ Ajouter medgemma
   - Analytics d'usage des fonctionnalités
   - Dashboard admin pour centraliser les retours
 
+
+
+### 9. Notion de faisabilité clinique
+**Contexte** : Adapter les recommandations au contexte pratique
+- [ ] **Indicateur de faisabilité pour chaque recommandation**
+  - **Quotidien clinique** : Ce qui est réalisable immédiatement
+  - **Meilleur des mondes** : Recommandations idéales
+  - Filtres par type d'établissement (CHU, clinique, cabinet)
+  - Coût estimé des examens
+  - Délais d'obtention des résultats
+
+
+### 11. Adaptation par spécialité médicale
+**Contexte** : Personnaliser l'analyse selon la discipline
+- [ ] **Modules spécialisés**
+  - Sélection de la spécialité (Cardio, Neuro, Gastro, etc.)
+  - Protocoles et référentiels spécifiques
+  - Examens privilégiés par spécialité
+  - Vocabulaire et classifications adaptés
+  - Guidelines spécialisées
+
 ---
 
-##
+
+---
+
+
+
+### 13. Affichage des sources dans les résultats
+**Contexte** : Améliorer la traçabilité des informations
+- [ ] **Système de sources amélioré**
+  - Nom des sources d'information actuellement ce nest ecrit que « source» au lieu du titre de larticle 
+  - Niveau de confiance des informations
+  - Date de publication des références
+  - Impact factor des journaux
+  - Filtrage par type de source (Guidelines, études, expert)
