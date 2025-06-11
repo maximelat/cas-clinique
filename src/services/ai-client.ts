@@ -180,20 +180,33 @@ export class AIClientService {
 
   private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
     try {
+      // Extraire les références du rapport Perplexity pour les fournir explicitement à o3
+      let referencesSection = '';
+      const refMatches = perplexityDataProcessed.match(/\[(\d+)\]/g);
+      if (refMatches) {
+        const uniqueRefs = [...new Set(refMatches.map(m => m.replace(/[\[\]]/g, '')))];
+        referencesSection = `\n\nRÉFÉRENCES DISPONIBLES (à utiliser dans ton analyse):
+${uniqueRefs.map(num => `[${num}] - Référence académique validée`).join('\n')}
+
+IMPORTANT: Utilise ces références [1], [2], etc. de manière COHÉRENTE avec le contenu de la recherche académique ci-dessus. Place chaque référence à côté de l'information qu'elle supporte réellement.`;
+      }
+      
       const prompt = `Tu es un expert médical. Analyse ce cas clinique en te basant sur les informations fournies.
 
 CAS CLINIQUE:
 ${clinicalCase}
 
 INFORMATIONS COMPLÉMENTAIRES (recherche académique et analyses):
-${perplexityDataProcessed}
+${perplexityDataProcessed}${referencesSection}
 
 INSTRUCTIONS CRITIQUES:
 1. Rédige une analyse clinique complète et structurée
 2. Utilise OBLIGATOIREMENT le format exact ci-dessous pour chaque section
 3. NE PAS ajouter de sauts de ligne supplémentaires entre les paragraphes
-4. Cite les références avec [1], [2], etc. SANS les détailler dans le texte
-5. Garde un formatage propre et professionnel
+4. IMPORTANT: Cite les références [1], [2], etc. UNIQUEMENT quand elles correspondent vraiment à l'information mentionnée
+5. NE JAMAIS inventer ou placer des références au hasard
+6. Si une information n'a pas de référence claire dans la recherche académique, ne mets pas de référence
+7. Garde un formatage propre et professionnel
 
 FORMAT OBLIGATOIRE (respecte EXACTEMENT cette structure):
 
@@ -222,6 +235,7 @@ RAPPELS IMPORTANTS:
 - Commence TOUJOURS chaque section par "## SECTION_NAME:" exactement
 - NE JAMAIS numéroter les sections (pas de "1.", "2.", etc.)
 - Intègre les résultats d'imagerie dans les sections appropriées
+- Place les références [X] UNIQUEMENT à côté des informations qu'elles supportent vraiment
 - Évite les doubles sauts de ligne inutiles
 - Reste concis et structuré`;
 
@@ -336,23 +350,31 @@ RAPPELS IMPORTANTS:
       progressCallback?.('Analyse clinique complète...');
       console.log('Début analyse clinique complète avec o3...');
       
-      // Construire le contexte complet pour l'analyse clinique
-      let completeAnalysisContext = `RECHERCHE ACADÉMIQUE:\n${perplexityReport.answer}\n\n`;
-      completeAnalysisContext += `ANALYSE DES RÉFÉRENCES:\n${referencesAnalysis.analysis}\n\n`;
+      // Construire le contexte complet pour l'analyse clinique de manière structurée
+      let completeAnalysisContext = `=== INFORMATIONS SOURCÉES (issues de la recherche académique) ===
+${perplexityReport.answer}
+
+=== ANALYSE DÉTAILLÉE DES RÉFÉRENCES ===
+${referencesAnalysis.analysis}`;
       
       if (imageAnalyses) {
-        completeAnalysisContext += `ANALYSES D'IMAGERIE MÉDICALE:${imageAnalyses}\n\n`;
+        completeAnalysisContext += `\n\n=== ANALYSES D'IMAGERIE MÉDICALE ===
+${imageAnalyses}`;
       }
       
-      completeAnalysisContext += `CAS CLINIQUE:\n${caseText}`;
+      // Ne pas répéter le cas clinique ici, il sera passé séparément à analyzeWithO3
       
       console.log('Longueur du contexte complet:', completeAnalysisContext.length);
       const fullAnalysis = await this.analyzeWithO3(completeAnalysisContext, caseText);
       console.log('Analyse clinique complète terminée');
       
+      // Post-traiter l'analyse pour vérifier la cohérence des références
+      const validRefs = referencesAnalysis.references.map(r => r.label);
+      const processedAnalysis = this.postProcessReferences(fullAnalysis, validRefs);
+      
       // Étape 5 : Parser les sections
       console.log('Parsing des sections...');
-      const sections = this.parseSections(fullAnalysis);
+      const sections = this.parseSections(processedAnalysis);
       console.log('Sections parsées:', sections.length);
       
       // Appeler le callback pour chaque section
@@ -759,6 +781,30 @@ RÈGLES IMPORTANTES:
     console.log(`${references.length} références extraites`);
     console.log('Références finales:', JSON.stringify(references, null, 2));
     return references;
+  }
+
+  // Méthode pour vérifier et corriger les références dans le texte
+  private postProcessReferences(text: string, validReferences: string[]): string {
+    // Extraire toutes les références utilisées dans le texte
+    const usedRefs = new Set<string>();
+    const refPattern = /\[(\d+)\]/g;
+    let match;
+    
+    while ((match = refPattern.exec(text)) !== null) {
+      usedRefs.add(match[1]);
+    }
+    
+    // Vérifier si les références utilisées sont valides
+    let processedText = text;
+    usedRefs.forEach(ref => {
+      if (!validReferences.includes(ref)) {
+        console.warn(`Référence [${ref}] utilisée mais non trouvée dans les sources Perplexity`);
+        // Optionnel : retirer les références invalides
+        // processedText = processedText.replace(new RegExp(`\\[${ref}\\]`, 'g'), '');
+      }
+    });
+    
+    return processedText;
   }
 
   // Analyser une image avec o3
