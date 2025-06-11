@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Download, FileDown, FileText, Copy, Calendar, Microscope, Plus, RefreshCw, GitBranch, Edit, ChevronUp, ChevronDown, Info } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { ArrowLeft, Download, FileDown, FileText, Copy, Calendar, Microscope, Plus, RefreshCw, GitBranch, Edit, ChevronUp, ChevronDown, Info, Eye } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/AuthContext"
 import { HistoryService, AnalysisRecord } from "@/services/history"
@@ -55,6 +56,8 @@ function AnalysisView() {
   const [expandAllAccordions, setExpandAllAccordions] = useState(false)
   const [accordionValues, setAccordionValues] = useState<string[]>([])
   const [editingPreviousSection, setEditingPreviousSection] = useState<{ [key: string]: boolean }>({})
+  const [editingInitialCase, setEditingInitialCase] = useState(false)
+  const [editedInitialCase, setEditedInitialCase] = useState("")
   
   const aiService = new AIClientService()
 
@@ -351,88 +354,41 @@ function AnalysisView() {
       return
     }
 
+    // Comportement normal (sauvegarde simple sans ré-analyse)
     setIsEditingSection({ ...isEditingSection, [sectionType]: false })
-    setIsReanalyzing(true)
-    setProgressMessage("Amélioration de l'analyse en cours...")
-
-    try {
-      // Sauvegarder la version actuelle
-      const currentAnalysis = {
-        ...analysis,
-        version: currentVersion,
-        timestamp: new Date().toISOString()
-      }
-      setAnalysisVersions([...analysisVersions, currentAnalysis])
-
-      // Préparer le contexte pour la ré-analyse
-      const currentSection = analysis.sections.find((s: any) => s.type === sectionType)
-      const allSections = analysis.sections.map((s: any) => 
-        `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`
-      ).join('\n\n')
-
-      const prompt = `Tu as analysé ce cas clinique et produit l'analyse suivante:
-
-CAS CLINIQUE ORIGINAL:
-${analysis.caseText}
-
-ANALYSE COMPLÈTE:
-${allSections}
-
-RÉFÉRENCES DISPONIBLES:
-${analysis.references.map((ref: any) => `[${ref.label}] ${ref.title} - ${ref.url}`).join('\n')}
-
-L'utilisateur a ajouté ces INFORMATIONS COMPLÉMENTAIRES pour la section "${sectionTitles[sectionType as keyof typeof sectionTitles]}":
-${info}
-
-INSTRUCTIONS:
-1. Intègre ces nouvelles informations dans la section spécifiée
-2. Ajuste si nécessaire les autres sections qui pourraient être impactées
-3. Utilise EXACTEMENT le même format que l'analyse originale
-4. Conserve toutes les références [X] existantes
-5. Retourne UNIQUEMENT le contenu amélioré de la section, sans répéter le titre`
-
-      // Appeler o3 pour améliorer l'analyse
-      const response = await aiService.improveAnalysisWithO3(prompt)
-      
-      // Mettre à jour la section
-      const updatedSections = analysis.sections.map((section: any) => {
-        if (section.type === sectionType) {
-          return { ...section, content: response }
-        }
-        return section
-      })
-
-      // Créer la nouvelle version
-      const newAnalysisData = {
-        ...analysis,
-        sections: updatedSections,
-        lastModified: Timestamp.fromDate(new Date()),
-        modificationHistory: [
-          ...(analysis.modificationHistory || []),
-          {
-            sectionType,
-            additionalInfo: info,
-            timestamp: new Date().toISOString(),
-            version: currentVersion + 1
-          }
-        ]
-      }
-
-      // Sauvegarder dans Firebase
-      await HistoryService.updateAnalysis(analysis.id, newAnalysisData)
-      
-      setAnalysis(newAnalysisData)
-      setCurrentVersion(currentVersion + 1)
-      setAdditionalInfo({ ...additionalInfo, [sectionType]: '' })
-      
-      toast.success("Section améliorée avec succès !")
-    } catch (error) {
-      console.error('Erreur amélioration:', error)
-      toast.error("Erreur lors de l'amélioration de l'analyse")
-    } finally {
-      setIsReanalyzing(false)
-      setProgressMessage("")
+    
+    // Sauvegarder la version actuelle
+    const currentAnalysis = {
+      ...analysis,
+      version: currentVersion,
+      timestamp: new Date().toISOString()
     }
+    setAnalysisVersions([...analysisVersions, currentAnalysis])
+
+    // Créer la nouvelle version avec juste l'information ajoutée
+    const newAnalysisData = {
+      ...analysis,
+      lastModified: Timestamp.fromDate(new Date()),
+      modificationHistory: [
+        ...(analysis.modificationHistory || []),
+        {
+          sectionType,
+          additionalInfo: info,
+          timestamp: new Date().toISOString(),
+          version: currentVersion + 1
+        }
+      ],
+      version: currentVersion + 1
+    }
+
+    // Sauvegarder dans Firebase
+    await HistoryService.updateAnalysis(analysis.id, newAnalysisData)
+    
+    setAnalysis(newAnalysisData)
+    setCurrentVersion(currentVersion + 1)
+    setAdditionalInfo({ ...additionalInfo, [sectionType]: '' })
+    
+    toast.success("Information ajoutée avec succès !")
   }
 
   const handleDeepReanalysis = async () => {
@@ -598,10 +554,14 @@ INSTRUCTIONS:
     if (expandAllAccordions) {
       setAccordionValues([])
     } else {
+      // Obtenir toutes les valeurs des sections
       const allValues = analysis?.sections?.map((_, index) => String(index)) || []
+      
+      // Ajouter la section des maladies rares si elle existe
       if (analysis?.rareDiseaseData) {
         allValues.push('rare-diseases')
       }
+      
       setAccordionValues(allValues)
     }
     setExpandAllAccordions(!expandAllAccordions)
@@ -620,373 +580,492 @@ INSTRUCTIONS:
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-5xl">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Analyse sauvegardée</h1>
-            <p className="text-gray-600 mt-1">
-              {format(analysis.date.toDate(), "dd MMMM yyyy à HH:mm", { locale: fr })}
-            </p>
-          </div>
-          <Link href="/history">
-            <Button variant="outline">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour à l'historique
-            </Button>
-          </Link>
-        </div>
-
-        <div id="analysis-results">
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>{analysis.title}</CardTitle>
-              <CardDescription>
-                ID: {analysis.id}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                {/* Boutons pour la gestion des versions */}
-                {analysisVersions.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleVersionComparison}
-                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
-                  >
-                    <GitBranch className="mr-2 h-4 w-4" />
-                    Versions ({analysisVersions.length})
-                  </Button>
-                )}
-                {/* Bouton reprise approfondie */}
-                {analysis.modificationHistory && analysis.modificationHistory.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDeepReanalysis}
-                    disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
-                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Reprise approfondie
-                  </Button>
-                )}
-                {/* Nouveau bouton pour relancer l'analyse complète */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCompleteReanalysis}
-                  disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
-                  className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Relancer l'analyse (1 crédit)
-                </Button>
-                {analysis.perplexityReport && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadReport}
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Rapport de recherche
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportAsPDF}
-                >
-                  <FileDown className="mr-2 h-4 w-4" />
-                  Export PDF
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportAsText}
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Export TXT
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={copyToClipboard}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copier
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Indicateur de ré-analyse en cours */}
-          {isReanalyzing && progressMessage && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center gap-2 text-blue-700">
-                <RefreshCw className="h-5 w-5 animate-spin" />
-                <span className="font-medium">{progressMessage}</span>
-              </div>
+    <TooltipProvider>
+      <div className="min-h-screen bg-gray-50">
+        <div className="container mx-auto px-4 py-8 max-w-5xl">
+          <div className="mb-8 flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Analyse sauvegardée</h1>
+              <p className="text-gray-600 mt-1">
+                {format(analysis.date.toDate(), "dd MMMM yyyy à HH:mm", { locale: fr })}
+              </p>
             </div>
-          )}
+            <Link href="/history">
+              <Button variant="outline">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Retour à l'historique
+              </Button>
+            </Link>
+          </div>
 
-          {/* Comparaison des versions */}
-          {showVersionComparison && analysisVersions.length > 0 && (
+          <div id="analysis-results">
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle>Historique des versions</CardTitle>
+                <CardTitle>{analysis.title}</CardTitle>
                 <CardDescription>
-                  Version actuelle: {currentVersion + 1} | {analysisVersions.length} version(s) précédente(s)
+                  ID: {analysis.id}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {analysisVersions.map((version, idx) => (
-                    <div key={idx} className="p-3 bg-gray-50 rounded-lg border">
-                      <div className="flex justify-between items-center">
-                        <span className="font-medium">Version {version.version + 1}</span>
-                        <span className="text-sm text-gray-500">
-                          {new Date(version.timestamp).toLocaleString('fr-FR')}
-                        </span>
-                      </div>
-                      {version.modificationHistory?.slice(-1).map((mod: any, i: number) => (
-                        <p key={i} className="text-sm text-gray-600 mt-1">
-                          Modification: {sectionTitles[mod.sectionType as keyof typeof sectionTitles]}
-                        </p>
-                      ))}
-                    </div>
-                  ))}
+                <div className="flex gap-2">
+                  {/* Boutons pour la gestion des versions */}
+                  {analysisVersions.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={toggleVersionComparison}
+                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
+                    >
+                      <GitBranch className="mr-2 h-4 w-4" />
+                      Versions ({analysisVersions.length})
+                    </Button>
+                  )}
+                  {/* Bouton reprise approfondie */}
+                  {analysis.modificationHistory && analysis.modificationHistory.length > 0 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDeepReanalysis}
+                          disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
+                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                        >
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Reprise approfondie
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Lancer une recherche sourcée sur la base du contenu disponible et du dossier initial</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  {/* Nouveau bouton pour relancer l'analyse complète */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCompleteReanalysis}
+                        disabled={isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
+                        className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Relancer l'analyse (1 crédit)
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Reprendre le dossier actuel et actualiser l'analyse</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  {analysis.perplexityReport && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadReport}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Rapport de recherche
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportAsPDF}
+                  >
+                    <FileDown className="mr-2 h-4 w-4" />
+                    Export PDF
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportAsText}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Export TXT
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyToClipboard}
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copier
+                  </Button>
                 </div>
               </CardContent>
             </Card>
-          )}
-          
-          {/* Nouveau : Dossier initial */}
-          <Accordion type="single" collapsible className="mb-4">
-            <AccordionItem value="initial-case" className="border rounded-lg">
-              <AccordionTrigger 
-                className="px-6 hover:no-underline bg-gray-50"
-                onClick={() => setShowInitialCase(!showInitialCase)}
-              >
-                <span className="text-left font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Voir dossier initial
-                </span>
-              </AccordionTrigger>
-              <AccordionContent className="px-6 pb-6">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {analysis.caseText}
-                  </p>
+            
+            {/* Indicateur de ré-analyse en cours */}
+            {isReanalyzing && progressMessage && (
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 text-blue-700">
+                  <RefreshCw className="h-5 w-5 animate-spin" />
+                  <span className="font-medium">{progressMessage}</span>
                 </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+              </div>
+            )}
 
-          {/* Boutons pour gérer les accordéons */}
-          <div className="mb-4 flex justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleAllAccordions}
-            >
-              {expandAllAccordions ? (
-                <>
-                  <ChevronUp className="mr-2 h-4 w-4" />
-                  Fermer tout
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="mr-2 h-4 w-4" />
-                  Ouvrir tout
-                </>
-              )}
-            </Button>
-          </div>
-          
-          <Accordion 
-            type="single" 
-            collapsible 
-            className="w-full space-y-4" 
-            value={accordionValues.length === 1 ? accordionValues[0] : undefined}
-            onValueChange={(value) => setAccordionValues(value ? [value] : [])}
-          >
-            {analysis.sections.map((section: any, index: number) => (
-              <AccordionItem key={index} value={String(index)} className="border rounded-lg">
-                <AccordionTrigger className="px-6 hover:no-underline">
-                  <span className="text-left font-medium">
-                    {sectionTitles[section.type as keyof typeof sectionTitles]}
+            {/* Comparaison des versions */}
+            {showVersionComparison && analysisVersions.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>Historique des versions</CardTitle>
+                  <CardDescription>
+                    Version actuelle: {currentVersion + 1} | {analysisVersions.length} version(s) précédente(s)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {analysisVersions.map((version, idx) => (
+                      <div key={idx} className="p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="font-medium">Version {version.version + 1}</span>
+                            {version.modificationHistory?.slice(-1).map((mod: any, i: number) => (
+                              <p key={i} className="text-sm text-gray-600 mt-1">
+                                Modification: {sectionTitles[mod.sectionType as keyof typeof sectionTitles]}
+                              </p>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-500">
+                              {new Date(version.timestamp).toLocaleString('fr-FR')}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setAnalysis(version)
+                                setCurrentVersion(version.version)
+                                toast.info(`Affichage de la version ${version.version + 1}`)
+                              }}
+                            >
+                              <Eye className="h-3 w-3 mr-1" />
+                              Voir
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            
+            {/* Nouveau : Dossier initial */}
+            <Accordion type="single" collapsible className="mb-4">
+              <AccordionItem value="initial-case" className="border rounded-lg">
+                <AccordionTrigger 
+                  className="px-6 hover:no-underline bg-gray-50"
+                  onClick={() => setShowInitialCase(!showInitialCase)}
+                >
+                  <span className="text-left font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Voir dossier initial
                   </span>
                 </AccordionTrigger>
                 <AccordionContent className="px-6 pb-6">
-                  {/* Contenu de la section */}
-                  <div className="mb-4">
-                    {renderContentWithReferences(section.content, analysis.references || [])}
-                  </div>
-                  
-                  {/* Afficher les modifications précédentes s'il y en a */}
-                  {analysis.modificationHistory && analysis.modificationHistory.filter((mod: any) => mod.sectionType === section.type).length > 0 && (
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <Label className="text-sm font-medium text-blue-700 flex items-center gap-2 mb-2">
-                        <Info className="h-4 w-4" />
-                        Informations ajoutées précédemment :
-                      </Label>
-                      {analysis.modificationHistory
-                        .filter((mod: any) => mod.sectionType === section.type)
-                        .map((mod: any, idx: number) => (
-                          <div key={idx} className="text-sm text-blue-700 mb-2">
-                            • {mod.additionalInfo}
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                  
-                  {/* Zone d'édition pour ajouter des informations */}
-                  {isEditingSection[section.type] ? (
-                    <div className="mt-4 space-y-3 border-t pt-4">
-                      <Label className="text-sm font-medium flex items-center gap-2">
-                        <Plus className="h-4 w-4" />
-                        Ajouter des informations complémentaires
-                      </Label>
-                      <textarea
-                        value={additionalInfo[section.type] || ''}
-                        onChange={(e) => setAdditionalInfo({
-                          ...additionalInfo,
-                          [section.type]: e.target.value
-                        })}
-                        placeholder="Ex: Le patient présente également une toux sèche depuis 3 jours..."
-                        className="w-full p-3 border rounded-lg resize-none h-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => handleSaveAdditionalInfo(section.type, false)}
-                          disabled={!additionalInfo[section.type]?.trim() || isReanalyzing}
-                          className="bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                          <Plus className="mr-2 h-4 w-4" />
-                          Ajouter
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleSaveAdditionalInfo(section.type, true)}
-                          disabled={!additionalInfo[section.type]?.trim() || isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
-                          className="border-orange-600 text-orange-600 hover:bg-orange-50"
-                        >
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                          Ajouter et relancer l'analyse
-                        </Button>
+                  <div className="bg-gray-50 p-4 rounded-lg relative">
+                    {editingInitialCase ? (
+                      <div className="space-y-3">
+                        <textarea
+                          value={editedInitialCase}
+                          onChange={(e) => setEditedInitialCase(e.target.value)}
+                          className="w-full p-3 border rounded-lg resize-none h-64 text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={async () => {
+                              const updatedData = {
+                                ...analysis,
+                                caseText: editedInitialCase
+                              }
+                              await HistoryService.updateAnalysis(analysis.id, updatedData)
+                              setAnalysis(updatedData)
+                              setEditingInitialCase(false)
+                              toast.success("Dossier initial modifié")
+                            }}
+                          >
+                            Sauvegarder
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              if (!user || !userCredits || (userCredits.credits ?? 0) <= 0) {
+                                toast.error("Crédits insuffisants")
+                                return
+                              }
+                              const updatedData = {
+                                ...analysis,
+                                caseText: editedInitialCase
+                              }
+                              await HistoryService.updateAnalysis(analysis.id, updatedData)
+                              setAnalysis(updatedData)
+                              setEditingInitialCase(false)
+                              await handleCompleteReanalysis()
+                            }}
+                            disabled={!user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                          >
+                            Sauvegarder et relancer l'analyse
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditingInitialCase(false)
+                              setEditedInitialCase("")
+                            }}
+                          >
+                            Annuler
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                          {analysis.caseText}
+                        </p>
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleCancelEdit(section.type)}
+                          className="absolute top-2 right-2"
+                          onClick={() => {
+                            setEditingInitialCase(true)
+                            setEditedInitialCase(analysis.caseText)
+                          }}
                         >
-                          Annuler
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+
+            {/* Boutons pour gérer les accordéons */}
+            <div className="mb-4 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleAllAccordions}
+              >
+                {expandAllAccordions ? (
+                  <>
+                    <ChevronUp className="mr-2 h-4 w-4" />
+                    Fermer tout
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="mr-2 h-4 w-4" />
+                    Ouvrir tout
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            <Accordion 
+              type="multiple" 
+              className="w-full space-y-4" 
+              value={accordionValues}
+              onValueChange={setAccordionValues}
+            >
+              {analysis.sections.map((section: any, index: number) => (
+                <AccordionItem key={index} value={String(index)} className="border rounded-lg">
+                  <AccordionTrigger className="px-6 hover:no-underline">
+                    <span className="text-left font-medium">
+                      {sectionTitles[section.type as keyof typeof sectionTitles]}
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-6 pb-6">
+                    {/* Contenu de la section */}
+                    <div className="mb-4">
+                      {renderContentWithReferences(section.content, analysis.references || [])}
+                    </div>
+                    
+                    {/* Afficher les modifications précédentes s'il y en a */}
+                    {analysis.modificationHistory && analysis.modificationHistory.filter((mod: any) => mod.sectionType === section.type).length > 0 && (
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <Label className="text-sm font-medium text-blue-700 flex items-center gap-2 mb-2">
+                          <Info className="h-4 w-4" />
+                          Informations ajoutées précédemment :
+                        </Label>
+                        {analysis.modificationHistory
+                          .filter((mod: any) => mod.sectionType === section.type)
+                          .map((mod: any, idx: number) => (
+                            <div key={idx} className="text-sm text-blue-700 mb-2">
+                              • {mod.additionalInfo}
+                              {editingPreviousSection[`${section.type}-${idx}`] && (
+                                <div className="mt-2">
+                                  <textarea
+                                    value={additionalInfo[`${section.type}-${idx}`] || mod.additionalInfo}
+                                    onChange={(e) => setAdditionalInfo({
+                                      ...additionalInfo,
+                                      [`${section.type}-${idx}`]: e.target.value
+                                    })}
+                                    className="w-full p-2 border border-blue-300 rounded-md resize-none h-20 text-sm"
+                                  />
+                                  <div className="flex gap-2 mt-2">
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      onClick={() => {
+                                        const key = `${section.type}-${idx}`
+                                        const newValue = additionalInfo[key]
+                                        
+                                        if (!newValue?.trim()) {
+                                          toast.error("Le texte ne peut pas être vide")
+                                          return
+                                        }
+                                        
+                                        // Mettre à jour l'historique des modifications
+                                        const updatedHistory = analysis.modificationHistory.map((mod: any, modIdx: number) => {
+                                          if (mod.sectionType === section.type && analysis.modificationHistory.filter((m: any) => m.sectionType === section.type).indexOf(mod) === idx) {
+                                            return { ...mod, additionalInfo: newValue }
+                                          }
+                                          return mod
+                                        })
+                                        
+                                        const updatedData = {
+                                          ...analysis,
+                                          modificationHistory: updatedHistory
+                                        }
+                                        
+                                        HistoryService.updateAnalysis(analysis.id, updatedData).then(() => {
+                                          setAnalysis(updatedData)
+                                          setEditingPreviousSection({ ...editingPreviousSection, [key]: false })
+                                          setAdditionalInfo({ ...additionalInfo, [key]: '' })
+                                          toast.success("Modification sauvegardée")
+                                        }).catch(error => {
+                                          console.error('Erreur sauvegarde:', error)
+                                          toast.error("Erreur lors de la sauvegarde")
+                                        })
+                                      }}
+                                    >
+                                      Sauvegarder
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: false })
+                                        setAdditionalInfo({ ...additionalInfo, [`${section.type}-${idx}`]: '' })
+                                      }}
+                                    >
+                                      Annuler
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                              {!editingPreviousSection[`${section.type}-${idx}`] && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="ml-2"
+                                  onClick={() => setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: true })}
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                    
+                    {/* Zone d'édition pour ajouter des informations */}
+                    {isEditingSection[section.type] ? (
+                      <div className="mt-4 space-y-3 border-t pt-4">
+                        <Label className="text-sm font-medium flex items-center gap-2">
+                          <Plus className="h-4 w-4" />
+                          Ajouter des informations complémentaires
+                        </Label>
+                        <textarea
+                          value={additionalInfo[section.type] || ''}
+                          onChange={(e) => setAdditionalInfo({
+                            ...additionalInfo,
+                            [section.type]: e.target.value
+                          })}
+                          placeholder="Ex: Le patient présente également une toux sèche depuis 3 jours..."
+                          className="w-full p-3 border rounded-lg resize-none h-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleSaveAdditionalInfo(section.type, false)}
+                            disabled={!additionalInfo[section.type]?.trim() || isReanalyzing}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Ajouter
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSaveAdditionalInfo(section.type, true)}
+                            disabled={!additionalInfo[section.type]?.trim() || isReanalyzing || !user || (userCredits?.credits ?? 0) <= 0}
+                            className="border-orange-600 text-orange-600 hover:bg-orange-50"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Ajouter et relancer l'analyse
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleCancelEdit(section.type)}
+                          >
+                            Annuler
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-4 border-t pt-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleAddInformation(section.type)}
+                          disabled={isReanalyzing}
+                          className="w-full"
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Ajouter des informations
                         </Button>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="mt-4 border-t pt-4">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleAddInformation(section.type)}
-                        disabled={isReanalyzing}
-                        className="w-full"
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Ajouter des informations
-                      </Button>
-                    </div>
-                  )}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-            
-            {analysis.rareDiseaseData && (
-              <AccordionItem value="rare-diseases" className="border rounded-lg">
-                <AccordionTrigger className="px-6 hover:no-underline">
-                  <span className="text-left font-medium flex items-center gap-2">
-                    <Microscope className="h-4 w-4 text-purple-600" />
-                    8. Recherche de maladies rares
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="px-6 pb-6">
-                  {renderContentWithReferences(
-                    analysis.rareDiseaseData.report, 
-                    analysis.rareDiseaseData.references || []
-                  )}
-                </AccordionContent>
-              </AccordionItem>
-            )}
-          </Accordion>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+              
+              {analysis.rareDiseaseData && (
+                <AccordionItem value="rare-diseases" className="border rounded-lg">
+                  <AccordionTrigger className="px-6 hover:no-underline">
+                    <span className="text-left font-medium flex items-center gap-2">
+                      <Microscope className="h-4 w-4 text-purple-600" />
+                      8. Recherche de maladies rares
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-6 pb-6">
+                    {renderContentWithReferences(
+                      analysis.rareDiseaseData.report, 
+                      analysis.rareDiseaseData.references || []
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+            </Accordion>
 
-          <Card className="mt-8">
-            <CardHeader>
-              <CardTitle>Références bibliographiques</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-4">
-                {analysis.references.map((ref: any) => (
-                  <li key={ref.label} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
-                    <div className="flex items-start gap-3">
-                      <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                      <div className="flex-1">
-                        <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                        {ref.authors && (
-                          <p className="text-sm text-gray-700 mb-1">
-                            <span className="font-medium">Auteurs :</span> {ref.authors}
-                          </p>
-                        )}
-                        {ref.journal && (
-                          <p className="text-sm text-gray-600 italic mb-1">
-                            <span className="font-medium not-italic">Journal :</span> {ref.journal}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                          {ref.year && (
-                            <span className="bg-gray-200 px-2 py-1 rounded">Année : {ref.year}</span>
-                          )}
-                          {ref.doi && (
-                            <span className="bg-gray-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
-                          )}
-                          {ref.pmid && (
-                            <span className="bg-gray-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
-                          )}
-                        </div>
-                        <a
-                          href={ref.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
-                        >
-                          Consulter la source
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </a>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          {analysis.rareDiseaseData && analysis.rareDiseaseData.references?.length > 0 && (
             <Card className="mt-8">
               <CardHeader>
-                <CardTitle>Références - Maladies rares</CardTitle>
-                <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
+                <CardTitle>Références bibliographiques</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-4">
-                  {analysis.rareDiseaseData.references.map((ref: any) => (
-                    <li key={`rare-${ref.label}`} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
+                  {analysis.references.map((ref: any) => (
+                    <li key={ref.label} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
                       <div className="flex items-start gap-3">
-                        <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                        <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
                         <div className="flex-1">
                           <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
                           {ref.authors && (
@@ -999,16 +1078,22 @@ INSTRUCTIONS:
                               <span className="font-medium not-italic">Journal :</span> {ref.journal}
                             </p>
                           )}
-                          {ref.year && (
-                            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                              <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
-                            </div>
-                          )}
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                            {ref.year && (
+                              <span className="bg-gray-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                            )}
+                            {ref.doi && (
+                              <span className="bg-gray-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
+                            )}
+                            {ref.pmid && (
+                              <span className="bg-gray-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
+                            )}
+                          </div>
                           <a
                             href={ref.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
+                            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
                           >
                             Consulter la source
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1022,10 +1107,59 @@ INSTRUCTIONS:
                 </ul>
               </CardContent>
             </Card>
-          )}
+
+            {analysis.rareDiseaseData && analysis.rareDiseaseData.references?.length > 0 && (
+              <Card className="mt-8">
+                <CardHeader>
+                  <CardTitle>Références - Maladies rares</CardTitle>
+                  <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-4">
+                    {analysis.rareDiseaseData.references.map((ref: any) => (
+                      <li key={`rare-${ref.label}`} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
+                        <div className="flex items-start gap-3">
+                          <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                          <div className="flex-1">
+                            <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                            {ref.authors && (
+                              <p className="text-sm text-gray-700 mb-1">
+                                <span className="font-medium">Auteurs :</span> {ref.authors}
+                              </p>
+                            )}
+                            {ref.journal && (
+                              <p className="text-sm text-gray-600 italic mb-1">
+                                <span className="font-medium not-italic">Journal :</span> {ref.journal}
+                              </p>
+                            )}
+                            {ref.year && (
+                              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                                <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                              </div>
+                            )}
+                            <a
+                              href={ref.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
+                            >
+                              Consulter la source
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Label } from "@/components/ui/label"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Brain, FileText, AlertCircle, ArrowLeft, Copy, ToggleLeft, ToggleRight, Download, FileDown, Mic, MicOff, Pause, Play, ImagePlus, X, Lock, Coins, Microscope, History, Settings, ChevronRight, ChevronDown, Camera, Info, Search, BookOpen, Code, AlertTriangle, Calendar, Users, Pill, Maximize2, CircleCheck, Eye, Plus, RefreshCw, GitBranch, Edit, ChevronUp } from "lucide-react"
 import { toast } from "sonner"
 import { AIClientService } from "@/services/ai-client"
@@ -184,6 +185,8 @@ function DemoPageContent() {
   const [expandAllAccordions, setExpandAllAccordions] = useState(false)
   const [accordionValues, setAccordionValues] = useState<string[]>([])
   const [editingPreviousSection, setEditingPreviousSection] = useState<{ [key: string]: boolean }>({})
+  const [editingInitialCase, setEditingInitialCase] = useState(false)
+  const [editedInitialCase, setEditedInitialCase] = useState("")
   
   // Authentification
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -1029,23 +1032,27 @@ ${textContent}`;
       setRareDiseaseData(result)
       setShowRareDiseaseSection(true)
       
-      // Ajouter la section aux sections actuelles
-      setCurrentSections(prev => [...prev, {
+      // Ajouter la section aux sections de l'analyse
+      const updatedSections = [...(analysisData.sections || []), {
         type: 'RARE_DISEASES',
         content: result.report
-      }])
+      }]
+      
+      // Mettre à jour analysisData avec la nouvelle section
+      const updatedAnalysisData = {
+        ...analysisData,
+        sections: updatedSections,
+        rareDiseaseData: result
+      }
+      
+      setAnalysisData(updatedAnalysisData)
 
       toast.success("Recherche de maladies rares terminée")
       
       // Mettre à jour l'analyse dans l'historique si elle existe
       if (analysisData && analysisData.id && user) {
         try {
-          const updatedAnalysis = {
-            ...analysisData,
-            rareDiseaseData: result
-          }
-          await HistoryService.saveAnalysis(user.uid, updatedAnalysis)
-          setAnalysisData(updatedAnalysis)
+          await HistoryService.saveAnalysis(user.uid, updatedAnalysisData)
           console.log('Analyse mise à jour avec la recherche de maladies rares')
         } catch (saveError) {
           console.error('Erreur lors de la mise à jour:', saveError)
@@ -1433,86 +1440,47 @@ Exemple de format attendu :
       return
     }
 
-    // Sinon, comportement normal (mise à jour de la section uniquement)
+    // Sinon, comportement normal (sauvegarde simple sans ré-analyse)
     setIsEditingSection({ ...isEditingSection, [sectionType]: false })
-    setIsReanalyzing(true)
-    setProgressMessage("Amélioration de l'analyse en cours...")
+    
+    // Sauvegarder la version actuelle
+    const currentAnalysis = {
+      ...analysisData,
+      version: currentVersion,
+      timestamp: new Date().toISOString()
+    };
+    setAnalysisVersions([...analysisVersions, currentAnalysis]);
 
-    try {
-      // Sauvegarder la version actuelle
-      const currentAnalysis = {
-        ...analysisData,
-        version: currentVersion,
-        timestamp: new Date().toISOString()
-      };
-      setAnalysisVersions([...analysisVersions, currentAnalysis]);
-
-      // Préparer le contexte pour la ré-analyse
-      const currentSection = analysisData.sections.find((s: any) => s.type === sectionType);
-      const allSections = analysisData.sections.map((s: any) => 
-        `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`
-      ).join('\n\n');
-
-      const prompt = `Tu as analysé ce cas clinique et produit l'analyse suivante:
-
-CAS CLINIQUE ORIGINAL:
-${analysisData.caseText}
-
-ANALYSE COMPLÈTE:
-${allSections}
-
-RÉFÉRENCES DISPONIBLES:
-${analysisData.references.map((ref: any) => `[${ref.label}] ${ref.title} - ${ref.url}`).join('\n')}
-
-L'utilisateur a ajouté ces INFORMATIONS COMPLÉMENTAIRES pour la section "${sectionTitles[sectionType as keyof typeof sectionTitles]}":
-${info}
-
-INSTRUCTIONS:
-1. Intègre ces nouvelles informations dans la section spécifiée
-2. Ajuste si nécessaire les autres sections qui pourraient être impactées
-3. Utilise EXACTEMENT le même format que l'analyse originale
-4. Conserve toutes les références [X] existantes
-5. Retourne UNIQUEMENT le contenu amélioré de la section, sans répéter le titre`;
-
-      // Appeler o3 pour améliorer l'analyse
-      const response = await aiService.improveAnalysisWithO3(prompt);
-      
-      // Mettre à jour la section
-      const updatedSections = analysisData.sections.map((section: any) => {
-        if (section.type === sectionType) {
-          return { ...section, content: response };
+    // Créer la nouvelle version avec juste l'information ajoutée
+    const newAnalysisData = {
+      ...analysisData,
+      lastModified: new Date().toISOString(),
+      modificationHistory: [
+        ...(analysisData.modificationHistory || []),
+        {
+          sectionType,
+          additionalInfo: info,
+          timestamp: new Date().toISOString(),
+          version: currentVersion + 1
         }
-        return section;
-      });
+      ],
+      version: currentVersion + 1
+    };
 
-      // Créer la nouvelle version
-      const newAnalysisData = {
-        ...analysisData,
-        sections: updatedSections,
-        lastModified: new Date().toISOString(),
-        modificationHistory: [
-          ...(analysisData.modificationHistory || []),
-          {
-            sectionType,
-            additionalInfo: info,
-            timestamp: new Date().toISOString(),
-            version: currentVersion + 1
-          }
-        ]
-      };
-
-      setAnalysisData(newAnalysisData);
-      setCurrentVersion(currentVersion + 1);
-      setAdditionalInfo({ ...additionalInfo, [sectionType]: '' });
-      
-      toast.success("Section améliorée avec succès !");
-    } catch (error) {
-      console.error('Erreur amélioration:', error);
-      toast.error("Erreur lors de l'amélioration de l'analyse");
-    } finally {
-      setIsReanalyzing(false);
-      setProgressMessage("");
+    setAnalysisData(newAnalysisData);
+    setCurrentVersion(currentVersion + 1);
+    setAdditionalInfo({ ...additionalInfo, [sectionType]: '' });
+    
+    // Sauvegarder dans l'historique si l'utilisateur est connecté
+    if (user && !analysisData.isDemo) {
+      try {
+        await HistoryService.saveAnalysis(user.uid, newAnalysisData);
+      } catch (saveError) {
+        console.error('Erreur lors de la sauvegarde:', saveError);
+      }
     }
+    
+    toast.success("Information ajoutée avec succès !");
   }
 
   const handleDeepReanalysis = async () => {
@@ -1684,950 +1652,1095 @@ INSTRUCTIONS:
     if (expandAllAccordions) {
       setAccordionValues([])
     } else {
-      const allValues = analysisData?.sections?.map((_: any, index: number) => String(index)) || []
-      if (showRareDiseaseSection) {
-        allValues.push('rare-diseases')
+      // Obtenir toutes les valeurs des sections
+      let allValues = []
+      
+      if (analysisData?.isDemo) {
+        // En mode démo, utiliser les clés de demoSections
+        allValues = Object.keys(demoSections).map((_, index) => String(index))
+      } else {
+        // En mode réel, utiliser les sections disponibles
+        const sections = currentSections.length > 0 ? currentSections : analysisData?.sections || []
+        allValues = sections.map((_: any, index: number) => String(index))
       }
+      
       setAccordionValues(allValues)
     }
     setExpandAllAccordions(!expandAllAccordions)
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-12">
-      <div className="container mx-auto px-4 pt-8">
-        <div className="flex items-center justify-between mb-6">
-          <Link href="/">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour
-            </Button>
-          </Link>
-          <Link href="/history">
-            <Button variant="outline" size="sm" disabled={!user}>
-              <History className="mr-2 h-4 w-4" />
-              Historique
-            </Button>
-          </Link>
-        </div>
+    <TooltipProvider>
+      <div className="min-h-screen bg-gray-50 pb-12">
+        <div className="container mx-auto px-4 pt-8">
+          <div className="flex items-center justify-between mb-6">
+            <Link href="/">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Retour
+              </Button>
+            </Link>
+            <Link href="/history">
+              <Button variant="outline" size="sm" disabled={!user}>
+                <History className="mr-2 h-4 w-4" />
+                Historique
+              </Button>
+            </Link>
+          </div>
 
-        {/* Bannière orange MODE DÉMO */}
-        {isDemoMode && (
-          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 max-w-4xl mx-auto">
-            <div className="flex">
-              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 text-orange-600" />
-              <div className="text-sm text-orange-800">
-                <p className="font-medium mb-1">Mode démonstration activé</p>
-                <p>Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités.</p>
+          {/* Bannière orange MODE DÉMO */}
+          {isDemoMode && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6 max-w-4xl mx-auto">
+              <div className="flex">
+                <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 text-orange-600" />
+                <div className="text-sm text-orange-800">
+                  <p className="font-medium mb-1">Mode démonstration activé</p>
+                  <p>Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités.</p>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Popup d'information au premier usage */}
-        {showDemoInfo && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-xl max-w-md shadow-2xl">
-              <h2 className="text-orange-500 font-bold text-2xl mb-4 text-center">Mode Démonstration</h2>
-              <p className="text-gray-700 mb-6 text-center">
-                Vous utilisez le mode démonstration. Les données sont préremplies et non modifiables. 
-                Pour analyser vos propres cas cliniques, connectez-vous pour utiliser le mode réel.
-              </p>
-              <button 
-                className="w-full bg-orange-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-orange-600 transition-colors"
-                onClick={() => setShowDemoInfo(false)}
-              >
-                J'ai compris
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!showResults ? (
-          <Card className="max-w-4xl mx-auto">
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Entrez votre cas clinique</CardTitle>
-                  <CardDescription>
-                    Collez ou tapez le cas clinique à analyser
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="demo-toggle" className="text-sm">
-                    Mode démo
-                  </Label>
-                  <Button
-                    id="demo-toggle"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsDemoMode(!isDemoMode)}
-                    className="p-1"
-                  >
-                    {isDemoMode ? (
-                      <ToggleRight className="h-6 w-6 text-blue-600" />
-                    ) : (
-                      <ToggleLeft className="h-6 w-6 text-gray-500" />
-                    )}
-                  </Button>
-                </div>
+          {/* Popup d'information au premier usage */}
+          {showDemoInfo && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white p-8 rounded-xl max-w-md shadow-2xl">
+                <h2 className="text-orange-500 font-bold text-2xl mb-4 text-center">Mode Démonstration</h2>
+                <p className="text-gray-700 mb-6 text-center">
+                  Vous utilisez le mode démonstration. Les données sont préremplies et non modifiables. 
+                  Pour analyser vos propres cas cliniques, connectez-vous pour utiliser le mode réel.
+                </p>
+                <button 
+                  className="w-full bg-orange-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-orange-600 transition-colors"
+                  onClick={() => setShowDemoInfo(false)}
+                >
+                  J'ai compris
+                </button>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <Label htmlFor="content">Cas clinique</Label>
-                  {isAudioSupported && (
-                    <div className="flex items-center gap-2">
-                      {isRecording && (
-                        <span className="text-sm text-gray-600">
-                          {formatTime(recordingTime)}
-                        </span>
-                      )}
-                      {!isRecording ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleStartRecording}
-                          disabled={isTranscribing || isDemoMode}
-                        >
-                          <Mic className="h-4 w-4 mr-2" />
-                          Dicter
-                        </Button>
-                      ) : (
-                        <div className="flex gap-2">
-                          {isPaused ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={resumeRecording}
-                            >
-                              <Play className="h-4 w-4" />
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={pauseRecording}
-                            >
-                              <Pause className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="sm"
-                            onClick={handleStopRecording}
-                          >
-                            <MicOff className="h-4 w-4 mr-2" />
-                            Arrêter
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <textarea
-                  id="content"
-                  value={textContent}
-                  onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
-                  placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
-                  className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                  disabled={isRecording || isTranscribing || isDemoMode}
-                />
-                {recordingError && (
-                  <p className="text-sm text-red-600 mt-2">{recordingError}</p>
-                )}
-                {isTranscribing && (
-                  <p className="text-sm text-gray-600 mt-2 animate-pulse">
-                    Transcription en cours...
-                  </p>
-                )}
-                {!isDemoMode && !user && (
-                  <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
-                    <Lock className="h-4 w-4" /> 
-                    <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
+            </div>
+          )}
+
+          {!showResults ? (
+            <Card className="max-w-4xl mx-auto">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>Entrez votre cas clinique</CardTitle>
+                    <CardDescription>
+                      Collez ou tapez le cas clinique à analyser
+                    </CardDescription>
                   </div>
-                )}
-                
-                            </div>
-
-            {/* Formulaire structuré dans un accordéon */}
-            {!isDemoMode && hasApiKeys && (
-              <Accordion type="single" collapsible className="mt-4 border rounded-lg">
-                <AccordionItem value="structured-form" className="border-0">
-                  <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-white rounded-lg shadow-sm">
-                        <FileText className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div className="text-left">
-                        <h3 className="font-semibold text-gray-900">Formulaire structuré</h3>
-                        <p className="text-sm text-gray-600">Organisez les informations du cas clinique</p>
-                      </div>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 pb-4 pt-2">
-                    <div className="space-y-4">
-                      {/* Boutons d'action */}
-                      <div className="flex gap-2 justify-end">
-                        {textContent.trim() && (
-                          <Button
-                            type="button"
-                            variant="default"
-                            size="sm"
-                            onClick={extractStructuredData}
-                            disabled={isExtractingForm}
-                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                          >
-                            {isExtractingForm ? (
-                              <>
-                                <Brain className="mr-2 h-4 w-4 animate-pulse" />
-                                Extraction en cours...
-                              </>
-                            ) : (
-                              <>
-                                <Brain className="mr-2 h-4 w-4" />
-                                Extraire automatiquement
-                              </>
-                            )}
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={updateFromStructuredForm}
-                          disabled={!structuredForm.anamnese && !structuredForm.antecedents && !structuredForm.examenClinique}
-                        >
-                          <Copy className="mr-2 h-4 w-4" />
-                          Appliquer au cas
-                        </Button>
-                      </div>
-                      
-                      {/* Champs du formulaire */}
-                      <div className="space-y-3 bg-white p-4 rounded-lg border">
-                        <div>
-                          <Label htmlFor="contextePatient" className="text-sm font-medium flex items-center gap-2">
-                            <Users className="h-4 w-4 text-gray-500" />
-                            Contexte patient
-                          </Label>
-                          <textarea
-                            id="contextePatient"
-                            value={structuredForm.contextePatient}
-                            onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
-                            placeholder="Âge, sexe, profession, mode de vie..."
-                            className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        
-                        <div>
-                          <Label htmlFor="anamnese" className="text-sm font-medium flex items-center gap-2">
-                            <History className="h-4 w-4 text-gray-500" />
-                            Anamnèse
-                          </Label>
-                          <textarea
-                            id="anamnese"
-                            value={structuredForm.anamnese}
-                            onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
-                            placeholder="Symptômes principaux, chronologie, évolution..."
-                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        
-                        <div>
-                          <Label htmlFor="antecedents" className="text-sm font-medium flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-gray-500" />
-                            Antécédents
-                          </Label>
-                          <textarea
-                            id="antecedents"
-                            value={structuredForm.antecedents}
-                            onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
-                            placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
-                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        
-                        <div>
-                          <Label htmlFor="examenClinique" className="text-sm font-medium flex items-center gap-2">
-                            <Search className="h-4 w-4 text-gray-500" />
-                            Examen clinique
-                          </Label>
-                          <textarea
-                            id="examenClinique"
-                            value={structuredForm.examenClinique}
-                            onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
-                            placeholder="Constantes, examen physique par systèmes..."
-                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                        
-                        <div>
-                          <Label htmlFor="examensComplementaires" className="text-sm font-medium flex items-center gap-2">
-                            <Microscope className="h-4 w-4 text-gray-500" />
-                            Examens complémentaires
-                          </Label>
-                          <textarea
-                            id="examensComplementaires"
-                            value={structuredForm.examensComplementaires}
-                            onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
-                            placeholder="Biologie, imagerie, ECG, etc..."
-                            className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            )}
-
-              {/* Upload d'images */}
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="images">Images médicales (optionnel)</Label>
-                  <div className="mt-2 flex items-center gap-4">
-                    <input
-                      type="file"
-                      id="images"
-                      accept="image/*"
-                      multiple
-                      onChange={handleImageUpload}
-                      className="hidden"
-                      disabled={isDemoMode}
-                    />
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="demo-toggle" className="text-sm">
+                      Mode démo
+                    </Label>
                     <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => document.getElementById('images')?.click()}
-                      disabled={isAnalyzing || isDemoMode}
+                      id="demo-toggle"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsDemoMode(!isDemoMode)}
+                      className="p-1"
                     >
-                      <ImagePlus className="h-4 w-4 mr-2" />
-                      Ajouter des images
+                      {isDemoMode ? (
+                        <ToggleRight className="h-6 w-6 text-blue-600" />
+                      ) : (
+                        <ToggleLeft className="h-6 w-6 text-gray-500" />
+                      )}
                     </Button>
-                    <span className="text-sm text-gray-600">
-                      {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
-                    </span>
                   </div>
                 </div>
-
-                {uploadedImages.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {uploadedImages.map((img, index) => (
-                      <div key={index} className="relative group">
-                        <div className="border rounded-lg p-3 bg-gray-50">
-                          <p className="text-xs font-medium truncate">{img.name}</p>
-                          <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removeImage(index)}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className={`border rounded-lg p-4 ${isDemoMode ? 'bg-orange-50 border-orange-200' : hasApiKeys ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="flex">
-                  <AlertCircle className={`w-5 h-5 mr-2 flex-shrink-0 ${isDemoMode ? 'text-orange-600' : hasApiKeys ? 'text-green-600' : 'text-red-600'}`} />
-                  <div className={`text-sm ${isDemoMode ? 'text-orange-800' : hasApiKeys ? 'text-green-800' : 'text-red-800'}`}>
-                    <p className="font-medium mb-1">
-                      {isDemoMode ? "Mode démonstration activé" : hasApiKeys ? "Mode analyse réelle" : "Clés API manquantes"}
-                    </p>
-                    <p>
-                      {isDemoMode 
-                        ? "Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités."
-                        : hasApiKeys
-                        ? "Analyse réelle utilisant l'intelligence artificielle pour une analyse médicale approfondie."
-                        : "Le système n'est pas configuré pour utiliser le mode réel."
-                      }
-                    </p>
-                    {!isDemoMode && hasApiKeys && (
-                      <div className="mt-2 space-y-1">
-                        {user ? (
-                          <div className="flex items-center gap-2">
-                            <Coins className="h-4 w-4" />
-                            <span className="font-medium">
-                              Crédits disponibles: {userCredits?.credits || 0}
-                            </span>
-                          </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <Label htmlFor="content">Cas clinique</Label>
+                    {isAudioSupported && (
+                      <div className="flex items-center gap-2">
+                        {isRecording && (
+                          <span className="text-sm text-gray-600">
+                            {formatTime(recordingTime)}
+                          </span>
+                        )}
+                        {!isRecording ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleStartRecording}
+                            disabled={isTranscribing || isDemoMode}
+                          >
+                            <Mic className="h-4 w-4 mr-2" />
+                            Dicter
+                          </Button>
                         ) : (
-                          <div className="flex items-center gap-2">
-                            <Lock className="h-4 w-4" />
-                            <span>Connexion requise pour le mode réel</span>
+                          <div className="flex gap-2">
+                            {isPaused ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={resumeRecording}
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={pauseRecording}
+                              >
+                                <Pause className="h-4 w-4" />
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              onClick={handleStopRecording}
+                            >
+                              <MicOff className="h-4 w-4 mr-2" />
+                              Arrêter
+                            </Button>
                           </div>
                         )}
                       </div>
                     )}
                   </div>
-                </div>
-              </div>
-
-              {isAnalyzing && progressMessage && (
-                <div className="text-center text-sm text-gray-600">
-                  {progressMessage}
-                </div>
-              )}
-
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleAnalyze}
-                  disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
-                  className="min-w-[200px]"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Brain className="mr-2 h-4 w-4 animate-pulse" />
-                      Analyse en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Brain className="mr-2 h-4 w-4" />
-                      Analyser le cas
-                    </>
+                  <textarea
+                    id="content"
+                    value={textContent}
+                    onChange={(e) => !isDemoMode && setTextContent(e.target.value)}
+                    placeholder="Exemple : Patient de 65 ans, hypertendu connu, se présente aux urgences pour douleur thoracique..."
+                    className={`w-full h-64 p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemoMode ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                    disabled={isRecording || isTranscribing || isDemoMode}
+                  />
+                  {recordingError && (
+                    <p className="text-sm text-red-600 mt-2">{recordingError}</p>
                   )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div id="analysis-results">
-            <div className="mb-6 flex justify-between items-center">
-              <div>
-                <h2 className="text-2xl font-bold">
-                  Résultat de l'analyse {analysisData?.isDemo ? "(Démo)" : "(IA)"}
-                </h2>
-                {analysisData && !analysisData.isDemo && (
-                  <div className="mt-2 space-y-1">
-                    <p className="text-sm text-gray-600">
-                      <span className="font-medium">ID :</span> {analysisData.id}
+                  {isTranscribing && (
+                    <p className="text-sm text-gray-600 mt-2 animate-pulse">
+                      Transcription en cours...
                     </p>
-                    <p className="text-sm text-gray-600">
-                      <span className="font-medium">Date :</span> {new Date(analysisData.date).toLocaleString('fr-FR')}
-                    </p>
-                    <p className="text-sm text-gray-600 italic">
-                      "{analysisData.title}"
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {/* Boutons pour la gestion des versions */}
-                {analysisVersions.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleVersionComparison}
-                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
-                  >
-                    <GitBranch className="mr-2 h-4 w-4" />
-                    Versions ({analysisVersions.length})
-                  </Button>
-                )}
-                {/* Bouton reprise approfondie */}
-                {!analysisData?.isDemo && analysisData?.modificationHistory && analysisData.modificationHistory.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDeepReanalysis}
-                    disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
-                    className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Reprise approfondie
-                  </Button>
-                )}
-                {/* Nouveau bouton pour relancer l'analyse complète */}
-                {!analysisData?.isDemo && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCompleteReanalysis}
-                    disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
-                    className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Relancer l'analyse (1 crédit)
-                  </Button>
-                )}
-                {/* Bouton Export All pour maxime.latry@gmail.com uniquement */}
-                {user?.email === 'maxime.latry@gmail.com' && analysisHistory.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportAllHistory}
-                    className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-300"
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Export All ({analysisHistory.length})
-                  </Button>
-                )}
-                {/* Nouveau bouton Export Chain pour maxime.latry@gmail.com */}
-                {user?.email === 'maxime.latry@gmail.com' && analysisData?.requestChain && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportRequestChain}
-                    className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Export Chain
-                  </Button>
-                )}
-                {!analysisData?.isDemo && analysisData?.perplexityReport && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadPerplexityReport}
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Rapport de recherche
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportAsPDF}
-                >
-                  <FileDown className="mr-2 h-4 w-4" />
-                  Export PDF
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportAsText}
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Export TXT
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={copyToClipboard}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copier
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setShowResults(false)
-                    setTextContent("")
-                    setAnalysisData(null)
-                    setCurrentSections([])
-                    setUploadedImages([])
-                    setRareDiseaseData(null)
-                    setShowRareDiseaseSection(false)
-                  }}
-                >
-                  Nouvelle analyse
-                </Button>
-              </div>
-            </div>
-            
-            {/* Indicateur de ré-analyse en cours */}
-            {isReanalyzing && progressMessage && (
-              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center gap-2 text-blue-700">
-                  <RefreshCw className="h-5 w-5 animate-spin" />
-                  <span className="font-medium">{progressMessage}</span>
-                </div>
-              </div>
-            )}
+                  )}
+                  {!isDemoMode && !user && (
+                    <div className="flex items-center gap-2 mt-2 text-red-600 font-semibold">
+                      <Lock className="h-4 w-4" /> 
+                      <span>Connexion requise pour utiliser la fonctionnalité avec vos données</span>
+                    </div>
+                  )}
+                  
+                              </div>
 
-            {/* Comparaison des versions */}
-            {showVersionComparison && analysisVersions.length > 0 && (
-              <Card className="mb-6">
-                <CardHeader>
-                  <CardTitle>Historique des versions</CardTitle>
-                  <CardDescription>
-                    Version actuelle: {currentVersion + 1} | {analysisVersions.length} version(s) précédente(s)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {analysisVersions.map((version, idx) => (
-                      <div key={idx} className="p-3 bg-gray-50 rounded-lg border">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">Version {version.version + 1}</span>
-                          <span className="text-sm text-gray-500">
-                            {new Date(version.timestamp).toLocaleString('fr-FR')}
-                          </span>
+                {/* Formulaire structuré dans un accordéon */}
+                {!isDemoMode && hasApiKeys && (
+                  <Accordion type="single" collapsible className="mt-4 border rounded-lg">
+                    <AccordionItem value="structured-form" className="border-0">
+                      <AccordionTrigger className="px-4 hover:no-underline bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-white rounded-lg shadow-sm">
+                            <FileText className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div className="text-left">
+                            <h3 className="font-semibold text-gray-900">Formulaire structuré</h3>
+                            <p className="text-sm text-gray-600">Organisez les informations du cas clinique</p>
+                          </div>
                         </div>
-                        {version.modificationHistory?.slice(-1).map((mod: any, i: number) => (
-                          <p key={i} className="text-sm text-gray-600 mt-1">
-                            Modification: {sectionTitles[mod.sectionType as keyof typeof sectionTitles]}
-                          </p>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-4 pb-4 pt-2">
+                        <div className="space-y-4">
+                          {/* Boutons d'action */}
+                          <div className="flex gap-2 justify-end">
+                            {textContent.trim() && (
+                              <Button
+                                type="button"
+                                variant="default"
+                                size="sm"
+                                onClick={extractStructuredData}
+                                disabled={isExtractingForm}
+                                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                              >
+                                {isExtractingForm ? (
+                                  <>
+                                    <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                                    Extraction en cours...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Brain className="mr-2 h-4 w-4" />
+                                    Extraire automatiquement
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={updateFromStructuredForm}
+                              disabled={!structuredForm.anamnese && !structuredForm.antecedents && !structuredForm.examenClinique}
+                            >
+                              <Copy className="mr-2 h-4 w-4" />
+                              Appliquer au cas
+                            </Button>
+                          </div>
+                          
+                          {/* Champs du formulaire */}
+                          <div className="space-y-3 bg-white p-4 rounded-lg border">
+                            <div>
+                              <Label htmlFor="contextePatient" className="text-sm font-medium flex items-center gap-2">
+                                <Users className="h-4 w-4 text-gray-500" />
+                                Contexte patient
+                              </Label>
+                              <textarea
+                                id="contextePatient"
+                                value={structuredForm.contextePatient}
+                                onChange={(e) => setStructuredForm({...structuredForm, contextePatient: e.target.value})}
+                                placeholder="Âge, sexe, profession, mode de vie..."
+                                className="w-full mt-1 p-2 border rounded-md text-sm h-16 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="anamnese" className="text-sm font-medium flex items-center gap-2">
+                                <History className="h-4 w-4 text-gray-500" />
+                                Anamnèse
+                              </Label>
+                              <textarea
+                                id="anamnese"
+                                value={structuredForm.anamnese}
+                                onChange={(e) => setStructuredForm({...structuredForm, anamnese: e.target.value})}
+                                placeholder="Symptômes principaux, chronologie, évolution..."
+                                className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="antecedents" className="text-sm font-medium flex items-center gap-2">
+                                <Calendar className="h-4 w-4 text-gray-500" />
+                                Antécédents
+                              </Label>
+                              <textarea
+                                id="antecedents"
+                                value={structuredForm.antecedents}
+                                onChange={(e) => setStructuredForm({...structuredForm, antecedents: e.target.value})}
+                                placeholder="Médicaux, chirurgicaux, familiaux, traitements..."
+                                className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="examenClinique" className="text-sm font-medium flex items-center gap-2">
+                                <Search className="h-4 w-4 text-gray-500" />
+                                Examen clinique
+                              </Label>
+                              <textarea
+                                id="examenClinique"
+                                value={structuredForm.examenClinique}
+                                onChange={(e) => setStructuredForm({...structuredForm, examenClinique: e.target.value})}
+                                placeholder="Constantes, examen physique par systèmes..."
+                                className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="examensComplementaires" className="text-sm font-medium flex items-center gap-2">
+                                <Microscope className="h-4 w-4 text-gray-500" />
+                                Examens complémentaires
+                              </Label>
+                              <textarea
+                                id="examensComplementaires"
+                                value={structuredForm.examensComplementaires}
+                                onChange={(e) => setStructuredForm({...structuredForm, examensComplementaires: e.target.value})}
+                                placeholder="Biologie, imagerie, ECG, etc..."
+                                className="w-full mt-1 p-2 border rounded-md text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                )}
+
+                  {/* Upload d'images */}
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="images">Images médicales (optionnel)</Label>
+                      <div className="mt-2 flex items-center gap-4">
+                        <input
+                          type="file"
+                          id="images"
+                          accept="image/*"
+                          multiple
+                          onChange={handleImageUpload}
+                          className="hidden"
+                          disabled={isDemoMode}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => document.getElementById('images')?.click()}
+                          disabled={isAnalyzing || isDemoMode}
+                        >
+                          <ImagePlus className="h-4 w-4 mr-2" />
+                          Ajouter des images
+                        </Button>
+                        <span className="text-sm text-gray-600">
+                          {uploadedImages.length > 0 && `${uploadedImages.length} image(s) ajoutée(s)`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {uploadedImages.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                        {uploadedImages.map((img, index) => (
+                          <div key={index} className="relative group">
+                            <div className="border rounded-lg p-3 bg-gray-50">
+                              <p className="text-xs font-medium truncate">{img.name}</p>
+                              <p className="text-xs text-gray-500 mt-1">Type: {img.type}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => removeImage(index)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
                         ))}
                       </div>
-                    ))}
+                    )}
+                  </div>
+
+                  <div className={`border rounded-lg p-4 ${isDemoMode ? 'bg-orange-50 border-orange-200' : hasApiKeys ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="flex">
+                      <AlertCircle className={`w-5 h-5 mr-2 flex-shrink-0 ${isDemoMode ? 'text-orange-600' : hasApiKeys ? 'text-green-600' : 'text-red-600'}`} />
+                      <div className={`text-sm ${isDemoMode ? 'text-orange-800' : hasApiKeys ? 'text-green-800' : 'text-red-800'}`}>
+                        <p className="font-medium mb-1">
+                          {isDemoMode ? "Mode démonstration activé" : hasApiKeys ? "Mode analyse réelle" : "Clés API manquantes"}
+                        </p>
+                        <p>
+                          {isDemoMode 
+                            ? "Cette version affiche un exemple d'analyse préformaté pour illustrer les fonctionnalités."
+                            : hasApiKeys
+                            ? "Analyse réelle utilisant l'intelligence artificielle pour une analyse médicale approfondie."
+                            : "Le système n'est pas configuré pour utiliser le mode réel."
+                          }
+                        </p>
+                        {!isDemoMode && hasApiKeys && (
+                          <div className="mt-2 space-y-1">
+                            {user ? (
+                              <div className="flex items-center gap-2">
+                                <Coins className="h-4 w-4" />
+                                <span className="font-medium">
+                                  Crédits disponibles: {userCredits?.credits || 0}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <Lock className="h-4 w-4" />
+                                <span>Connexion requise pour le mode réel</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {isAnalyzing && progressMessage && (
+                    <div className="text-center text-sm text-gray-600">
+                      {progressMessage}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing || !textContent.trim() || (!isDemoMode && !hasApiKeys) || (!isDemoMode && !user)}
+                      className="min-w-[200px]"
+                    >
+                      {isAnalyzing ? (
+                        <>
+                          <Brain className="mr-2 h-4 w-4 animate-pulse" />
+                          Analyse en cours...
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="mr-2 h-4 w-4" />
+                          Analyser le cas
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
-            )}
-            
-            {/* Nouveau : Dossier initial */}
-            <Accordion type="single" collapsible className="mb-4">
-              <AccordionItem value="initial-case" className="border rounded-lg">
-                <AccordionTrigger 
-                  className="px-6 hover:no-underline bg-gray-50"
-                  onClick={() => setShowInitialCase(!showInitialCase)}
-                >
-                  <span className="text-left font-medium flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Voir dossier initial
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="px-6 pb-6">
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {analysisData?.caseText || textContent}
-                    </p>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-
-            {/* Boutons pour gérer les accordéons */}
-            <div className="mb-4 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleAllAccordions}
-              >
-                {expandAllAccordions ? (
-                  <>
-                    <ChevronUp className="mr-2 h-4 w-4" />
-                    Fermer tout
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="mr-2 h-4 w-4" />
-                    Ouvrir tout
-                  </>
-                )}
-              </Button>
-            </div>
-            
-            <Accordion 
-              type="single" 
-              collapsible 
-              className="w-full space-y-4" 
-              value={accordionValues.length === 1 ? accordionValues[0] : undefined}
-              onValueChange={(value) => setAccordionValues(value ? [value] : [])}
-            >
-              {analysisData?.isDemo ? (
-                // Mode démo - afficher les sections prédéfinies
-                Object.entries(demoSections).map(([key, content], index) => (
-                  <AccordionItem key={key} value={String(index)} className="border rounded-lg">
-                    <AccordionTrigger className="px-6 hover:no-underline">
-                      <span className="text-left font-medium">
-                        {sectionTitles[key as keyof typeof sectionTitles]}
-                      </span>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6">
-                      {renderContentWithReferences(content, demoReferences)}
-                    </AccordionContent>
-                  </AccordionItem>
-                ))
-              ) : (
-                // Mode réel - afficher les sections au fur et à mesure avec bouton d'ajout
-                (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((section: any, index: number) => (
-                  <AccordionItem key={index} value={String(index)} className="border rounded-lg">
-                    <AccordionTrigger className="px-6 hover:no-underline">
-                      <span className="text-left font-medium">
-                        {sectionTitles[section.type as keyof typeof sectionTitles]}
-                      </span>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-6 pb-6">
-                      {/* Contenu de la section */}
-                      <div className="mb-4">
-                        {renderContentWithReferences(section.content, analysisData?.references || [])}
+            ) : (
+              <div id="analysis-results">
+                <div className="mb-6 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold">
+                      Résultat de l'analyse {analysisData?.isDemo ? "(Démo)" : "(IA)"}
+                    </h2>
+                    {analysisData && !analysisData.isDemo && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">ID :</span> {analysisData.id}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">Date :</span> {new Date(analysisData.date).toLocaleString('fr-FR')}
+                        </p>
+                        <p className="text-sm text-gray-600 italic">
+                          "{analysisData.title}"
+                        </p>
                       </div>
-                      
-                      {/* Afficher les modifications précédentes s'il y en a */}
-                      {analysisData?.modificationHistory?.filter((mod: any) => mod.sectionType === section.type).length > 0 && (
-                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <Label className="text-sm font-medium text-blue-700 flex items-center gap-2 mb-2">
-                            <Info className="h-4 w-4" />
-                            Informations ajoutées précédemment :
-                          </Label>
-                          {analysisData.modificationHistory
-                            .filter((mod: any) => mod.sectionType === section.type)
-                            .map((mod: any, idx: number) => (
-                              <div key={idx} className="text-sm text-blue-700 mb-2">
-                                • {mod.additionalInfo}
-                                {editingPreviousSection[`${section.type}-${idx}`] && (
-                                  <div className="mt-2">
-                                    <textarea
-                                      value={additionalInfo[`${section.type}-${idx}`] || mod.additionalInfo}
-                                      onChange={(e) => setAdditionalInfo({
-                                        ...additionalInfo,
-                                        [`${section.type}-${idx}`]: e.target.value
-                                      })}
-                                      className="w-full p-2 border border-blue-300 rounded-md resize-none h-20 text-sm"
-                                    />
-                                    <div className="flex gap-2 mt-2">
-                                      <Button
-                                        size="sm"
-                                        variant="default"
-                                        onClick={() => {
-                                          // TODO: implémenter la modification
-                                          setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: false })
-                                        }}
-                                      >
-                                        Sauvegarder
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: false })
-                                          setAdditionalInfo({ ...additionalInfo, [`${section.type}-${idx}`]: '' })
-                                        }}
-                                      >
-                                        Annuler
-                                      </Button>
-                                    </div>
-                                  </div>
-                                )}
-                                {!editingPreviousSection[`${section.type}-${idx}`] && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="ml-2"
-                                    onClick={() => setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: true })}
-                                  >
-                                    <Edit className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              </div>
-                            ))}
-                        </div>
-                      )}
-                      
-                      {/* Zone d'édition pour ajouter des informations */}
-                      {isEditingSection[section.type] ? (
-                        <div className="mt-4 space-y-3 border-t pt-4">
-                          <Label className="text-sm font-medium flex items-center gap-2">
-                            <Plus className="h-4 w-4" />
-                            Ajouter des informations complémentaires
-                          </Label>
-                          <textarea
-                            value={additionalInfo[section.type] || ''}
-                            onChange={(e) => setAdditionalInfo({
-                              ...additionalInfo,
-                              [section.type]: e.target.value
-                            })}
-                            placeholder="Ex: Le patient présente également une toux sèche depuis 3 jours..."
-                            className="w-full p-3 border rounded-lg resize-none h-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleSaveAdditionalInfo(section.type, false)}
-                              disabled={!additionalInfo[section.type]?.trim() || isReanalyzing}
-                              className="bg-blue-600 hover:bg-blue-700 text-white"
-                            >
-                              <Plus className="mr-2 h-4 w-4" />
-                              Ajouter
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleSaveAdditionalInfo(section.type, true)}
-                              disabled={!additionalInfo[section.type]?.trim() || isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
-                              className="border-orange-600 text-orange-600 hover:bg-orange-50"
-                            >
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Ajouter et relancer l'analyse
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleCancelEdit(section.type)}
-                            >
-                              Annuler
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-4 border-t pt-4">
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {/* Boutons pour la gestion des versions */}
+                    {analysisVersions.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={toggleVersionComparison}
+                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300"
+                      >
+                        <GitBranch className="mr-2 h-4 w-4" />
+                        Versions ({analysisVersions.length})
+                      </Button>
+                    )}
+                    {/* Bouton reprise approfondie */}
+                    {!analysisData?.isDemo && analysisData?.modificationHistory && analysisData.modificationHistory.length > 0 && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
                           <Button
-                            size="sm"
                             variant="outline"
-                            onClick={() => handleAddInformation(section.type)}
-                            disabled={isReanalyzing}
-                            className="w-full"
+                            size="sm"
+                            onClick={handleDeepReanalysis}
+                            disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
                           >
-                            <Plus className="mr-2 h-4 w-4" />
-                            Ajouter des informations
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Reprise approfondie
                           </Button>
-                        </div>
-                      )}
-                    </AccordionContent>
-                  </AccordionItem>
-                ))
-              )}
-            </Accordion>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Lancer une recherche sourcée sur la base du contenu disponible et du dossier initial</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {/* Nouveau bouton pour relancer l'analyse complète */}
+                    {!analysisData?.isDemo && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleCompleteReanalysis}
+                            disabled={isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Relancer l'analyse (1 crédit)
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Reprendre le dossier actuel et actualiser l'analyse</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {/* Bouton Export All pour maxime.latry@gmail.com uniquement */}
+                    {user?.email === 'maxime.latry@gmail.com' && analysisHistory.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportAllHistory}
+                        className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-300"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Export All ({analysisHistory.length})
+                      </Button>
+                    )}
+                    {/* Nouveau bouton Export Chain pour maxime.latry@gmail.com */}
+                    {user?.email === 'maxime.latry@gmail.com' && analysisData?.requestChain && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportRequestChain}
+                        className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Export Chain
+                      </Button>
+                    )}
+                    {!analysisData?.isDemo && analysisData?.perplexityReport && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={downloadPerplexityReport}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Rapport de recherche
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportAsPDF}
+                    >
+                      <FileDown className="mr-2 h-4 w-4" />
+                      Export PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportAsText}
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Export TXT
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyToClipboard}
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copier
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowResults(false)
+                        setTextContent("")
+                        setAnalysisData(null)
+                        setCurrentSections([])
+                        setUploadedImages([])
+                        setRareDiseaseData(null)
+                        setShowRareDiseaseSection(false)
+                      }}
+                    >
+                      Nouvelle analyse
+                    </Button>
+                  </div>
+                </div>
+                
+                {/* Indicateur de ré-analyse en cours */}
+                {isReanalyzing && progressMessage && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-blue-700">
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                      <span className="font-medium">{progressMessage}</span>
+                    </div>
+                  </div>
+                )}
 
-            {/* Bouton recherche maladies rares */}
-            {!analysisData?.isDemo && analysisData?.sections && (
-              <div className="mt-6 flex justify-center">
-                <Button
-                  onClick={searchRareDiseases}
-                  disabled={isSearchingRareDisease}
-                  variant="default"
-                  className="bg-purple-600 hover:bg-purple-700"
-                >
-                  {isSearchingRareDisease ? (
-                    <>
-                      <Microscope className="mr-2 h-4 w-4 animate-pulse" />
-                      Recherche en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Microscope className="mr-2 h-4 w-4" />
-                      {showRareDiseaseSection ? "Actualiser la recherche de maladies rares" : "Rechercher des maladies rares"}
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
-
-            {isAnalyzing && progressMessage && (
-              <div className="mt-4 text-center text-sm text-gray-600 animate-pulse">
-                {progressMessage}
-              </div>
-            )}
-
-            {analysisData && (
-              <>
-                <Card className="mt-8">
-                  <CardHeader>
-                    <CardTitle>Références bibliographiques</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-4">
-                      {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
-                        <li key={ref.label} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
-                          <div className="flex items-start gap-3">
-                            <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                            <div className="flex-1">
-                              <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                              {ref.authors && (
-                                <p className="text-sm text-gray-700 mb-1">
-                                  <span className="font-medium">Auteurs :</span> {ref.authors}
-                                </p>
-                              )}
-                              {ref.journal && (
-                                <p className="text-sm text-gray-600 italic mb-1">
-                                  <span className="font-medium not-italic">Journal :</span> {ref.journal}
-                                </p>
-                              )}
-                              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                                {ref.year && (
-                                  <span className="bg-gray-200 px-2 py-1 rounded">Année : {ref.year}</span>
-                                )}
-                                {ref.doi && (
-                                  <span className="bg-gray-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
-                                )}
-                                {ref.pmid && (
-                                  <span className="bg-gray-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
-                                )}
-                              </div>
-                              <a
-                                href={ref.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
-                              >
-                                Consulter la source
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                </svg>
-                              </a>
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-
-                {/* Références pour les maladies rares */}
-                {rareDiseaseData && rareDiseaseData.references.length > 0 && (
-                  <Card className="mt-8">
+                {/* Comparaison des versions */}
+                {showVersionComparison && analysisVersions.length > 0 && (
+                  <Card className="mb-6">
                     <CardHeader>
-                      <CardTitle>Références - Maladies rares</CardTitle>
-                      <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
+                      <CardTitle>Historique des versions</CardTitle>
+                      <CardDescription>
+                        Version actuelle: {currentVersion + 1} | {analysisVersions.length} version(s) précédente(s)
+                      </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <ul className="space-y-4">
-                        {rareDiseaseData.references.map((ref: any) => (
-                          <li key={`rare-${ref.label}`} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
-                            <div className="flex items-start gap-3">
-                              <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                              <div className="flex-1">
-                                <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                                {ref.authors && (
-                                  <p className="text-xs text-gray-600 mb-1">
-                                    {ref.authors}
+                      <div className="space-y-2">
+                        {analysisVersions.map((version, idx) => (
+                          <div key={idx} className="p-3 bg-gray-50 rounded-lg border">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="font-medium">Version {version.version + 1}</span>
+                                {version.modificationHistory?.slice(-1).map((mod: any, i: number) => (
+                                  <p key={i} className="text-sm text-gray-600 mt-1">
+                                    Modification: {sectionTitles[mod.sectionType as keyof typeof sectionTitles]}
                                   </p>
-                                )}
-                                {ref.journal && (
-                                  <p className="text-sm text-gray-600 italic mb-1">
-                                    <span className="font-medium not-italic">Journal :</span> {ref.journal}
-                                  </p>
-                                )}
-                                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                                  {ref.year && (
-                                    <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
-                                  )}
-                                  {ref.doi && (
-                                    <span className="bg-purple-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
-                                  )}
-                                  {ref.pmid && (
-                                    <span className="bg-purple-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
-                                  )}
-                                </div>
-                                <a
-                                  href={ref.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-500">
+                                  {new Date(version.timestamp).toLocaleString('fr-FR')}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setAnalysisData(version)
+                                    setCurrentVersion(version.version)
+                                    toast.info(`Affichage de la version ${version.version + 1}`)
+                                  }}
                                 >
-                                  Consulter la source
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  Voir
+                                </Button>
                               </div>
                             </div>
-                          </li>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </CardContent>
                   </Card>
                 )}
-              </>
+                
+                {/* Nouveau : Dossier initial */}
+                <Accordion type="single" collapsible className="mb-4">
+                  <AccordionItem value="initial-case" className="border rounded-lg">
+                    <AccordionTrigger 
+                      className="px-6 hover:no-underline bg-gray-50"
+                      onClick={() => setShowInitialCase(!showInitialCase)}
+                    >
+                      <span className="text-left font-medium flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Voir dossier initial
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-6 pb-6">
+                      <div className="bg-gray-50 p-4 rounded-lg relative">
+                        {editingInitialCase ? (
+                          <div className="space-y-3">
+                            <textarea
+                              value={editedInitialCase}
+                              onChange={(e) => setEditedInitialCase(e.target.value)}
+                              className="w-full p-3 border rounded-lg resize-none h-64 text-sm"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  const updatedData = {
+                                    ...analysisData,
+                                    caseText: editedInitialCase
+                                  }
+                                  setAnalysisData(updatedData)
+                                  setEditingInitialCase(false)
+                                  toast.success("Dossier initial modifié")
+                                  
+                                  if (user && !analysisData.isDemo) {
+                                    HistoryService.saveAnalysis(user.uid, updatedData).catch(error => {
+                                      console.error('Erreur sauvegarde:', error)
+                                    })
+                                  }
+                                }}
+                              >
+                                Sauvegarder
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                  if (!user || !userCredits || (userCredits.credits ?? 0) <= 0) {
+                                    toast.error("Crédits insuffisants")
+                                    return
+                                  }
+                                  const updatedData = {
+                                    ...analysisData,
+                                    caseText: editedInitialCase
+                                  }
+                                  setAnalysisData(updatedData)
+                                  setEditingInitialCase(false)
+                                  await handleCompleteReanalysis()
+                                }}
+                                disabled={!user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                              >
+                                Sauvegarder et relancer l'analyse
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingInitialCase(false)
+                                  setEditedInitialCase("")
+                                }}
+                              >
+                                Annuler
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {analysisData?.caseText || textContent}
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="absolute top-2 right-2"
+                              onClick={() => {
+                                setEditingInitialCase(true)
+                                setEditedInitialCase(analysisData?.caseText || textContent)
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+
+                {/* Boutons pour gérer les accordéons */}
+                <div className="mb-4 flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleAllAccordions}
+                  >
+                    {expandAllAccordions ? (
+                      <>
+                        <ChevronUp className="mr-2 h-4 w-4" />
+                        Fermer tout
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="mr-2 h-4 w-4" />
+                        Ouvrir tout
+                      </>
+                    )}
+                  </Button>
+                </div>
+                
+                <Accordion 
+                  type="multiple" 
+                  className="w-full space-y-4" 
+                  value={accordionValues}
+                  onValueChange={setAccordionValues}
+                >
+                  {analysisData?.isDemo ? (
+                    // Mode démo - afficher les sections prédéfinies
+                    Object.entries(demoSections).map(([key, content], index) => (
+                      <AccordionItem key={key} value={String(index)} className="border rounded-lg">
+                        <AccordionTrigger className="px-6 hover:no-underline">
+                          <span className="text-left font-medium">
+                            {sectionTitles[key as keyof typeof sectionTitles]}
+                          </span>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6">
+                          {renderContentWithReferences(content, demoReferences)}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))
+                  ) : (
+                    // Mode réel - afficher les sections au fur et à mesure avec bouton d'ajout
+                    (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((section: any, index: number) => (
+                      <AccordionItem key={index} value={String(index)} className="border rounded-lg">
+                        <AccordionTrigger className="px-6 hover:no-underline">
+                          <span className="text-left font-medium">
+                            {sectionTitles[section.type as keyof typeof sectionTitles]}
+                          </span>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-6 pb-6">
+                          {/* Contenu de la section */}
+                          <div className="mb-4">
+                            {renderContentWithReferences(section.content, analysisData?.references || [])}
+                          </div>
+                          
+                          {/* Afficher les modifications précédentes s'il y en a */}
+                          {analysisData?.modificationHistory?.filter((mod: any) => mod.sectionType === section.type).length > 0 && (
+                            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <Label className="text-sm font-medium text-blue-700 flex items-center gap-2 mb-2">
+                                <Info className="h-4 w-4" />
+                                Informations ajoutées précédemment :
+                              </Label>
+                              {analysisData.modificationHistory
+                                .filter((mod: any) => mod.sectionType === section.type)
+                                .map((mod: any, idx: number) => (
+                                  <div key={idx} className="text-sm text-blue-700 mb-2">
+                                    • {mod.additionalInfo}
+                                    {editingPreviousSection[`${section.type}-${idx}`] && (
+                                      <div className="mt-2">
+                                        <textarea
+                                          value={additionalInfo[`${section.type}-${idx}`] || mod.additionalInfo}
+                                          onChange={(e) => setAdditionalInfo({
+                                            ...additionalInfo,
+                                            [`${section.type}-${idx}`]: e.target.value
+                                          })}
+                                          className="w-full p-2 border border-blue-300 rounded-md resize-none h-20 text-sm"
+                                        />
+                                        <div className="flex gap-2 mt-2">
+                                          <Button
+                                            size="sm"
+                                            variant="default"
+                                            onClick={() => {
+                                              const key = `${section.type}-${idx}`
+                                              const newValue = additionalInfo[key]
+                                              
+                                              if (!newValue?.trim()) {
+                                                toast.error("Le texte ne peut pas être vide")
+                                                return
+                                              }
+                                              
+                                              // Mettre à jour l'historique des modifications
+                                              const updatedHistory = analysisData.modificationHistory.map((mod: any, modIdx: number) => {
+                                                if (mod.sectionType === section.type && analysisData.modificationHistory.filter((m: any) => m.sectionType === section.type).indexOf(mod) === idx) {
+                                                  return { ...mod, additionalInfo: newValue }
+                                                }
+                                                return mod
+                                              })
+                                              
+                                              const updatedData = {
+                                                ...analysisData,
+                                                modificationHistory: updatedHistory
+                                              }
+                                              
+                                              setAnalysisData(updatedData)
+                                              setEditingPreviousSection({ ...editingPreviousSection, [key]: false })
+                                              setAdditionalInfo({ ...additionalInfo, [key]: '' })
+                                              
+                                              if (user && !isDemoMode) {
+                                                HistoryService.saveAnalysis(user.uid, updatedData).catch(error => {
+                                                  console.error('Erreur sauvegarde:', error)
+                                                })
+                                              }
+                                              
+                                              toast.success("Modification sauvegardée")
+                                            }}
+                                          >
+                                            Sauvegarder
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: false })
+                                              setAdditionalInfo({ ...additionalInfo, [`${section.type}-${idx}`]: '' })
+                                            }}
+                                          >
+                                            Annuler
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {!editingPreviousSection[`${section.type}-${idx}`] && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="ml-2"
+                                        onClick={() => setEditingPreviousSection({ ...editingPreviousSection, [`${section.type}-${idx}`]: true })}
+                                      >
+                                        <Edit className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                          
+                          {/* Zone d'édition pour ajouter des informations */}
+                          {isEditingSection[section.type] ? (
+                            <div className="mt-4 space-y-3 border-t pt-4">
+                              <Label className="text-sm font-medium flex items-center gap-2">
+                                <Plus className="h-4 w-4" />
+                                Ajouter des informations complémentaires
+                              </Label>
+                              <textarea
+                                value={additionalInfo[section.type] || ''}
+                                onChange={(e) => setAdditionalInfo({
+                                  ...additionalInfo,
+                                  [section.type]: e.target.value
+                                })}
+                                placeholder="Ex: Le patient présente également une toux sèche depuis 3 jours..."
+                                className="w-full p-3 border rounded-lg resize-none h-24 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleSaveAdditionalInfo(section.type, false)}
+                                  disabled={!additionalInfo[section.type]?.trim() || isReanalyzing}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                                >
+                                  <Plus className="mr-2 h-4 w-4" />
+                                  Ajouter
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleSaveAdditionalInfo(section.type, true)}
+                                  disabled={!additionalInfo[section.type]?.trim() || isReanalyzing || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
+                                  className="border-orange-600 text-orange-600 hover:bg-orange-50"
+                                >
+                                  <RefreshCw className="mr-2 h-4 w-4" />
+                                  Ajouter et relancer l'analyse
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleCancelEdit(section.type)}
+                                >
+                                  Annuler
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-4 border-t pt-4">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleAddInformation(section.type)}
+                                disabled={isReanalyzing}
+                                className="w-full"
+                              >
+                                <Plus className="mr-2 h-4 w-4" />
+                                Ajouter des informations
+                              </Button>
+                            </div>
+                          )}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))
+                  )}
+                </Accordion>
+
+                {/* Bouton recherche maladies rares */}
+                {!analysisData?.isDemo && analysisData?.sections && (
+                  <div className="mt-6 flex justify-center">
+                    <Button
+                      onClick={searchRareDiseases}
+                      disabled={isSearchingRareDisease}
+                      variant="default"
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      {isSearchingRareDisease ? (
+                        <>
+                          <Microscope className="mr-2 h-4 w-4 animate-pulse" />
+                          Recherche en cours...
+                        </>
+                      ) : (
+                        <>
+                          <Microscope className="mr-2 h-4 w-4" />
+                          {showRareDiseaseSection ? "Actualiser la recherche de maladies rares" : "Rechercher des maladies rares"}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+
+                {isAnalyzing && progressMessage && (
+                  <div className="mt-4 text-center text-sm text-gray-600 animate-pulse">
+                    {progressMessage}
+                  </div>
+                )}
+
+                {analysisData && (
+                  <>
+                    <Card className="mt-8">
+                      <CardHeader>
+                        <CardTitle>Références bibliographiques</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-4">
+                          {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
+                            <li key={ref.label} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
+                              <div className="flex items-start gap-3">
+                                <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                                <div className="flex-1">
+                                  <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                                  {ref.authors && (
+                                    <p className="text-sm text-gray-700 mb-1">
+                                      <span className="font-medium">Auteurs :</span> {ref.authors}
+                                    </p>
+                                  )}
+                                  {ref.journal && (
+                                    <p className="text-sm text-gray-600 italic mb-1">
+                                      <span className="font-medium not-italic">Journal :</span> {ref.journal}
+                                    </p>
+                                  )}
+                                  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                                    {ref.year && (
+                                      <span className="bg-gray-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                                    )}
+                                    {ref.doi && (
+                                      <span className="bg-gray-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
+                                    )}
+                                    {ref.pmid && (
+                                      <span className="bg-gray-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
+                                    )}
+                                  </div>
+                                  <a
+                                    href={ref.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                                  >
+                                    Consulter la source
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+
+                    {/* Références pour les maladies rares */}
+                    {rareDiseaseData && rareDiseaseData.references.length > 0 && (
+                      <Card className="mt-8">
+                        <CardHeader>
+                          <CardTitle>Références - Maladies rares</CardTitle>
+                          <CardDescription>Sources spécialisées : Orphanet, OMIM, GeneReviews</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ul className="space-y-4">
+                            {rareDiseaseData.references.map((ref: any) => (
+                              <li key={`rare-${ref.label}`} className="border-l-4 border-purple-500 pl-4 py-2 bg-purple-50 rounded-r">
+                                <div className="flex items-start gap-3">
+                                  <span className="text-purple-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                                  <div className="flex-1">
+                                    <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                                    {ref.authors && (
+                                      <p className="text-xs text-gray-600 mb-1">
+                                        {ref.authors}
+                                      </p>
+                                    )}
+                                    {ref.journal && (
+                                      <p className="text-sm text-gray-600 italic mb-1">
+                                        <span className="font-medium not-italic">Journal :</span> {ref.journal}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
+                                      {ref.year && (
+                                        <span className="bg-purple-200 px-2 py-1 rounded">Année : {ref.year}</span>
+                                      )}
+                                      {ref.doi && (
+                                        <span className="bg-purple-200 px-2 py-1 rounded">DOI : {ref.doi}</span>
+                                      )}
+                                      {ref.pmid && (
+                                        <span className="bg-purple-200 px-2 py-1 rounded">PMID : {ref.pmid}</span>
+                                      )}
+                                    </div>
+                                    <a
+                                      href={ref.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-sm text-purple-600 hover:text-purple-800 hover:underline mt-2 font-medium"
+                                    >
+                                      Consulter la source
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </div>
-        )}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
 
