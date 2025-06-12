@@ -177,10 +177,12 @@ tu as vu dans l'image que jet'ai envoyé juste avant ? le contenu semble avoir �
 TODO : 
 TODO
 TODO
+pourquoi je n'ai que 4 sources ? 
+comment on a trouvé le nom du journal alors que perplexity ne l'a pas donné je crois ? 
+pourquoi on n'a pas donné le nom de l'auteur alors ? 
+ce qui est affiché à la fin et structuré c'est la réponse de o3 alors que ça devrait etre celle de perplexity qui devrait aussi etre structuré de la meme facon mais en ayant gardé les memes iputs actuel 
+
 le bouton historique sur la page du premier résultat mène à accueil au lieu de historiuqer
-
-
-
 
 ___
 

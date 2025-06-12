@@ -1045,7 +1045,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
     return processedText;
   }
 
-  // Analyser une image avec o3
+  // Analyser une image avec medgemma
   private async analyzeImageWithO3(imageBase64: string, imageType: string = 'medical'): Promise<string> {
     // Sauvegarder la requête
     this.requestChain.push({
