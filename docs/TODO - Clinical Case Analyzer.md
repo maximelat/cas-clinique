@@ -154,23 +154,11 @@ ___
   - idem pour chaque nouvelle requette future, notamment maladie rare
   - ajouter un bouton 
 
----
-
-TODO : 
-TODO
-TODO
-
-1 je pense que dans un résultat on devrait renommer Version pour la gestion des et non pas nommer ça historique
 
 2 le résultats de maladies rare n'est toujours pas bien strcuturé 
 
-3 le résultat de o3 solo est bien strcuturé mais lorsqu'on passe pas preplexity d'abord ça devient mal structuré 
-
 4 les liens ave cid cas fonctionnent mais pas les ?id=analysis pour la gestion des historiques  https://latry.consulting/projet/clinical-case-analyzer/analysis/view/?id=cas-1749629464351-ljfffnloz
-
-___
-
-2 la reprise approfondie et la relance d'analyse devraient mettre à jour les 7 parties et historiser l'ancienne version du resultat (le versionning existe déjà je crois dans le code) comme ça on peut suivre l'évolution de la reflexion facilement 
+---
 
 . 🔧 Structure des maladies rares
 Le composant RareDiseaseResults structure déjà l'affichage avec des sections
@@ -178,18 +166,31 @@ Si le format n'est toujours pas satisfaisant, il faudrait me préciser exactemen
 
 tu as vu dans l'image que jet'ai envoyé juste avant ? le contenu semble avoir été coupé et il n'y a pas tourtes les informations disponibles 
 
+
+TODO : 
+TODO
+TODO
+le bouton historique sur la page du premier résultat mène à accueil au lieu de historiuqer
+
+
+1 je pense que dans un résultat on devrait renommer Version pour la gestion des et non pas nommer ça historique https://latry.consulting/projet/clinical-case-analyzer/history/
+
+
+3 le résultat de o3 solo est bien strcuturé mais lorsqu'on passe pas preplexity d'abord ça devient mal structuré 
+
+
+ça dit analyse non trouvée, car je pense qu'on doit garder ?id=cas et non is=analysis pour revenir sur une analyse pasée 
+
+___
+
+2 la reprise approfondie et la relance d'analyse devraient mettre à jour les 7 parties et historiser l'ancienne version du resultat (le versionning existe déjà je crois dans le code) comme ça on peut suivre l'évolution de la reflexion facilement 
+
+
 3. ✅ Format o3 pour l'analyse simple
 Correction du format de sortie pour utiliser ## SECTION_TYPE: au lieu de [SECTION_TYPE:XXX]
 L'analyse simple devrait maintenant être bien structurée
 
->non mais l'analyse simple était correcte je t'ai montré que l'analyse approfondie, le resultat donne des à la ligne entre et un bazar autour des srouces 
-
-4. 🔍 URLs avec paramètres
-Le code semble correct (Suspense wrapper, searchParams)
-Le problème pourrait venir du serveur de production ou de l'encodage des URLs
-Il faudrait vérifier les logs serveur pour identifier l'erreur exacte
-
-ça dit analyse non trouvée, car je pense qu'on doit garder ?id=cas et non is=analysis pour revenir sur une analyse pasée 
+>non mais l'analyse simple était correcte je t'ai montré que l'analyse approfondie, le resultat donne des à la ligne entre et un bazar autour des srouces
 
 
 3 de plus il n'est pas affiché les auteurs et la date pour les références bibliographique comme c'était le cas avant ni meme pour les références spécialisées maladies rares, tu peux retrouver la fonction et la réactiver stp

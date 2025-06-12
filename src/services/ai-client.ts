@@ -584,7 +584,7 @@ RAPPELS IMPORTANTS:
   private async analyzeReferencesWithGPT4(perplexityReport: PerplexityResponse): Promise<{ analysis: string, references: any[] }> {
     try {
       // D'abord extraire les références brutes
-      const rawReferences = this.extractReferences(perplexityReport);
+      const rawReferences = await this.extractReferences(perplexityReport);
       
       // Si pas de références, retourner vide
       if (rawReferences.length === 0) {
@@ -697,7 +697,7 @@ RÈGLES IMPORTANTES:
       // En cas d'erreur, retourner les références brutes
       return {
         analysis: "Erreur lors de l'analyse des références.",
-        references: this.extractReferences(perplexityReport)
+        references: await this.extractReferences(perplexityReport)
       };
     }
   }
