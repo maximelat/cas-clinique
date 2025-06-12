@@ -900,49 +900,68 @@ RÈGLES IMPORTANTES:
   }
 
   private async enrichReferencesWithGPT4(references: any[]): Promise<any[]> {
-    const prompt = `Enrichis ces références bibliographiques en ajoutant les informations manquantes (auteurs, année, journal).
-Pour chaque référence, recherche et ajoute :
-- Les noms complets des auteurs
-- L'année de publication
-- Le nom du journal ou de la source
-- Un titre plus descriptif si nécessaire
-
-Références à enrichir :
-${references.map((ref, idx) => `
-[${ref.label}] ${ref.title}
-URL: ${ref.url}
-Auteurs actuels: ${ref.authors || 'Non précisé'}
-Année: ${ref.year || 'Non précisée'}
-Journal: ${ref.journal || 'Non précisé'}
-`).join('\n')}
-
-Retourne UNIQUEMENT un JSON valide avec ce format exact :
-[
-  {
-    "label": "1",
-    "title": "Titre complet de l'article",
-    "url": "URL originale",
-    "authors": "Auteur1 A, Auteur2 B, et al.",
-    "year": 2024,
-    "journal": "Nom du journal",
-    "date": "2024-01-15"
-  }
-]`;
-
     try {
-      let response;
-      
+      // Filtrer les références qui ont besoin d'enrichissement
+      const needsEnrichment = references.filter(ref => 
+        !ref.authors || !ref.year || ref.authors === 'Non disponible'
+      );
+
+      if (needsEnrichment.length === 0) {
+        console.log('Toutes les références sont déjà complètes');
+        return references;
+      }
+
+      console.log(`Enrichissement de ${needsEnrichment.length} références incomplètes...`);
+
       if (this.useFirebaseFunctions) {
-        const { analyzeReferencesWithGPT4ViaFunction } = await import('@/lib/firebase-functions');
-        response = await analyzeReferencesWithGPT4ViaFunction(prompt);
+        console.log('Utilisation de Firebase Functions pour enrichir les références');
+        const { enrichReferencesViaFunction } = await import('@/lib/firebase-functions');
+        
+        try {
+          const enrichedRefs = await enrichReferencesViaFunction(references);
+          console.log('Références enrichies via Firebase Functions');
+          return enrichedRefs;
+        } catch (error: any) {
+          console.error('Erreur enrichissement via Firebase:', error);
+          // Retourner les références originales en cas d'erreur
+          return references;
+        }
       } else {
-        const result = await axios.post(
+        // Mode développement - appel direct
+        const prompt = `Tu es un expert en recherche académique médicale. Enrichis ces références avec les métadonnées manquantes.
+
+RÉFÉRENCES À ENRICHIR:
+${JSON.stringify(references, null, 2)}
+
+INSTRUCTIONS:
+1. Pour chaque référence, ajoute les informations manquantes:
+   - authors: Liste des auteurs principaux (format: "Nom P, Nom2 Q")
+   - year: Année de publication (format: 2024)
+   - journal: Nom du journal ou de la source
+   - title: Titre complet si manquant
+2. Retourne UNIQUEMENT un tableau JSON valide avec les références enrichies
+3. Conserve toutes les propriétés existantes
+4. N'invente pas d'informations - mets null si tu ne peux pas déterminer
+
+IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
+
+        const response = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
             model: 'gpt-4o-mini-2024-07-18',
-            messages: [{ role: 'user', content: prompt }],
-            max_tokens: 2000,
-            temperature: 0.3
+            messages: [
+              {
+                role: 'system',
+                content: 'Tu es un assistant qui retourne UNIQUEMENT du JSON valide, sans aucun texte supplémentaire.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            max_tokens: 4000,
+            temperature: 0.3,
+            response_format: { type: "json_object" }
           },
           {
             headers: {
@@ -951,29 +970,24 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact :
             }
           }
         );
-        response = result.data.choices?.[0]?.message?.content || '[]';
-      }
 
-      // Parser la réponse JSON
-      const enrichedRefs = JSON.parse(response);
-      
-      // Fusionner avec les références originales
-      return references.map((ref, idx) => {
-        const enriched = enrichedRefs.find((e: any) => e.label === ref.label);
-        if (enriched) {
-          return {
-            ...ref,
-            title: enriched.title || ref.title,
-            authors: enriched.authors || ref.authors,
-            year: enriched.year || ref.year,
-            journal: enriched.journal || ref.journal,
-            date: enriched.date || ref.date
-          };
+        const responseText = response.data.choices?.[0]?.message?.content || '[]';
+        
+        try {
+          // La réponse pourrait être un objet avec une propriété "references"
+          const parsed = JSON.parse(responseText);
+          const enrichedRefs = Array.isArray(parsed) ? parsed : (parsed.references || references);
+          console.log('Références enrichies localement');
+          return enrichedRefs;
+        } catch (parseError) {
+          console.error('Erreur parsing JSON:', parseError);
+          console.error('Réponse brute:', responseText);
+          return references;
         }
-        return ref;
-      });
-    } catch (error) {
-      console.error('Erreur parsing références enrichies:', error);
+      }
+    } catch (error: any) {
+      console.error('Erreur enrichissement références:', error);
+      // En cas d'erreur, retourner les références originales
       return references;
     }
   }
@@ -1014,21 +1028,30 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact :
     });
 
     try {
-      // Utiliser MedGemma pour l'analyse d'images médicales
-      console.log('Analyse d\'image avec MedGemma...');
+      console.log('=== DÉBUT ANALYSE IMAGE ===');
+      console.log('Modèle utilisé: MedGemma (exclusivement)');
+      console.log('Type d\'image:', imageType);
       
       // En production, toujours utiliser Firebase Functions qui gère MedGemma
       if (this.useFirebaseFunctions) {
-        console.log('Analyse d\'image via Firebase Functions (MedGemma ou GPT-4o)...');
-        const response = await analyzeImageWithO3ViaFunction('Analyse cette image médicale en détail.', imageBase64, imageType);
+        console.log('Mode: Production - Utilisation de Firebase Functions');
+        console.log('Firebase Functions appellera MedGemma pour l\'analyse');
+        console.log('Endpoint MedGemma dans Firebase: https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud');
+        
+        const { analyzeImageWithMedGemmaViaFunction } = await import('@/lib/firebase-functions');
+        const response = await analyzeImageWithMedGemmaViaFunction(imageBase64, imageType);
+        
+        console.log('=== RÉPONSE REÇUE DE MEDGEMMA VIA FIREBASE ===');
+        console.log('Longueur de la réponse:', response.length);
+        console.log('Début de la réponse:', response.substring(0, 100) + '...');
+        
         this.requestChain[this.requestChain.length - 1].response = response;
         return response;
       } else {
         // Mode développement - vérifier si MedGemma est configuré localement
         if (!medGemmaClient.hasApiKey()) {
-          console.log('MedGemma non configuré en local, utilisation de GPT-4o...');
-          // Mode développement - utiliser GPT-4o
-          console.log('Fallback sur GPT-4o (mode dev)...');
+          console.log('Mode: Développement - MedGemma non configuré localement');
+          console.log('ATTENTION: Fallback sur GPT-4o en mode dev uniquement');
           
           const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
@@ -1067,72 +1090,26 @@ Retourne UNIQUEMENT un JSON valide avec ce format exact :
           return outputText;
         } else {
           // Utiliser MedGemma en local
+          console.log('Mode: Développement - Utilisation de MedGemma en local');
+          console.log('Appel direct à MedGemma...');
+          
           const response = await medGemmaClient.analyzeImage(imageBase64, imageType);
+          
+          console.log('=== RÉPONSE MEDGEMMA LOCALE ===');
+          console.log('Longueur de la réponse:', response.length);
           
           // Sauvegarder la réponse
           this.requestChain[this.requestChain.length - 1].response = response;
           
-          console.log('Analyse MedGemma terminée');
           return response;
         }
       }
       
     } catch (error: any) {
-      console.error('Erreur analyse image:', error);
+      console.error('=== ERREUR ANALYSE IMAGE ===');
+      console.error('Erreur:', error.message);
       
-      // En cas d'erreur avec MedGemma, essayer le fallback
-      if (error.message.includes('MedGemma')) {
-        console.log('Erreur MedGemma, tentative de fallback...');
-        
-        try {
-          if (this.useFirebaseFunctions) {
-            const response = await analyzeImageWithO3ViaFunction('Analyse cette image médicale en détail.', imageBase64, imageType);
-            this.requestChain[this.requestChain.length - 1].response = response;
-            return response;
-          } else {
-            // Fallback GPT-4o
-            const response = await axios.post(
-              'https://api.openai.com/v1/chat/completions',
-              {
-                model: 'gpt-4o',
-                messages: [
-                  {
-                    role: 'user',
-                    content: [
-                      {
-                        type: 'text',
-                        text: 'Analyse cette image médicale en détail.'
-                      },
-                      {
-                        type: 'image_url',
-                        image_url: {
-                          url: `data:image/jpeg;base64,${imageBase64.replace(/^data:image\/\w+;base64,/, '')}`
-                        }
-                      }
-                    ]
-                  }
-                ],
-                max_tokens: 5000,
-                temperature: 0.3
-              },
-              {
-                headers: {
-                  'Authorization': `Bearer ${this.openaiApiKey}`,
-                  'Content-Type': 'application/json'
-                }
-              }
-            );
-
-            const outputText = response.data.choices?.[0]?.message?.content || '';
-            this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
-            return outputText;
-          }
-        } catch (fallbackError: any) {
-          console.error('Erreur fallback:', fallbackError);
-          throw new Error('Erreur lors de l\'analyse de l\'image: ' + error.message);
-        }
-      }
-      
+      // Pas de fallback en production - MedGemma uniquement
       throw new Error('Erreur lors de l\'analyse de l\'image: ' + error.message);
     }
   }

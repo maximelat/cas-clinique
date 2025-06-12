@@ -119,10 +119,10 @@ exports.analyzeWithO3 = functions.https
   });
 
 // Fonction pour analyser une image avec MedGemma
-exports.analyzeImageWithO3 = functions.https
+exports.analyzeImageWithMedGemma = functions.https
   .onCall(async (data, context) => {
     try {
-      const { prompt, imageBase64, imageType = 'medical' } = data;
+      const { imageBase64, imageType = 'medical' } = data;
       
       if (!imageBase64) {
         throw new functions.https.HttpsError('invalid-argument', 'Image requise');
@@ -130,10 +130,16 @@ exports.analyzeImageWithO3 = functions.https
 
       // Vérifier que MedGemma est configuré
       if (!MEDGEMMA_API_KEY) {
+        console.error('ERREUR: MedGemma API key non configurée');
         throw new functions.https.HttpsError('failed-precondition', 'MedGemma n\'est pas configuré. L\'analyse d\'image n\'est pas disponible.');
       }
 
+      console.log('=== ANALYSE D\'IMAGE AVEC MEDGEMMA ===');
+      console.log('MedGemma API Key présente:', !!MEDGEMMA_API_KEY);
+      console.log('Longueur de la clé:', MEDGEMMA_API_KEY.length);
+      console.log('Type d\'image:', imageType);
       console.log('Utilisation exclusive de MedGemma pour l\'analyse d\'image médicale...');
+      console.log('Endpoint MedGemma:', 'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions');
       console.log('Note: MedGemma peut prendre jusqu\'à 15 secondes pour démarrer');
       
       const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
@@ -197,6 +203,12 @@ Instructions:
 
         const medGemmaPrompt = imageTypePrompts[imageType] || imageTypePrompts.other;
         
+        console.log('Envoi de la requête à MedGemma...');
+        console.log('Modèle utilisé: MedGemma-2B Vision');
+        console.log('Prompt utilisé:', medGemmaPrompt.substring(0, 200) + '...');
+        
+        const startTime = Date.now();
+        
         const response = await axios.post(
           'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions',
           {
@@ -231,13 +243,22 @@ Instructions:
           }
         );
 
+        const endTime = Date.now();
         const text = response.data.choices?.[0]?.message?.content || '';
         
-        console.log('Réponse MedGemma reçue, longueur:', text.length);
+        console.log('=== RÉPONSE MEDGEMMA REÇUE ===');
+        console.log('Temps de réponse:', (endTime - startTime) / 1000, 'secondes');
+        console.log('Longueur de la réponse:', text.length);
+        console.log('Début de la réponse:', text.substring(0, 200) + '...');
+        console.log('Analyse MedGemma terminée avec succès');
+        console.log('=== FIN ANALYSE MEDGEMMA ===');
         
         return { text };
     } catch (error) {
-      console.error('Erreur analyse image MedGemma:', error.response?.data || error.message);
+      console.error('=== ERREUR ANALYSE IMAGE MEDGEMMA ===');
+      console.error('Message d\'erreur:', error.response?.data || error.message);
+      console.error('Status HTTP:', error.response?.status);
+      console.error('Headers de la réponse:', error.response?.headers);
       
       // Pas de fallback - MedGemma uniquement
       if (error.response?.status === 503) {
@@ -247,11 +268,26 @@ Instructions:
         );
       }
       
+      if (error.response?.status === 401) {
+        throw new functions.https.HttpsError(
+          'unauthenticated', 
+          'Clé API MedGemma invalide. Vérifiez la configuration.'
+        );
+      }
+      
       throw new functions.https.HttpsError(
         'internal', 
         'Erreur lors de l\'analyse d\'image avec MedGemma: ' + error.message
       );
     }
+  });
+
+// Garder l'ancienne fonction pour la compatibilité mais la faire pointer vers MedGemma
+exports.analyzeImageWithO3 = functions.https
+  .onCall(async (data, context) => {
+    console.log('ATTENTION: analyzeImageWithO3 est déprécié, utilise maintenant MedGemma');
+    // Rediriger vers la nouvelle fonction
+    return exports.analyzeImageWithMedGemma.handler(data, context);
   });
 
 // Fonction pour analyser les données Perplexity avec GPT-4o-mini
@@ -519,6 +555,94 @@ EXAMENS_COMPLEMENTAIRES: [contenu]`;
       throw new functions.https.HttpsError(
         'internal', 
         'Erreur lors de l\'extraction des données: ' + (error.response?.data?.error?.message || error.message)
+      );
+    }
+  });
+
+// Nouvelle fonction dédiée pour enrichir les références
+exports.enrichReferences = functions.https
+  .onCall(async (data, context) => {
+    try {
+      const { references } = data;
+      
+      if (!references || !Array.isArray(references)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Références requises');
+      }
+
+      if (!OPENAI_API_KEY) {
+        console.error('Clé OpenAI non configurée');
+        throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
+      }
+
+      console.log('Enrichissement de', references.length, 'références avec GPT-4o-mini...');
+
+      const prompt = `Tu es un expert en recherche académique médicale. Enrichis ces références avec les métadonnées manquantes.
+
+RÉFÉRENCES À ENRICHIR:
+${JSON.stringify(references, null, 2)}
+
+INSTRUCTIONS:
+1. Pour chaque référence, ajoute les informations manquantes:
+   - authors: Liste des auteurs principaux (format: "Nom P, Nom2 Q")
+   - year: Année de publication (format: 2024)
+   - journal: Nom du journal ou de la source
+   - title: Titre complet si manquant
+2. Retourne UNIQUEMENT un tableau JSON valide avec les références enrichies
+3. Conserve toutes les propriétés existantes
+4. N'invente pas d'informations - mets null si tu ne peux pas déterminer
+
+IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o-mini-2024-07-18',
+          messages: [
+            {
+              role: 'system',
+              content: 'Tu es un assistant qui retourne UNIQUEMENT du JSON valide, sans aucun texte supplémentaire.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: 4000,
+          temperature: 0.3,
+          response_format: { type: "json_object" }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const responseText = response.data.choices?.[0]?.message?.content || '[]';
+      console.log('Réponse GPT-4o-mini reçue');
+      
+      // Parser la réponse JSON
+      let enrichedRefs;
+      try {
+        // La réponse pourrait être un objet avec une propriété "references"
+        const parsed = JSON.parse(responseText);
+        enrichedRefs = Array.isArray(parsed) ? parsed : (parsed.references || references);
+      } catch (parseError) {
+        console.error('Erreur parsing JSON:', parseError);
+        console.error('Réponse brute:', responseText);
+        // Retourner les références originales en cas d'erreur
+        enrichedRefs = references;
+      }
+      
+      console.log('Références enrichies:', enrichedRefs.length);
+      return { references: enrichedRefs };
+      
+    } catch (error) {
+      console.error('Erreur enrichissement références:', error.response?.data || error.message);
+      throw new functions.https.HttpsError(
+        'internal', 
+        'Erreur lors de l\'enrichissement des références: ' + error.message
       );
     }
   }); 
