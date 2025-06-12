@@ -1,18 +1,14 @@
-import { initializeApp } from 'firebase/app';
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
+import { getFirebaseApp } from './firebase';
 
-const firebaseConfig = {
-  projectId: "cas-clinique",
-  // Autres propriétés de configuration si nécessaire
-};
-
-const app = initializeApp(firebaseConfig);
+// Utiliser l'app Firebase existante
+const app = getFirebaseApp();
 
 // Fonctions v1 déployées en us-central1
-const functions = getFunctions(app, 'us-central1');
+const functions = app ? getFunctions(app, 'us-central1') : null;
 
 // Connexion à l'émulateur en développement
-if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+if (typeof window !== 'undefined' && window.location.hostname === 'localhost' && functions) {
   try {
     connectFunctionsEmulator(functions, 'localhost', 5001);
   } catch (error) {
@@ -69,6 +65,10 @@ interface EnrichReferencesResponse {
 
 // Fonctions exportées
 export async function analyzeWithO3ViaFunction(prompt: string): Promise<string> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
   const analyzeO3 = httpsCallable<AnalyzeWithO3Request, AnalyzeWithO3Response>(
     functions, 
     'analyzeWithO3'
@@ -95,6 +95,10 @@ export async function analyzeWithO3ViaFunction(prompt: string): Promise<string> 
 }
 
 export async function analyzeImageWithMedGemmaViaFunction(imageBase64: string, imageType?: string): Promise<string> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
   const analyzeImage = httpsCallable<{ imageBase64: string; imageType?: string }, AnalyzeWithO3Response>(
     functions, 
     'analyzeImageWithMedGemma'
@@ -121,6 +125,10 @@ export async function analyzeImageWithO3ViaFunction(prompt: string, imageBase64:
 }
 
 export async function analyzePerplexityWithGPT4MiniViaFunction(perplexityData: string): Promise<string> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
   const analyzePerplexity = httpsCallable<AnalyzePerplexityRequest, AnalyzeWithO3Response>(
     functions, 
     'analyzePerplexityWithGPT4Mini'
@@ -139,6 +147,10 @@ export async function analyzePerplexityWithGPT4MiniViaFunction(perplexityData: s
 }
 
 export async function analyzeReferencesWithGPT4ViaFunction(prompt: string): Promise<string> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
   const analyzeRefs = httpsCallable<{ prompt: string }, { text: string; error?: string }>(
     functions, 
     'analyzeReferencesWithGPT4'
@@ -157,6 +169,10 @@ export async function analyzeReferencesWithGPT4ViaFunction(prompt: string): Prom
 }
 
 export async function transcribeAudioViaFunction(audioBase64: string): Promise<string> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
   const transcribe = httpsCallable<TranscribeAudioRequest, { text: string; error?: string }>(
     functions, 
     'transcribeAudio'
@@ -175,6 +191,10 @@ export async function transcribeAudioViaFunction(audioBase64: string): Promise<s
 }
 
 export async function extractStructuredDataViaFunction(caseText: string): Promise<ExtractStructuredDataResponse> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
   const extractData = httpsCallable<ExtractStructuredDataRequest, ExtractStructuredDataResponse>(
     functions, 
     'extractStructuredData'
@@ -193,6 +213,10 @@ export async function extractStructuredDataViaFunction(caseText: string): Promis
 }
 
 export async function enrichReferencesViaFunction(references: any[]): Promise<any[]> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
   const enrichRefs = httpsCallable<EnrichReferencesRequest, EnrichReferencesResponse>(
     functions, 
     'enrichReferences'
