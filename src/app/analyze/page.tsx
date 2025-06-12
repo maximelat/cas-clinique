@@ -696,6 +696,11 @@ function DemoPageContent() {
       // Ajouter l'accordéon des références
       allAccordionValues.push('references')
       
+      // Ajouter l'accordéon de la recherche académique si disponible
+      if (analysisData?.perplexityReport && !analysisData?.isDemo) {
+        allAccordionValues.push('academic-research')
+      }
+      
       // Ajouter l'accordéon des maladies rares si disponible
       if (rareDiseaseData) {
         allAccordionValues.push('rare-references')
@@ -706,36 +711,81 @@ function DemoPageContent() {
       setShowRareDiseaseSection(true)
       
       // Attendre que les accordéons s'ouvrent et le DOM se mette à jour
-      await new Promise(resolve => setTimeout(resolve, 800))
+      await new Promise(resolve => setTimeout(resolve, 1000))
       
       // Créer un clone temporaire pour nettoyer les styles problématiques
       const clonedElement = element.cloneNode(true) as HTMLElement
       
+      // Définir les remplacements de couleurs oklch
+      const colorReplacements: { [key: string]: string } = {
+        'oklch(1 0 0)': '#ffffff',
+        'oklch(0.145 0 0)': '#1f2937',
+        'oklch(0.985 0 0)': '#f9fafb',
+        'oklch(0.205 0 0)': '#374151',
+        'oklch(0.97 0 0)': '#f3f4f6',
+        'oklch(0.556 0 0)': '#6b7280',
+        'oklch(0.922 0 0)': '#e5e7eb',
+        'oklch(0.708 0 0)': '#9ca3af',
+        'oklch(0.577 0.245 27.325)': '#ef4444',
+        'oklch(0.646 0.222 41.116)': '#f97316',
+        'oklch(0.6 0.118 184.704)': '#3b82f6',
+        'oklch(0.398 0.07 227.392)': '#1e40af',
+        'oklch(0.828 0.189 84.429)': '#eab308',
+        'oklch(0.769 0.188 70.08)': '#65a30d'
+      }
+      
       // Supprimer ou remplacer les couleurs oklch problématiques
       const allElements = clonedElement.querySelectorAll('*')
       allElements.forEach((el) => {
-        const styles = window.getComputedStyle(el as Element)
-        const computedStyles: { [key: string]: string } = {}
+        const element = el as HTMLElement
+        const computedStyles = window.getComputedStyle(element)
         
-        // Vérifier les propriétés de couleur
-        const colorProperties = ['color', 'background-color', 'border-color', 'fill', 'stroke']
+        // Vérifier les propriétés de couleur courantes
+        const colorProperties = [
+          'color', 'background-color', 'border-color', 
+          'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+          'fill', 'stroke', 'outline-color', 'text-decoration-color'
+        ]
+        
         colorProperties.forEach(prop => {
-          const value = styles.getPropertyValue(prop)
+          const value = computedStyles.getPropertyValue(prop)
           if (value && value.includes('oklch')) {
-            // Remplacer oklch par une couleur de fallback
-            if (value.includes('oklch(0.')) {
-              // Couleurs sombres
-              computedStyles[prop] = '#1f2937'
-            } else {
-              // Couleurs par défaut
-              computedStyles[prop] = '#374151'
+            // Chercher une correspondance exacte
+            let replacement = colorReplacements[value]
+            
+            // Si pas de correspondance exacte, utiliser des fallbacks logiques
+            if (!replacement) {
+              if (value.includes('oklch(1') || value.includes('oklch(0.9')) {
+                replacement = '#ffffff' // Blanc/très clair
+              } else if (value.includes('oklch(0.1') || value.includes('oklch(0.2')) {
+                replacement = '#1f2937' // Très sombre
+              } else if (value.includes('oklch(0.5') || value.includes('oklch(0.6')) {
+                replacement = '#6b7280' // Gris moyen
+              } else if (value.includes('oklch(0.8') || value.includes('oklch(0.7')) {
+                replacement = '#e5e7eb' // Gris clair
+              } else {
+                replacement = '#374151' // Gris par défaut
+              }
             }
+            
+            element.style.setProperty(prop, replacement, 'important')
           }
         })
         
-        // Appliquer les styles corrigés
-        Object.entries(computedStyles).forEach(([prop, value]) => {
-          (el as HTMLElement).style.setProperty(prop, value, 'important')
+        // Supprimer les classes CSS qui pourraient contenir des couleurs oklch
+        element.classList.forEach(className => {
+          if (className.includes('bg-') || className.includes('text-') || className.includes('border-')) {
+            // Appliquer des couleurs de fallback pour les classes Tailwind communes
+            if (className.includes('bg-white') || className.includes('bg-gray-50')) {
+              element.style.setProperty('background-color', '#ffffff', 'important')
+            } else if (className.includes('bg-gray-900') || className.includes('bg-slate-900')) {
+              element.style.setProperty('background-color', '#1f2937', 'important')
+            } else if (className.includes('text-gray-900')) {
+              element.style.setProperty('color', '#1f2937', 'important')
+            } else if (className.includes('text-gray-600')) {
+              element.style.setProperty('color', '#6b7280', 'important')
+            }
+          }
         })
       })
       
@@ -743,18 +793,22 @@ function DemoPageContent() {
       clonedElement.style.position = 'absolute'
       clonedElement.style.left = '-9999px'
       clonedElement.style.width = element.offsetWidth + 'px'
+      clonedElement.style.backgroundColor = '#ffffff'
       document.body.appendChild(clonedElement)
       
       const canvas = await html2canvas(clonedElement, {
-        scale: 2,
+        scale: 1.5, // Réduit légèrement pour éviter les problèmes de mémoire
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
+        allowTaint: true,
+        foreignObjectRendering: false, // Évite certains problèmes CSS
         onclone: (clonedDoc) => {
-          // S'assurer que tous les styles sont appliqués
+          // S'assurer que tous les styles sont appliqués dans le document cloné
           const clonedEl = clonedDoc.getElementById('analysis-results')
           if (clonedEl) {
             clonedEl.style.backgroundColor = '#ffffff'
+            clonedEl.style.color = '#1f2937'
           }
         }
       })
@@ -762,7 +816,7 @@ function DemoPageContent() {
       // Supprimer le clone
       document.body.removeChild(clonedElement)
       
-      const imgData = canvas.toDataURL('image/png')
+      const imgData = canvas.toDataURL('image/png', 0.8) // Compression légère
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -781,29 +835,38 @@ function DemoPageContent() {
       const pageHeight = 270 // Hauteur utilisable (297 - marges)
       let yPosition = 40 // Commencer après le titre
       
-      // Ajouter l'image page par page
+      // Ajouter l'image page par page si nécessaire
       let remainingHeight = imgHeight
-      let sourceY = 0
+      let currentPage = 1
       
       while (remainingHeight > 0) {
-        const currentPageHeight = Math.min(remainingHeight, pageHeight - yPosition)
+        const availableHeight = pageHeight - yPosition
+        const sliceHeight = Math.min(remainingHeight, availableHeight)
         
+        // Calculer la portion de l'image à afficher
+        const sourceY = imgHeight - remainingHeight
+        const sourceHeight = sliceHeight
+        
+        if (currentPage > 1) {
+          pdf.addPage()
+          yPosition = 20
+        }
+        
+        // Ajouter la portion d'image
         pdf.addImage(
           imgData, 
           'PNG', 
           10, 
           yPosition, 
           imgWidth, 
-          imgHeight
+          sliceHeight,
+          undefined,
+          'FAST'
         )
         
-        remainingHeight -= currentPageHeight
-        sourceY += (currentPageHeight * canvas.width) / imgWidth
-        
-        if (remainingHeight > 0) {
-            pdf.addPage()
-          yPosition = 20 // Marge supérieure pour les pages suivantes
-        }
+        remainingHeight -= sliceHeight
+        currentPage++
+        yPosition = 20 // Pour les pages suivantes
       }
       
       const date = new Date().toISOString().split('T')[0]
@@ -820,6 +883,12 @@ function DemoPageContent() {
     } catch (error: any) {
       console.error('Erreur export PDF:', error)
       toast.error(`Erreur lors de l'export PDF: ${error.message}`)
+      
+      // Restaurer l'état en cas d'erreur
+      const originalAccordionValues: string[] = []
+      setAccordionValues(originalAccordionValues)
+      setShowInitialCase(false)
+      setShowRareDiseaseSection(false)
     }
   }
 

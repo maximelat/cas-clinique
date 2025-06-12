@@ -374,26 +374,66 @@ ${caseText}
 ANALYSE CLINIQUE (par o3):
 ${sections.map(s => `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`).join('\n\n')}
 
-INSTRUCTIONS:
-1. Recherche des sources académiques récentes (2020-2025) pour valider et enrichir cette analyse
-2. Focus sur les hypothèses diagnostiques mentionnées
-3. Trouver des guidelines et recommandations pour les examens et traitements proposés
-4. Identifier des études de cas similaires
-5. Citer TOUTES les sources avec [1], [2], etc.`;
+INSTRUCTIONS IMPORTANTES:
+1. Fais une recherche académique exhaustive sur ce cas clinique
+2. Concentre-toi sur les publications médicales récentes (2020-2025), guidelines et études cliniques
+3. Structure ta réponse EXACTEMENT selon ces 7 sections avec ce format précis :
+
+## CLINICAL_CONTEXT:
+[Contexte clinique enrichi par la recherche académique - inclure les données épidémiologiques récentes, prévalence, facteurs de risque selon la littérature]
+
+## KEY_DATA:
+[Données clés validées par la littérature - critères diagnostiques actuels, biomarqueurs, signes pathognomoniques selon les guidelines récentes]
+
+## DIAGNOSTIC_HYPOTHESES:
+[Hypothèses diagnostiques appuyées par la recherche - diagnostics différentiels avec références aux études récentes, scores diagnostiques validés]
+
+## COMPLEMENTARY_EXAMS:
+[Examens recommandés selon les guidelines actuelles - protocoles d'imagerie, analyses biologiques, examens spécialisés avec niveaux de preuve]
+
+## THERAPEUTIC_DECISIONS:
+[Décisions thérapeutiques evidence-based - recommandations HAS/ESC/AHA récentes, protocoles thérapeutiques, nouveaux traitements disponibles]
+
+## PROGNOSIS_FOLLOWUP:
+[Pronostic et suivi selon la littérature - études de cohorte récentes, facteurs pronostiques, protocoles de surveillance]
+
+## PATIENT_EXPLANATIONS:
+[Explications patient basées sur les guidelines - informations validées scientifiquement, ressources éducatives recommandées]
+
+4. Pour CHAQUE affirmation, cite la source avec [1], [2], etc.
+5. Base-toi sur des sources académiques fiables (PubMed, Cochrane, guidelines officielles)
+6. Fournis des informations evidence-based et actualisées
+7. RESPECTE EXACTEMENT le format de sections avec "## SECTION_NAME:"`;
       
       const perplexityReport = await this.searchWithPerplexity(perplexityPrompt);
       console.log('Recherche Perplexity terminée');
       
-      // Étape 4 : Analyser les résultats Perplexity et extraire les références
-      progressCallback?.('Analyse avancée des références...');
+      // Étape 4 : Parser la réponse Perplexity structurée en sections (comme pour o3)
+      progressCallback?.('Analyse des références et structuration...');
+      const perplexitySections = this.parseSections(perplexityReport.answer);
+      console.log('Sections Perplexity parsées:', perplexitySections.length);
+      
+      // Si Perplexity a réussi à structurer en 7 sections, l'utiliser à la place de o3
+      const finalSections = perplexitySections.length === 7 ? perplexitySections : sections;
+      const usedPerplexityStructure = perplexitySections.length === 7;
+      
+      console.log('Sections finales utilisées:', usedPerplexityStructure ? 'Perplexity structuré' : 'o3 original');
+      
+      // Appeler le callback pour chaque section finale
+      finalSections.forEach((section, index) => {
+        sectionCallback?.(section, index, finalSections.length);
+      });
+      
+      // Étape 5 : Analyser les résultats Perplexity et extraire les références
       const references = await this.analyzePerplexityResults(perplexityReport);
+      
       console.log('Références analysées et enrichies:', references.length);
       
       return {
-        sections,
+        sections: finalSections,
         references,
         perplexityReport,
-        requestChain: this.requestChain.length > 0 ? this.requestChain : undefined,
+        requestChain: this.requestChain,
         imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
       };
     } catch (error: any) {
@@ -718,6 +758,14 @@ RÈGLES IMPORTANTES:
         try {
           const result = await analyzePerplexityViaFunction(JSON.stringify(perplexityReport));
           console.log('Analyse Perplexity terminée via Firebase Functions');
+          
+          // Enrichir avec Web Search si possible
+          if (result.references && result.references.length > 0) {
+            console.log('Enrichissement avec Web Search...');
+            const enrichedRefs = await this.enrichReferencesWithWebSearch(result.references, perplexityReport.answer);
+            return enrichedRefs;
+          }
+          
           return result.references || [];
         } catch (error: any) {
           console.error('Erreur analyse Perplexity via Firebase:', error);
@@ -725,9 +773,22 @@ RÈGLES IMPORTANTES:
           return await this.extractReferences(perplexityReport);
         }
       } else {
-        // Mode développement - utiliser l'ancienne méthode
-        console.log('Mode développement - utilisation de l\'ancienne méthode d\'extraction');
-        return await this.extractReferences(perplexityReport);
+        // Mode développement - extraire puis enrichir avec Web Search
+        console.log('Mode développement - extraction puis enrichissement Web Search');
+        
+        // D'abord extraire les références de base
+        const baseReferences = await this.extractReferences(perplexityReport);
+        
+        if (baseReferences.length === 0) {
+          console.log('Aucune référence trouvée');
+          return [];
+        }
+        
+        // Ensuite enrichir avec Web Search
+        console.log('Enrichissement avec GPT-4o mini Web Search...');
+        const enrichedReferences = await this.enrichReferencesWithWebSearch(baseReferences, perplexityReport.answer);
+        
+        return enrichedReferences;
       }
     } catch (error: any) {
       console.error('Erreur analyse Perplexity:', error);
@@ -1731,6 +1792,146 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
     } catch (error: any) {
       console.error('Erreur amélioration o3:', error);
       throw new Error('Erreur lors de l\'amélioration avec o3: ' + error.message);
+    }
+  }
+
+  // Nouvelle méthode pour enrichir les références avec GPT-4o mini Web Search
+  private async enrichReferencesWithWebSearch(references: any[], perplexityContent: string = ''): Promise<any[]> {
+    try {
+      if (references.length === 0) {
+        console.log('Aucune référence à enrichir');
+        return references;
+      }
+
+      console.log(`Enrichissement de ${references.length} références avec GPT-4o mini Web Search...`);
+
+      // Traiter les références par batches de 3 pour éviter les timeouts
+      const batchSize = 3;
+      const enrichedRefs = [...references];
+      
+      for (let i = 0; i < references.length; i += batchSize) {
+        const batch = references.slice(i, i + batchSize);
+        
+        try {
+          const batchResults = await this.processBatchWithWebSearch(batch, perplexityContent);
+          
+          // Mettre à jour les références enrichies
+          batchResults.forEach((enrichedRef, batchIndex) => {
+            const globalIndex = i + batchIndex;
+            if (enrichedRef && globalIndex < enrichedRefs.length) {
+              enrichedRefs[globalIndex] = { ...enrichedRefs[globalIndex], ...enrichedRef };
+            }
+          });
+          
+          // Attendre un peu entre les batches pour éviter le rate limiting
+          if (i + batchSize < references.length) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        } catch (batchError) {
+          console.error(`Erreur batch ${i}-${i + batchSize}:`, batchError);
+          // Continuer avec le batch suivant en cas d'erreur
+        }
+      }
+
+      console.log('Enrichissement terminé');
+      return enrichedRefs;
+      
+    } catch (error: any) {
+      console.error('Erreur enrichissement Web Search:', error);
+      // Retourner les références originales en cas d'erreur
+      return references;
+    }
+  }
+
+  // Traiter un batch de références avec Web Search
+  private async processBatchWithWebSearch(batch: any[], perplexityContent: string): Promise<any[]> {
+    const prompt = `Tu es un expert en recherche académique médicale. Utilise l'outil de recherche web pour lire ces sources et extraire les VRAIES métadonnées.
+
+SOURCES À ANALYSER:
+${batch.map((ref, i) => `
+[${ref.label}] "${ref.title}"
+URL: ${ref.url}
+Date actuelle: ${ref.date || 'Non disponible'}
+`).join('\n')}
+
+CONTENU PERPLEXITY POUR RÉFÉRENCE:
+${perplexityContent.substring(0, 2000)}...
+
+INSTRUCTIONS:
+1. Utilise l'outil de recherche web pour visiter chaque URL
+2. Extrais les VRAIES informations (ne jamais inventer) :
+   - authors: Auteurs réels de l'article
+   - journal: Nom exact du journal/source  
+   - year: Année de publication réelle
+   - title: Titre exact si différent
+3. Pour le bonus : si tu trouves dans le contenu Perplexity des références [1], [2], etc. qui correspondent exactement au contenu de cette source, note-le
+4. Retourne un JSON avec les métadonnées enrichies
+
+Format de sortie:
+{
+  "enriched_references": [
+    {
+      "label": "1",
+      "authors": "Nom réel des auteurs ou null",
+      "journal": "Nom exact du journal ou null", 
+      "year": 2024,
+      "title": "Titre exact ou null",
+      "citation_matches": ["[1]", "[3]"] ou []
+    }
+  ]
+}
+
+IMPORTANT: Si tu ne peux pas accéder à une source ou extraire une information, mets null plutôt que d'inventer.`;
+
+    if (this.useFirebaseFunctions) {
+      // TODO: Implémenter via Firebase Functions si nécessaire
+      console.log('Web Search via Firebase Functions non encore implémenté');
+      return batch.map(() => null);
+    } else {
+      // Mode développement - appel direct
+      const response = await axios.post(
+        'https://api.openai.com/v1/responses',
+        {
+          model: 'gpt-4o-mini',
+          tools: [{ type: "web_search_preview" }],
+          tool_choice: { type: "web_search_preview" }, // Force l'utilisation du web search
+          input: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_output_tokens: 4000
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.openaiApiKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      // Extraire le contenu de la réponse avec Web Search
+      const outputItems = response.data.output || [];
+      let enrichedData = null;
+      
+      // Trouver le message avec le contenu JSON
+      for (const item of outputItems) {
+        if (item.type === 'message' && item.content) {
+          const textContent = item.content.find((c: any) => c.type === 'output_text')?.text || '';
+          try {
+            const parsed = JSON.parse(textContent);
+            if (parsed.enriched_references) {
+              enrichedData = parsed.enriched_references;
+              break;
+            }
+          } catch (e) {
+            // Pas du JSON valide, continuer
+          }
+        }
+      }
+      
+      return enrichedData || batch.map(() => null);
     }
   }
 } 
