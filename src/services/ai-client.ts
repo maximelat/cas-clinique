@@ -9,8 +9,8 @@ import {
   addCitationsToSectionsViaFunction
 } from '@/lib/firebase-functions';
 import { medGemmaClient } from './medgemma-client';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '@/lib/firebase';
+import { httpsCallable, getFunctions } from 'firebase/functions';
+import { app } from '@/lib/firebase';
 
 interface PerplexityResponse {
   citations: any[];
@@ -397,6 +397,7 @@ RAPPELS IMPORTANTS:
       let webSearchLogs: any[] = [];
       
       try {
+        const functions = getFunctions(app);
         const enrichReferencesWithWebSearch = httpsCallable(functions, 'enrichReferencesWithWebSearch');
         const enrichResult = await enrichReferencesWithWebSearch({ 
           references,
@@ -1274,9 +1275,10 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
       
       if (this.useFirebaseFunctions) {
         console.log('Utilisation de Firebase Functions pour Gemini');
-        const { httpsCallable } = await import('firebase/functions');
-        const { functions } = await import('@/lib/firebase');
+        const { httpsCallable, getFunctions } = await import('firebase/functions');
+        const { app } = await import('@/lib/firebase');
         
+        const functions = getFunctions(app);
         const analyzeLongAudioWithGemini = httpsCallable(functions, 'analyzeLongAudioWithGemini');
         const result = await analyzeLongAudioWithGemini({
           audioBase64,

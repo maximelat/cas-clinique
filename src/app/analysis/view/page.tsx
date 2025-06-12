@@ -414,11 +414,10 @@ function AnalysisView() {
         })
       }
 
-      // Relancer une analyse complète
-      const result = await aiService.analyzeClinicalCase(
+      // Relancer une analyse simple avec o3 (pas de nouvelles images)
+      const result = await aiService.simpleAnalysis(
         enrichedContext,
         (message) => setProgressMessage(message),
-        undefined,
         analysis.images
       )
 
@@ -487,11 +486,10 @@ function AnalysisView() {
         })
       }
       
-      // Relancer l'analyse complète
-      const result = await aiService.analyzeClinicalCase(
+      // Relancer l'analyse simple avec o3
+      const result = await aiService.simpleAnalysis(
         enrichedContext,
         (message) => setProgressMessage(message),
-        undefined,
         analysis.images
       )
 
