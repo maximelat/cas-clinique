@@ -643,13 +643,15 @@ function DemoPageContent() {
         timestamp: request.timestamp,
         model: request.model,
         requestType: request.type,
+        fullRequest: request.request || 'Non disponible', // Requête complète
+        fullResponse: request.response || 'Non disponible', // Réponse complète
         inputSummary: {
           length: request.request?.length || 0,
-          preview: request.request?.substring(0, 200) + (request.request?.length > 200 ? '...' : '') || 'Non disponible'
+          preview: request.request?.substring(0, 500) + (request.request?.length > 500 ? '...' : '') || 'Non disponible'
         },
         outputSummary: {
           length: request.response?.length || 0,
-          preview: request.response?.substring(0, 200) + (request.response?.length > 200 ? '...' : '') || 'Non disponible'
+          preview: request.response?.substring(0, 500) + (request.response?.length > 500 ? '...' : '') || 'Non disponible'
         },
         success: !!request.response,
         duration: index > 0 ? 

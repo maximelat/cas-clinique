@@ -415,11 +415,36 @@ INSTRUCTIONS IMPORTANTES:
       const perplexitySections = this.parseSections(perplexityReport.answer);
       console.log('Sections Perplexity parsées:', perplexitySections.length);
       
-      // TOUJOURS utiliser les sections Perplexity si elles existent (même si < 7)
-      const finalSections = perplexitySections.length > 0 ? perplexitySections : sections;
-      const usedPerplexityStructure = perplexitySections.length > 0;
+      // Logique de choix intelligente entre o3 et Perplexity
+      let finalSections = sections; // Par défaut o3
+      let usedPerplexityStructure = false;
+      let sourceInfo = 'o3 original';
       
-      console.log('Sections finales utilisées:', usedPerplexityStructure ? `Perplexity structuré (${perplexitySections.length} sections)` : 'o3 original');
+      if (perplexitySections.length >= 6) { // Au moins 6 sections pour être valide
+        finalSections = perplexitySections;
+        usedPerplexityStructure = true;
+        sourceInfo = `Perplexity structuré (${perplexitySections.length}/7 sections)`;
+        console.log('✅ AFFICHAGE FINAL : Sections Perplexity (structure complète)');
+      } else if (perplexitySections.length > 0) {
+        finalSections = perplexitySections;
+        usedPerplexityStructure = true;
+        sourceInfo = `Perplexity partiel (${perplexitySections.length}/7 sections)`;
+        console.log('⚠️ AFFICHAGE FINAL : Sections Perplexity (structure partielle)');
+      } else {
+        console.log('❌ AFFICHAGE FINAL : Sections o3 (Perplexity non structuré)');
+        sourceInfo = 'o3 original (Perplexity failed)';
+      }
+      
+      console.log('Source des sections affichées:', sourceInfo);
+      
+      // Ajouter l'info dans la requête chain pour le debug
+      this.requestChain.push({
+        timestamp: new Date().toISOString(),
+        model: 'Parser',
+        type: `Source finale: ${sourceInfo}`,
+        request: `Choix entre o3 (${sections.length} sections) et Perplexity (${perplexitySections.length} sections)`,
+        response: `Utilisation: ${sourceInfo}`
+      });
       
       // NE PAS rappeler sectionCallback ici pour éviter les doublons
       
@@ -878,200 +903,73 @@ RÈGLES IMPORTANTES:
       console.log('Utilisation des search_results pour créer les références');
       
       perplexityReport.search_results.forEach((result, index) => {
-        const refLabel = String(index + 1);
-        
-        // Extraire l'année depuis la date
-        let year = null;
+        // Essayer d'extraire l'année depuis l'URL ou la date
+        let extractedYear = null;
         if (result.date) {
-          try {
-            year = new Date(result.date).getFullYear();
-          } catch (e) {
-            // Si la date n'est pas valide, essayer de l'extraire du texte
-            const yearMatch = result.date.match(/(\d{4})/);
-            if (yearMatch) year = parseInt(yearMatch[1]);
-          }
+          const yearMatch = result.date.match(/\b(19|20)\d{2}\b/);
+          extractedYear = yearMatch ? parseInt(yearMatch[0]) : null;
         }
         
-        // Déduire le journal depuis l'URL et le titre
-        let journal = '';
+        // Essayer d'extraire des infos depuis l'URL
+        let journalFromUrl = 'Non disponible';
         if (result.url) {
-          if (result.url.includes('academic.oup.com')) {
-            journal = 'Oxford Academic';
+          if (result.url.includes('ncbi.nlm.nih.gov') || result.url.includes('pubmed')) {
+            journalFromUrl = 'PubMed/NCBI';
           } else if (result.url.includes('semanticscholar.org')) {
-            journal = 'Semantic Scholar';
-          } else if (result.url.includes('link.springer.com')) {
-            journal = 'Springer';
-          } else if (result.url.includes('cfp.ca')) {
-            journal = 'Canadian Family Physician';
-          } else if (result.url.includes('doi.emh.ch')) {
-            journal = 'Swiss Medical Weekly';
-          } else if (result.url.includes('latunisiemedicale.com')) {
-            journal = 'La Tunisie Médicale';
-          } else if (result.url.includes('sistemas.uft.edu.br')) {
-            journal = 'Revista ENCENA';
-          } else if (result.url.includes('shs.cairn.info')) {
-            journal = 'Cairn.info';
-          } else if (result.url.includes('persee.fr')) {
-            journal = 'Persée';
-          } else if (result.url.includes('jama.jamanetwork.com')) {
-            journal = 'JAMA';
-          } else if (result.url.includes('pmc.ncbi.nlm.nih.gov')) {
-            journal = 'PubMed Central';
-          } else if (result.url.includes('pubmed.ncbi.nlm.nih.gov')) {
-            journal = 'PubMed';
-          } else if (result.url.includes('orphanet')) {
-            journal = 'Orphanet - Base de données des maladies rares';
-          } else if (result.url.includes('omim.org')) {
-            journal = 'OMIM - Online Mendelian Inheritance in Man';
-          } else if (result.url.includes('nejm.org')) {
-            journal = 'New England Journal of Medicine';
-          } else if (result.url.includes('thelancet.com')) {
-            journal = 'The Lancet';
-          } else if (result.url.includes('nature.com')) {
-            journal = 'Nature';
-          } else if (result.url.includes('sciencedirect.com')) {
-            journal = 'ScienceDirect';
-          }
-          
-          // Essayer d'extraire des informations plus spécifiques depuis le titre
-          if (!journal && result.title) {
-            if (result.title.includes('QJM')) {
-              journal = 'QJM: An International Journal of Medicine';
-            } else if (result.title.includes('Journal of Bone and Joint Surgery')) {
-              journal = 'The Journal of Bone and Joint Surgery';
-            } else if (result.title.includes('Archives of Orthopaedic and Trauma Surgery')) {
-              journal = 'Archives of Orthopaedic and Trauma Surgery';
-            } else if (result.title.includes('Haute Autorité de santé')) {
-              journal = 'Haute Autorité de Santé';
-            }
+            journalFromUrl = 'Semantic Scholar';
+          } else if (result.url.includes('elsevier.com')) {
+            journalFromUrl = 'Elsevier';
+          } else if (result.url.includes('degruyter.com')) {
+            journalFromUrl = 'De Gruyter';
+          } else if (result.url.includes('springer.com')) {
+            journalFromUrl = 'Springer';
+          } else if (result.url.includes('wiley.com')) {
+            journalFromUrl = 'Wiley';
           }
         }
         
         references.push({
-          label: refLabel,
-          title: result.title || `Source ${refLabel}`,
+          label: String(index + 1),
+          title: result.title || `Source ${index + 1}`,
           url: result.url || '#',
-          authors: '', // Sera enrichi par GPT-4o si nécessaire
-          year: year,
-          journal: journal,
-          date: result.date || ''
+          date: result.date || null,
+          year: extractedYear,
+          authors: 'À enrichir', // Sera enrichi par Web Search
+          journal: journalFromUrl,
+          keyPoints: '',
+          source: 'perplexity_search_results'
         });
       });
+      
+      console.log(`${references.length} références extraites`);
+      return references;
     }
-    
-    // PRIORITÉ 2: Utiliser les citations si pas de search_results
-    else if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
-      console.log('Utilisation des citations simples');
+
+    // PRIORITÉ 2: Fallback vers les citations si search_results indisponibles
+    if (perplexityReport.citations && perplexityReport.citations.length > 0) {
+      console.log('Utilisation des citations comme fallback');
       
       perplexityReport.citations.forEach((citation, index) => {
-        const refLabel = String(index + 1);
-        
-        // Extraire les informations selon le format de la citation
-        let title = '';
-        let url = '';
-        let authors = '';
-        let year = null;
-        let journal = '';
-        let date = '';
-        
-        if (typeof citation === 'string') {
-          // Citation simple (URL)
-          url = citation;
-          title = `Source ${refLabel}`;
-        } else if (typeof citation === 'object' && citation !== null) {
-          // Citation structurée
-          title = citation.title || citation.name || citation.text || `Source ${refLabel}`;
-          url = citation.url || citation.link || citation.href || '#';
-          authors = citation.authors?.join?.(', ') || citation.author || '';
-          date = citation.date || citation.published_date || '';
-          year = citation.year || (date ? new Date(date).getFullYear() : null);
-          journal = citation.journal || citation.source || citation.publisher || '';
-          
-          // Enrichir avec les métadonnées si disponibles
-          if (citation.metadata) {
-            authors = authors || citation.metadata.authors?.join?.(', ') || '';
-            journal = journal || citation.metadata.journal || citation.metadata.source || '';
-            year = year || citation.metadata.year || null;
-          }
-        }
-        
-        // Déduire le journal depuis l'URL si non fourni (même logique que ci-dessus)
-        if (!journal && url) {
-          if (url.includes('pmc.ncbi.nlm.nih.gov')) {
-            journal = 'PubMed Central';
-          } else if (url.includes('pubmed.ncbi.nlm.nih.gov')) {
-            journal = 'PubMed';
-          } else if (url.includes('orphanet')) {
-            journal = 'Orphanet - Base de données des maladies rares';
-          } else if (url.includes('omim.org')) {
-            journal = 'OMIM - Online Mendelian Inheritance in Man';
-          } else if (url.includes('nejm.org')) {
-            journal = 'New England Journal of Medicine';
-          } else if (url.includes('thelancet.com')) {
-            journal = 'The Lancet';
-          } else if (url.includes('nature.com')) {
-            journal = 'Nature';
-          } else if (url.includes('sciencedirect.com')) {
-            journal = 'ScienceDirect';
-          }
-        }
+        const url = typeof citation === 'string' ? citation : citation.url || citation;
         
         references.push({
-          label: refLabel,
-          title: title,
+          label: String(index + 1),
+          title: `Source ${index + 1}`,
           url: url,
-          authors: authors,
-          year: year,
-          journal: journal,
-          date: date
+          date: null,
+          year: null,
+          authors: 'À enrichir',
+          journal: 'À enrichir',
+          keyPoints: '',
+          source: 'perplexity_citations'
         });
       });
-    }
-    
-    // PRIORITÉ 3: En dernier recours, extraire depuis le texte
-    else if (perplexityReport.answer) {
-      console.log('Extraction depuis le texte de réponse (fallback)');
       
-      // Chercher les références dans le texte
-      const refPattern = /\[(\d+)\]\s*([^[\n]+)?/g;
-      const matches = Array.from(perplexityReport.answer.matchAll(refPattern));
-      
-      if (matches.length > 0) {
-        const uniqueRefs = new Map();
-        matches.forEach(match => {
-          const num = match[1];
-          if (!uniqueRefs.has(num)) {
-            uniqueRefs.set(num, {
-              label: num,
-              title: match[2]?.trim() || `Source ${num}`,
-              url: '#',
-              authors: '',
-              year: null,
-              journal: ''
-            });
-          }
-        });
-        
-        uniqueRefs.forEach(ref => references.push(ref));
-      }
+      console.log(`${references.length} références extraites depuis citations`);
+      return references;
     }
-    
-    console.log(`${references.length} références extraites`);
-    
-    // Enrichir les références avec GPT-4o si nécessaire
-    if (references.length > 0 && references.some(ref => !ref.authors || !ref.year || ref.authors === 'Non disponible')) {
-      console.log('Enrichissement des références avec GPT-4o...');
-      try {
-        const enrichedRefs = await this.enrichReferencesWithGPT4(references);
-        return enrichedRefs;
-      } catch (error) {
-        console.error('Erreur enrichissement références:', error);
-        // Retourner les références non enrichies en cas d'erreur
-        return references;
-      }
-    }
-    
-    console.log('Références finales:', JSON.stringify(references, null, 2));
+
+    console.log('Aucune référence trouvée dans Perplexity');
     return references;
   }
 

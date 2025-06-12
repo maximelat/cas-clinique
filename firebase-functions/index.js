@@ -160,8 +160,10 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
             ]
           }
         ],
-        max_tokens: 2000,
-        temperature: 0.1,
+        max_tokens: 1500,
+        temperature: 0.3,
+        top_p: 0.9,
+        repetition_penalty: 1.1,
         stream: false
       },
       {
