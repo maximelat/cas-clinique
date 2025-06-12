@@ -299,7 +299,7 @@ exports.analyzeImageWithO3 = functions.https
 
 // Fonction pour analyser les données Perplexity avec GPT-4o-mini
 exports.analyzePerplexityWithGPT4Mini = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [openaiApiKey] }, async (data, context) => {
     try {
       const { perplexityData } = data;
       
@@ -353,7 +353,7 @@ ${perplexityData}`;
 
 // Fonction pour analyser les références avec GPT-4o
 exports.analyzeReferencesWithGPT4 = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [openaiApiKey] }, async (data, context) => {
     try {
       const { prompt } = data;
       
@@ -400,7 +400,7 @@ exports.analyzeReferencesWithGPT4 = functions.https
 
 // Fonction pour transcrire l'audio
 exports.transcribeAudio = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [openaiApiKey] }, async (data, context) => {
     try {
       const { audioBase64 } = data;
       
@@ -486,7 +486,7 @@ exports.transcribeAudio = functions.https
 
 // Fonction pour extraire les données structurées d'un cas clinique
 exports.extractStructuredData = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [openaiApiKey] }, async (data, context) => {
     try {
       const { caseText } = data;
       
