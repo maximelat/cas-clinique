@@ -174,6 +174,8 @@ tu as vu dans l'image que jet'ai envoyé juste avant ? le contenu semble avoir �
 
 ça dit analyse non trouvée, car je pense qu'on doit garder ?id=cas et non is=analysis pour revenir sur une analyse pasée 
 
+### 6. Ajouter medgemma !!
+
 TODO : 
 TODO
 TODO
@@ -209,7 +211,7 @@ L'analyse simple devrait maintenant être bien structurée
   - réanalyser si elements cochés et confirmé par le medecin jusqu'à validation complète d'une patho (cette validation finale n'est possible que par le médecin mais suggérée par le model)
 
 ---
-### 6. Ajouter medgemma !!
+
 
 
 ---

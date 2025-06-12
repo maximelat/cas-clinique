@@ -15,48 +15,48 @@ const MEDGEMMA_API_KEY = functions.config().medgemma?.key;
 
 // Fonction pour analyser avec o3
 exports.analyzeWithO3 = functions.https.onCall(async (data, context) => {
-  try {
-    const { prompt } = data;
-    
-    if (!prompt) {
-      throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
-    }
+    try {
+      const { prompt } = data;
+      
+      if (!prompt) {
+        throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
+      }
 
-    if (!OPENAI_API_KEY) {
-      console.error('ERREUR: Clé OpenAI non configurée dans Firebase Functions');
+      if (!OPENAI_API_KEY) {
+        console.error('ERREUR: Clé OpenAI non configurée dans Firebase Functions');
       throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
-    }
+      }
 
     console.log('Appel OpenAI avec o3-2025-04-16...');
-    
-    const response = await axios.post(
-      'https://api.openai.com/v1/responses',
-      {
-        model: 'o3-2025-04-16',
-        reasoning: { effort: 'medium' },
-        input: [
-          {
-            role: 'user',
-            content: prompt
+      
+      const response = await axios.post(
+        'https://api.openai.com/v1/responses',
+        {
+          model: 'o3-2025-04-16',
+          reasoning: { effort: 'medium' },
+          input: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_output_tokens: 25000
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
           }
-        ],
-        max_output_tokens: 25000
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
         }
-      }
-    );
+      );
 
-    let text = '';
-    if (response.data.output && Array.isArray(response.data.output)) {
-      const messageOutput = response.data.output.find(o => o.type === 'message');
-      if (messageOutput && messageOutput.content && Array.isArray(messageOutput.content)) {
-        const textContent = messageOutput.content.find(c => c.type === 'output_text');
-        if (textContent && textContent.text) {
-          text = textContent.text;
+      let text = '';
+      if (response.data.output && Array.isArray(response.data.output)) {
+        const messageOutput = response.data.output.find(o => o.type === 'message');
+        if (messageOutput && messageOutput.content && Array.isArray(messageOutput.content)) {
+          const textContent = messageOutput.content.find(c => c.type === 'output_text');
+          if (textContent && textContent.text) {
+            text = textContent.text;
         }
       }
     }
@@ -66,16 +66,16 @@ exports.analyzeWithO3 = functions.https.onCall(async (data, context) => {
     }
               
     console.log('Réponse o3 reçue, longueur:', text.length);
-    
-    return { text };
-  } catch (error) {
+      
+      return { text };
+    } catch (error) {
     console.error('Erreur o3:', error.response?.data || error.message);
-    throw new functions.https.HttpsError(
-      'internal', 
-      'Erreur lors de l\'analyse o3: ' + (error.response?.data?.error?.message || error.message)
-    );
-  }
-});
+      throw new functions.https.HttpsError(
+        'internal', 
+        'Erreur lors de l\'analyse o3: ' + (error.response?.data?.error?.message || error.message)
+      );
+    }
+  });
 
 // Fonction pour analyser une image avec MedGemma
 exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) => {
@@ -139,40 +139,40 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
     }
 
     // Utiliser l'endpoint HuggingFace spécifique pour MedGemma
-    const response = await axios.post(
+      const response = await axios.post(
       'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions',
-      {
+        {
         model: 'tgi',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: {
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: {
                   url: `data:image/${imageFormat};base64,${imageBase64}`
                 }
               },
               {
                 type: 'text',
                 text: medgemmaPrompt
-              }
-            ]
-          }
-        ],
+                }
+              ]
+            }
+          ],
         max_tokens: 1500,
         temperature: 0.3,
         top_p: 0.9,
         repetition_penalty: 1.1,
         stream: false
-      },
-      {
-        headers: {
+        },
+        {
+          headers: {
           'Authorization': `Bearer ${MEDGEMMA_API_KEY}`,
-          'Content-Type': 'application/json'
+            'Content-Type': 'application/json'
+          }
         }
-      }
-    );
+      );
 
     const endTime = Date.now();
     const responseTime = endTime - startTime;
@@ -182,7 +182,7 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
     console.log('Status:', response.status);
     console.log('Response data keys:', Object.keys(response.data));
     
-    const text = response.data.choices?.[0]?.message?.content || '';
+      const text = response.data.choices?.[0]?.message?.content || '';
     console.log('Longueur texte analysé:', text.length, 'caractères');
     console.log('Début de la réponse:', text.substring(0, 200), '...');
     console.log('Usage tokens:', response.data.usage);
@@ -193,9 +193,9 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
       console.error('Structure complète:', JSON.stringify(response.data, null, 2));
       throw new functions.https.HttpsError('internal', 'Réponse vide de MedGemma');
     }
-
-    return { text };
-  } catch (error) {
+      
+      return { text };
+    } catch (error) {
     console.error('=== ERREUR MEDGEMMA ===');
     console.error('Message:', error.message);
     console.error('Status:', error.response?.status);
@@ -206,12 +206,12 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
       endpoint: 'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions'
     });
     
-    throw new functions.https.HttpsError(
-      'internal', 
+      throw new functions.https.HttpsError(
+        'internal', 
       'Erreur lors de l\'analyse d\'image MedGemma: ' + (error.response?.data?.error?.message || error.message)
-    );
-  }
-});
+      );
+    }
+  });
 
 // Compatibilité - redirection vers MedGemma
 exports.analyzeImageWithO3 = functions.https.onCall(async (data, context) => {
@@ -221,121 +221,121 @@ exports.analyzeImageWithO3 = functions.https.onCall(async (data, context) => {
 
 // Fonction pour analyser avec GPT-4o-mini
 exports.analyzePerplexityWithGPT4Mini = functions.https.onCall(async (data, context) => {
-  try {
-    const { perplexityData } = data;
-    
-    if (!perplexityData) {
-      throw new functions.https.HttpsError('invalid-argument', 'Données Perplexity requises');
-    }
+    try {
+      const { perplexityData } = data;
+      
+      if (!perplexityData) {
+        throw new functions.https.HttpsError('invalid-argument', 'Données Perplexity requises');
+      }
 
-    if (!OPENAI_API_KEY) {
+      if (!OPENAI_API_KEY) {
       throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
-    }
+      }
 
     const prompt = `Analysez ces données provenant de Perplexity et fournissez un résumé structuré:\n\n${perplexityData}`;
 
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 2000,
         temperature: 0.1
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
         }
-      }
-    );
+      );
 
     const text = response.data.choices[0].message.content;
-    return { text };
-  } catch (error) {
+      return { text };
+    } catch (error) {
     console.error('Erreur Perplexity:', error.response?.data || error.message);
-    throw new functions.https.HttpsError(
-      'internal', 
-      'Erreur lors de l\'analyse Perplexity: ' + (error.response?.data?.error?.message || error.message)
-    );
-  }
-});
+      throw new functions.https.HttpsError(
+        'internal', 
+        'Erreur lors de l\'analyse Perplexity: ' + (error.response?.data?.error?.message || error.message)
+      );
+    }
+  });
 
 // Fonction pour analyser les références avec GPT-4o
 exports.analyzeReferencesWithGPT4 = functions.https.onCall(async (data, context) => {
-  try {
-    const { prompt } = data;
-    
-    if (!prompt) {
-      throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
-    }
-
-    if (!OPENAI_API_KEY) {
-      throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
-    }
-
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 4000,
-        temperature: 0.3
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
+    try {
+      const { prompt } = data;
+      
+      if (!prompt) {
+        throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
       }
-    );
 
-    const text = response.data.choices?.[0]?.message?.content || '';
-    return { text };
-  } catch (error) {
+      if (!OPENAI_API_KEY) {
+      throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
+      }
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+          max_tokens: 4000,
+          temperature: 0.3
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const text = response.data.choices?.[0]?.message?.content || '';
+      return { text };
+    } catch (error) {
     console.error('Erreur GPT-4o:', error.response?.data || error.message);
-    throw new functions.https.HttpsError(
-      'internal', 
-      'Erreur lors de l\'analyse GPT-4o: ' + (error.response?.data?.error?.message || error.message)
-    );
-  }
-});
+      throw new functions.https.HttpsError(
+        'internal', 
+        'Erreur lors de l\'analyse GPT-4o: ' + (error.response?.data?.error?.message || error.message)
+      );
+    }
+  });
 
 // Fonction pour transcrire l'audio
 exports.transcribeAudio = functions.https.onCall(async (data, context) => {
-  try {
-    const { audioBase64 } = data;
-    
-    if (!audioBase64) {
-      throw new functions.https.HttpsError('invalid-argument', 'Audio requis');
-    }
+    try {
+      const { audioBase64 } = data;
+      
+      if (!audioBase64) {
+        throw new functions.https.HttpsError('invalid-argument', 'Audio requis');
+      }
 
-    if (!OPENAI_API_KEY) {
+      if (!OPENAI_API_KEY) {
       throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
-    }
+      }
 
-    const FormData = require('form-data');
-    const formData = new FormData();
-    
-    const base64Data = audioBase64.split(',')[1] || audioBase64;
-    const audioBuffer = Buffer.from(base64Data, 'base64');
-    
-    formData.append('file', audioBuffer, {
-      filename: 'audio.webm',
-      contentType: 'audio/webm'
-    });
-    
-    formData.append('model', 'whisper-1');
+      const FormData = require('form-data');
+      const formData = new FormData();
+      
+      const base64Data = audioBase64.split(',')[1] || audioBase64;
+      const audioBuffer = Buffer.from(base64Data, 'base64');
+      
+      formData.append('file', audioBuffer, {
+        filename: 'audio.webm',
+        contentType: 'audio/webm'
+      });
+      
+      formData.append('model', 'whisper-1');
     formData.append('language', 'fr');
-    
-    const response = await axios.post(
-      'https://api.openai.com/v1/audio/transcriptions',
-      formData,
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          ...formData.getHeaders()
-        },
+      
+      const response = await axios.post(
+        'https://api.openai.com/v1/audio/transcriptions',
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            ...formData.getHeaders()
+          },
         timeout: 120000
       }
     );
