@@ -1357,12 +1357,12 @@ Exemple de format attendu :
               Retour
             </Button>
           </Link>
-                    <Link href="/history">
+              <Link href="/history">
             <Button variant="outline" size="sm" disabled={!user}>
-              <History className="mr-2 h-4 w-4" />
-              Historique
-            </Button>
-          </Link>
+                  <History className="mr-2 h-4 w-4" />
+                  Historique
+                </Button>
+              </Link>
         </div>
 
         {/* Bannière orange MODE DÉMO */}

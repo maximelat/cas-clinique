@@ -2,12 +2,14 @@
   "functions": {
     "source": ".",
     "runtime": "nodejs18",
-    "region": "us-central1",
+    "region": "europe-west1",
     "ignore": [
       "node_modules",
       ".git",
       "**/*.log",
       ".runtimeconfig.json"
-    ]
+    ],
+    "predeploy": [],
+    "postdeploy": []
   }
 } 
