@@ -527,4 +527,88 @@ exports.transcribeAudio = functions
         'Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message)
       );
     }
+  });
+
+// Fonction pour extraire les données structurées d'un cas clinique
+exports.extractStructuredData = functions
+  .region('europe-west1')
+  .runWith({ timeoutSeconds: 300 })
+  .https.onCall(async (data, context) => {
+    try {
+      const { caseText } = data;
+      
+      if (!caseText) {
+        throw new functions.https.HttpsError('invalid-argument', 'Texte du cas clinique requis');
+      }
+
+      if (!OPENAI_API_KEY) {
+        console.error('Clé OpenAI non configurée');
+        throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
+      }
+
+      const prompt = `Analyse ce cas clinique et extrais les informations structurées suivantes. Si une information n'est pas présente, indique "Non précisé".
+
+CAS CLINIQUE:
+${caseText}
+
+INSTRUCTIONS:
+Extrais et structure les informations selon ces catégories:
+
+1. CONTEXTE PATIENT: Âge, sexe, profession, mode de vie
+2. ANAMNÈSE: Symptômes principaux, chronologie, évolution
+3. ANTÉCÉDENTS: Médicaux, chirurgicaux, familiaux, traitements
+4. EXAMEN CLINIQUE: Constantes, examen physique par systèmes
+5. EXAMENS COMPLÉMENTAIRES: Biologie, imagerie, ECG, etc.
+
+Format de réponse OBLIGATOIRE:
+CONTEXTE_PATIENT: [contenu]
+ANAMNESE: [contenu]
+ANTECEDENTS: [contenu]
+EXAMEN_CLINIQUE: [contenu]
+EXAMENS_COMPLEMENTAIRES: [contenu]`;
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o-mini-2024-07-18',
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: 2000,
+          temperature: 0.3
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const text = response.data.choices?.[0]?.message?.content || '';
+      
+      // Parser la réponse
+      const extractValue = (key) => {
+        const regex = new RegExp(`${key}:\\s*(.+?)(?=\\n[A-Z_]+:|$)`, 's');
+        const match = text.match(regex);
+        return match ? match[1].trim() : 'Non précisé';
+      };
+
+      return {
+        contextePatient: extractValue('CONTEXTE_PATIENT'),
+        anamnese: extractValue('ANAMNESE'),
+        antecedents: extractValue('ANTECEDENTS'),
+        examenClinique: extractValue('EXAMEN_CLINIQUE'),
+        examensComplementaires: extractValue('EXAMENS_COMPLEMENTAIRES')
+      };
+    } catch (error) {
+      console.error('Erreur extraction données structurées:', error.response?.data || error.message);
+      throw new functions.https.HttpsError(
+        'internal', 
+        'Erreur lors de l\'extraction des données: ' + (error.response?.data?.error?.message || error.message)
+      );
+    }
   }); 

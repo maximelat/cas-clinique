@@ -442,12 +442,12 @@ function DemoPageContent() {
       }
       
       setProgressMessage("Analyse en cours...")
-      
-      if (isDemoMode) {
+    
+    if (isDemoMode) {
         // Simulation pour le mode démo
-        setTimeout(() => {
-          setIsAnalyzing(false)
-          setShowResults(true)
+      setTimeout(() => {
+        setIsAnalyzing(false)
+        setShowResults(true)
           setAnalysisData({
             isDemo: true,
             sections: Object.entries(demoSections).map(([key, content]) => ({ type: key, content })),
@@ -455,7 +455,7 @@ function DemoPageContent() {
           })
           toast.success("Analyse terminée !")
         }, 2000)
-      } else {
+    } else {
         // Analyse réelle avec l'API
         try {
           // Sauvegarder le cas initial
@@ -475,11 +475,11 @@ function DemoPageContent() {
           } else {
             // Analyse approfondie avec Perplexity + o3
             result = await aiService.analyzeClinicalCase(
-              textContent,
-              (message) => setProgressMessage(message),
-              (section, index, total) => {
+          textContent,
+          (message) => setProgressMessage(message),
+          (section, index, total) => {
                 console.log(`Section ${index + 1}/${total} reçue:`, section.type)
-                setCurrentSections(prev => [...prev, section])
+            setCurrentSections(prev => [...prev, section])
               },
               base64Images.length > 0 ? base64Images : undefined
             )
@@ -491,12 +491,12 @@ function DemoPageContent() {
               console.log('Tentative de sauvegarde dans l\'historique...')
               const analysisId = `analysis_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
               const historyEntry = {
-                id: analysisId,
+          id: analysisId,
                 userId: user.uid,
                 title: generateCaseTitle(textContent),
                 date: new Date(),
-                caseText: textContent,
-                sections: result.sections,
+          caseText: textContent,
+          sections: result.sections,
                 references: result.references || [],
                 perplexityReport: result.perplexityReport || null,
                 requestChain: result.requestChain || [],
@@ -532,7 +532,7 @@ function DemoPageContent() {
               
               toast.success('Analyse sauvegardée dans votre historique')
             } catch (saveError: any) {
-              console.error('Erreur lors de la sauvegarde:', saveError)
+          console.error('Erreur lors de la sauvegarde:', saveError)
               toast.error(`Erreur de sauvegarde: ${saveError.message || 'Erreur inconnue'}`)
             }
           } else {
@@ -559,10 +559,10 @@ function DemoPageContent() {
           setShowResults(true)
           setRequestChain(result.requestChain || [])
           toast.success(isSimpleAnalysis ? "Analyse simple terminée !" : "Analyse approfondie terminée !")
-        } catch (error: any) {
+      } catch (error: any) {
           console.error("Erreur lors de l'analyse:", error)
-          toast.error(error.message || "Erreur lors de l'analyse")
-          setIsAnalyzing(false)
+        toast.error(error.message || "Erreur lors de l'analyse")
+        setIsAnalyzing(false)
         }
       }
     } catch (error) {
@@ -1360,12 +1360,12 @@ Exemple de format attendu :
           </Link>
           <div className="flex items-center gap-2">
             {!isDemoMode && <MedGemmaConfig />}
-            <Link href="/history">
+              <Link href="/history">
               <Button variant="outline" size="sm" disabled={!user}>
-                <History className="mr-2 h-4 w-4" />
-                Historique
-              </Button>
-            </Link>
+                  <History className="mr-2 h-4 w-4" />
+                  Historique
+                </Button>
+              </Link>
           </div>
         </div>
 
@@ -2493,7 +2493,7 @@ Exemple de format attendu :
             </Accordion>
 
                 {/* Section Maladies Rares - Intégrée dans l'accordion principal */}
-                {!analysisData?.isDemo && analysisData?.sections && (
+            {!analysisData?.isDemo && analysisData?.sections && (
                   <Accordion type="multiple" className="mt-4">
                     <AccordionItem value="rare-diseases" className="border rounded-lg">
                       <AccordionTrigger className="px-6 hover:no-underline bg-gradient-to-r from-purple-50 to-pink-50">
@@ -2509,23 +2509,23 @@ Exemple de format attendu :
                               Lancez une recherche avancée pour identifier des maladies rares 
                               potentiellement en lien avec le cas clinique
                             </p>
-                            <Button
+                <Button
                               onClick={searchForRareDiseases}
                               disabled={isSearchingRareDisease || !user || !userCredits || (userCredits.credits ?? 0) <= 0}
                               className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                            >
-                              {isSearchingRareDisease ? (
-                                <>
+                >
+                  {isSearchingRareDisease ? (
+                    <>
                                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  Recherche en cours...
-                                </>
-                              ) : (
-                                <>
+                      Recherche en cours...
+                    </>
+                  ) : (
+                    <>
                                   <Search className="mr-2 h-4 w-4" />
                                   Lancer la recherche (1 crédit)
-                                </>
-                              )}
-                            </Button>
+                    </>
+                  )}
+                </Button>
                             {(!user || !userCredits || (userCredits.credits ?? 0) <= 0) && (
                               <p className="text-sm text-red-600 mt-2">
                                 {!user ? "Connexion requise" : "Crédits insuffisants"}
@@ -2556,7 +2556,7 @@ Exemple de format attendu :
                                   <div className="text-center">
                                     <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
                                       <Globe className="w-6 h-6 text-purple-600 animate-pulse" />
-                                    </div>
+              </div>
                                     <p className="text-xs text-gray-600">Orphanet</p>
                                   </div>
                                   <div className="text-center">
@@ -2604,40 +2604,40 @@ Exemple de format attendu :
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-6">
                       <ul className="space-y-4 mt-4">
-                        {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
+                      {(analysisData?.isDemo ? demoReferences : analysisData?.references || []).map((ref: any) => (
                           <li key={ref.label} id={`ref-${ref.label}`} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded-r">
-                            <div className="flex items-start gap-3">
-                              <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
-                              <div className="flex-1">
-                                <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
-                                {ref.authors && (
-                                  <p className="text-sm text-gray-700 mb-1">
-                                    <span className="font-medium">Auteurs :</span> {ref.authors}
-                                  </p>
-                                )}
-                                {ref.journal && (
+                          <div className="flex items-start gap-3">
+                            <span className="text-blue-600 font-bold text-lg min-w-[30px]">[{ref.label}]</span>
+                            <div className="flex-1">
+                              <p className="font-semibold text-base text-gray-900 mb-1">{ref.title}</p>
+                              {ref.authors && (
+                                <p className="text-sm text-gray-700 mb-1">
+                                  <span className="font-medium">Auteurs :</span> {ref.authors}
+                                </p>
+                              )}
+                              {ref.journal && (
                                   <p className="text-sm text-gray-700 mb-1">
                                     <span className="font-medium">Journal :</span> {ref.journal}
                                     {ref.year && ` (${ref.year})`}
-                                  </p>
-                                )}
+                                </p>
+                              )}
                                 {ref.date && !ref.year && (
                                   <p className="text-sm text-gray-700 mb-1">
                                     <span className="font-medium">Date :</span> {new Date(ref.date).toLocaleDateString('fr-FR')}
                                   </p>
                                 )}
                                 {ref.url && (
-                                <a
-                                  href={ref.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
-                                >
-                                  Consulter la source
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
+                              <a
+                                href={ref.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                              >
+                                Consulter la source
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
                                 )}
                               </div>
                             </div>
