@@ -103,6 +103,31 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
       ? "Analysez cette image dermatologique en détail. Décrivez les lésions observées, les caractéristiques cliniques importantes, et proposez un diagnostic différentiel avec justification."
       : "Analysez cette image médicale en détail. Décrivez les éléments pathologiques visibles, les structures anatomiques concernées, et proposez une interprétation clinique.";
 
+    // Détecter le format de l'image depuis les premiers bytes en base64
+    let imageFormat = 'jpeg'; // par défaut
+    try {
+      const buffer = Buffer.from(imageBase64.substring(0, 8), 'base64');
+      const header = buffer.toString('hex');
+      
+      if (header.startsWith('89504e47')) {
+        imageFormat = 'png';
+        console.log('Format détecté: PNG');
+      } else if (header.startsWith('ffd8ff')) {
+        imageFormat = 'jpeg';
+        console.log('Format détecté: JPEG');
+      } else if (header.startsWith('47494638')) {
+        imageFormat = 'gif';
+        console.log('Format détecté: GIF');
+      } else if (header.startsWith('424d')) {
+        imageFormat = 'bmp';
+        console.log('Format détecté: BMP');
+      } else {
+        console.log('Format non reconnu, utilisation de JPEG par défaut. Header:', header);
+      }
+    } catch (e) {
+      console.log('Erreur détection format, utilisation de JPEG par défaut:', e.message);
+    }
+
     // Utiliser l'endpoint HuggingFace spécifique pour MedGemma
     const response = await axios.post(
       'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions',
@@ -115,7 +140,7 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
               {
                 type: 'image_url',
                 image_url: {
-                  url: `data:image/jpeg;base64,${imageBase64}`
+                  url: `data:image/${imageFormat};base64,${imageBase64}`
                 }
               },
               {

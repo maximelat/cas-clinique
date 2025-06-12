@@ -166,13 +166,6 @@ Si le format n'est toujours pas satisfaisant, il faudrait me préciser exactemen
 
 tu as vu dans l'image que jet'ai envoyé juste avant ? le contenu semble avoir été coupé et il n'y a pas tourtes les informations disponibles 
 
-
-TODO : 
-TODO
-TODO
-le bouton historique sur la page du premier résultat mène à accueil au lieu de historiuqer
-
-
 1 je pense que dans un résultat on devrait renommer Version pour la gestion des et non pas nommer ça historique https://latry.consulting/projet/clinical-case-analyzer/history/
 
 
@@ -180,6 +173,14 @@ le bouton historique sur la page du premier résultat mène à accueil au lieu d
 
 
 ça dit analyse non trouvée, car je pense qu'on doit garder ?id=cas et non is=analysis pour revenir sur une analyse pasée 
+
+TODO : 
+TODO
+TODO
+le bouton historique sur la page du premier résultat mène à accueil au lieu de historiuqer
+
+
+
 
 ___
 
