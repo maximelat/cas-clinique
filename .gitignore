@@ -1,4 +1,10 @@
 node_modules
 .next
+.DS_Store
 out
 .env.local
+.env
+firebase-debug.log
+firebase-debug*.log
+test-*.js
+*.log
