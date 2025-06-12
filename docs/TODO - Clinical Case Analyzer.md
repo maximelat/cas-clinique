@@ -225,7 +225,9 @@ L'analyse simple devrait maintenant être bien structurée
   - Transcription automatique dans les champs du formulaire
   - Détection des entités médicales (symptômes, médicaments)
 
-**⚠️ Question à clarifier** : Google Studio API fait référence à Speech-to-Text ou une autre API spécifique ? oui saif si open ai transcriber est aussi performant 
+api code à mettre dans firebasefunction : AIzaSyAtV6E_LrLrZln2BfcR8ngomMzhywDvSf_Y
+
+
 
 ---
 

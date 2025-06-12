@@ -561,7 +561,7 @@ exports.enrichReferencesWithWebSearch = functions.https.onCall(async (data, cont
       throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
     }
 
-    console.log(`=== ENRICHISSEMENT WEB SEARCH ===`);
+    console.log(`=== ENRICHISSEMENT WEB SEARCH (AUTEURS & JOURNAL) ===`);
     console.log(`Nombre de références à enrichir: ${references.length}`);
     
     // Traiter par batches de 3 pour éviter les timeouts
@@ -576,37 +576,33 @@ exports.enrichReferencesWithWebSearch = functions.https.onCall(async (data, cont
       for (const ref of batch) {
         try {
           const startTime = Date.now();
-          console.log(`\n--- Analyse référence ${ref.label}: ${ref.title?.substring(0, 50)}...`);
+          console.log(`\n--- Enrichissement référence ${ref.label}: ${ref.title?.substring(0, 50)}...`);
           
-          const prompt = `Visite cette URL académique et extrais les métadonnées RÉELLES :
+          const prompt = `Visite cette URL académique et extrais UNIQUEMENT les auteurs et le journal :
 
 URL: ${ref.url}
-Titre actuel: ${ref.title || 'Non disponible'}
+Titre de l'article: ${ref.title}
 
-INSTRUCTIONS STRICTES:
-1. Utilise l'outil web search pour visiter l'URL
-2. Extrais UNIQUEMENT les informations VISIBLES sur la page
-3. Ne JAMAIS inventer d'informations
-4. Si une information n'est pas trouvée, marque "Non disponible"
+INSTRUCTIONS:
+1. Utilise l'outil web_search pour visiter l'URL
+2. Extrais UNIQUEMENT :
+   - Les noms des auteurs (liste complète)
+   - Le nom du journal/revue de publication
+3. Si une information n'est pas trouvée, indique "Non disponible"
+4. Sois TRÈS CONCIS dans ta réponse
 
-Format JSON obligatoire:
-{
-  "title": "Titre exact de l'article (garder le titre Perplexity si correct)",
-  "authors": "Auteur(s) exact(s) ou Non disponible", 
-  "journal": "Nom exact du journal ou Non disponible",
-  "year": "Année de publication ou null",
-  "doi": "DOI si disponible ou null",
-  "abstract": "Résumé de 2-3 lignes du contenu pertinent"
-}`;
+Format de réponse souhaité:
+Auteurs: [Liste des auteurs]
+Journal: [Nom du journal]`;
 
           const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
             {
-              model: 'gpt-4o-mini-search-preview-2025-03-11', // Modèle correct avec web search
+              model: 'gpt-4o-mini-search-preview-2025-03-11',
               messages: [
                 {
                   role: 'system',
-                  content: 'Tu es un assistant de recherche académique. Tu DOIS utiliser l\'outil web_search pour visiter chaque URL fournie et extraire les métadonnées réelles. NE PAS inventer d\'informations.'
+                  content: 'Tu es un assistant qui extrait les métadonnées d\'articles académiques. Utilise web_search pour visiter l\'URL et extraire UNIQUEMENT les auteurs et le journal. Sois très concis.'
                 },
                 { 
                   role: 'user', 
@@ -619,8 +615,8 @@ Format JSON obligatoire:
                   enable_retrieval: true
                 }
               }],
-              tool_choice: 'required', // Forcer l'utilisation de web search
-              max_tokens: 2000,
+              tool_choice: 'required',
+              max_tokens: 500, // Réduit car on veut juste auteurs et journal
               temperature: 0.1
             },
             {
@@ -628,82 +624,57 @@ Format JSON obligatoire:
                 'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json'
               },
-              timeout: 30000 // 30 secondes de timeout
+              timeout: 20000 // 20 secondes
             }
           );
 
           const responseTime = Date.now() - startTime;
           console.log(`Temps de réponse: ${responseTime}ms`);
           
-          // Extraire le contenu de la réponse
-          let enrichedData = {
-            title: ref.title, // Garder le titre Perplexity par défaut
-            authors: 'Non disponible',
-            journal: 'Non disponible',
-            year: ref.year,
-            doi: null,
-            abstract: ''
-          };
-          
-          // Vérifier si web search a été utilisé
+          // Extraire les données de la réponse
           const message = response.data.choices?.[0]?.message;
-          if (message?.tool_calls) {
-            console.log(`Web search utilisé pour ${ref.url}`);
-            
-            // Essayer d'extraire les données du contenu
+          let authors = ref.authors || 'Non disponible';
+          let journal = ref.journal || 'Non disponible';
+          
+          if (message?.content) {
             const content = message.content;
-            if (content) {
-              try {
-                // Essayer de parser comme JSON
-                const parsed = JSON.parse(content);
-                enrichedData = { ...enrichedData, ...parsed };
-              } catch (e) {
-                // Si pas du JSON, extraire les infos du texte
-                console.log('Extraction depuis texte brut');
-                
-                // Chercher les auteurs
-                const authorsMatch = content.match(/[Aa]uthor[s]?:\s*([^\n]+)/);
-                if (authorsMatch) enrichedData.authors = authorsMatch[1].trim();
-                
-                // Chercher le journal
-                const journalMatch = content.match(/[Jj]ournal:\s*([^\n]+)/);
-                if (journalMatch) enrichedData.journal = journalMatch[1].trim();
-                
-                // Chercher l'année
-                const yearMatch = content.match(/[Yy]ear:\s*(\d{4})/);
-                if (yearMatch) enrichedData.year = parseInt(yearMatch[1]);
-              }
+            
+            // Extraire les auteurs
+            const authorsMatch = content.match(/[Aa]uteur[s]?\s*:\s*([^\n]+)/);
+            if (authorsMatch && authorsMatch[1] && authorsMatch[1] !== 'Non disponible') {
+              authors = authorsMatch[1].trim();
             }
-          } else {
-            console.log(`Web search NON utilisé pour ${ref.url} - données par défaut`);
+            
+            // Extraire le journal
+            const journalMatch = content.match(/[Jj]ournal\s*:\s*([^\n]+)/);
+            if (journalMatch && journalMatch[1] && journalMatch[1] !== 'Non disponible') {
+              journal = journalMatch[1].trim();
+            }
+            
+            console.log(`✅ Métadonnées extraites:`);
+            console.log(`   - Auteurs: ${authors}`);
+            console.log(`   - Journal: ${journal}`);
           }
           
-          // Mettre à jour la référence avec les données enrichies
+          // Mettre à jour la référence
           const refIndex = enrichedRefs.findIndex(r => r.url === ref.url);
           if (refIndex !== -1) {
             enrichedRefs[refIndex] = {
               ...enrichedRefs[refIndex],
-              title: enrichedData.title || ref.title, // Garder le titre Perplexity si pas mieux
-              authors: enrichedData.authors || 'Non disponible',
-              journal: enrichedData.journal || enrichedRefs[refIndex].journal || 'Non disponible', 
-              year: enrichedData.year || enrichedRefs[refIndex].year || null,
-              doi: enrichedData.doi || null,
-              abstract: enrichedData.abstract || '',
+              authors: authors,
+              journal: journal,
               webSearchEnriched: true
             };
           }
           
-          // Log détaillé du résultat web search
-          const webSearchLog = {
+          webSearchLogs.push({
             referenceLabel: ref.label,
             url: ref.url,
-            originalTitle: ref.title,
-            webSearchTime: responseTime,
-            webSearchResult: enrichedData,
-            enrichmentSuccess: true
-          };
-          
-          webSearchLogs.push(webSearchLog);
+            authors: authors,
+            journal: journal,
+            enrichmentSuccess: true,
+            responseTime: responseTime
+          });
           
         } catch (refError) {
           console.error(`❌ Erreur enrichissement ref ${ref.url}:`, refError.message);
@@ -727,7 +698,7 @@ Format JSON obligatoire:
     
     return { 
       references: enrichedRefs,
-      webSearchLogs: webSearchLogs // Retourner les logs pour le debug
+      webSearchLogs: webSearchLogs
     };
     
   } catch (error) {
@@ -739,108 +710,149 @@ Format JSON obligatoire:
   }
 });
 
-// Fonction pour ajouter les citations aux sections
-exports.addCitationsToSections = functions.https.onCall(async (data, context) => {
-  try {
-    const { sections, references, originalPerplexityText } = data;
-    
-    if (!sections || !Array.isArray(sections)) {
-      throw new functions.https.HttpsError('invalid-argument', 'Sections requises');
-    }
-
-    if (!OPENAI_API_KEY) {
-      throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
-    }
-
-    console.log('=== AJOUT INTELLIGENT DES CITATIONS ===');
-    console.log(`Sections à traiter: ${sections.length}`);
-    console.log(`Références disponibles: ${references.length}`);
-    
-    const prompt = `Tu es un expert médical. Ajoute intelligemment les références [1], [2], etc. dans ces sections analysées.
-
-SECTIONS ANALYSÉES:
-${sections.map((s, i) => `## ${s.type}:\n${s.content}`).join('\n\n')}
-
-RÉFÉRENCES DISPONIBLES:
-${references.map(ref => `[${ref.label}] "${ref.title}" - ${ref.journal || 'Journal non spécifié'} (${ref.year || 'Année non spécifiée'})`).join('\n')}
-
-INSTRUCTIONS:
-1. Pour chaque affirmation médicale dans les sections, ajoute la référence [X] la plus pertinente
-2. Ajoute les références UNIQUEMENT là où le contenu correspond vraiment à la source
-3. Ne force PAS les références si elles ne correspondent pas
-4. Préserve exactement la structure des sections avec ## TYPE:
-5. Retourne les sections modifiées en JSON
-
-Format de réponse OBLIGATOIRE:
-{
-  "sections": [
-    {
-      "type": "CLINICAL_CONTEXT",
-      "content": "Contenu avec références [1] ajoutées..."
-    }
-  ],
-  "citationPlacements": [
-    {
-      "sectionType": "CLINICAL_CONTEXT",
-      "referenceLabel": "1",
-      "placementReason": "Raison du placement"
-    }
-  ]
-}`;
-
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-4o-mini-search-preview-2025-03-11', // Utiliser le modèle avec web search
-        messages: [
-          {
-            role: 'system',
-            content: 'Tu es un assistant médical expert en placement de citations. Analyse le contenu et place les références de manière pertinente.'
-          },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 6000,
-        temperature: 0.1,
-        response_format: { type: "json_object" }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const responseText = response.data.choices?.[0]?.message?.content || '{}';
-    
+// Fonction pour l'analyse vocale longue avec Google Gemini
+exports.analyzeLongAudioWithGemini = functions
+  .runWith({
+    timeoutSeconds: 540, // 9 minutes
+    memory: '2GB'
+  })
+  .https.onCall(async (data, context) => {
     try {
-      const result = JSON.parse(responseText);
-      const updatedSections = result.sections || sections;
-      const citationPlacements = result.citationPlacements || [];
+      const { audioBase64, audioType = 'audio/webm', analysisType = 'transcription' } = data;
       
-      console.log(`\n=== RÉSUMÉ PLACEMENT CITATIONS ===`);
-      console.log(`Citations ajoutées à ${updatedSections.length} sections`);
-      console.log(`Placements détaillés: ${citationPlacements.length}`);
+      if (!audioBase64) {
+        throw new functions.https.HttpsError('invalid-argument', 'Audio base64 requis');
+      }
+
+      // Clé API Google (à stocker dans les variables d'environnement)
+      const GOOGLE_API_KEY = functions.config().google?.api_key || 'AIzaSyAtV6E_LrLrZln2BfcR8ngomMzhywDvSf_Y';
       
-      citationPlacements.forEach(placement => {
-        console.log(`- [${placement.referenceLabel}] dans ${placement.sectionType}: ${placement.placementReason}`);
-      });
+      if (!GOOGLE_API_KEY) {
+        throw new functions.https.HttpsError('failed-precondition', 'Clé API Google non configurée');
+      }
+
+      console.log('=== ANALYSE AUDIO LONGUE AVEC GEMINI ===');
+      console.log(`Type audio: ${audioType}`);
+      console.log(`Type d'analyse: ${analysisType}`);
       
-      return { 
-        sections: updatedSections,
-        citationPlacements: citationPlacements // Retourner les détails de placement
+      // Extraire les données base64 (enlever le préfixe data:audio/...;base64,)
+      const base64Data = audioBase64.includes(',') 
+        ? audioBase64.split(',')[1] 
+        : audioBase64;
+      
+      // Calculer la taille approximative
+      const audioSizeBytes = Buffer.from(base64Data, 'base64').length;
+      const audioSizeMB = (audioSizeBytes / (1024 * 1024)).toFixed(2);
+      console.log(`Taille audio: ${audioSizeMB} MB`);
+      
+      // Vérifier la taille (max 20MB pour inline)
+      if (audioSizeBytes > 20 * 1024 * 1024) {
+        console.log('Audio trop volumineux, utilisation de l\'API Files');
+        
+        // TODO: Implémenter l'upload via Files API si nécessaire
+        throw new functions.https.HttpsError(
+          'invalid-argument', 
+          'Audio trop volumineux (>20MB). Veuillez utiliser un enregistrement plus court.'
+        );
+      }
+      
+      // Préparer le prompt selon le type d'analyse
+      let prompt = '';
+      switch (analysisType) {
+        case 'transcription':
+          prompt = 'Génère une transcription complète et précise de cet enregistrement audio en français.';
+          break;
+        case 'medical_consultation':
+          prompt = `Analyse cet enregistrement de consultation médicale et fournis:
+1. Une transcription complète
+2. Un résumé structuré avec:
+   - Motif de consultation
+   - Symptômes principaux
+   - Antécédents mentionnés
+   - Examen clinique décrit
+   - Hypothèses diagnostiques évoquées
+   - Plan de prise en charge proposé`;
+          break;
+        case 'patient_dictation':
+          prompt = `Transcris cette dictée du patient et extrais:
+1. La transcription complète
+2. Les informations médicales clés:
+   - Symptômes et leur chronologie
+   - Facteurs déclenchants/aggravants
+   - Traitements essayés
+   - Impact sur la vie quotidienne`;
+          break;
+        default:
+          prompt = 'Transcris et analyse cet enregistrement audio.';
+      }
+      
+      console.log('Appel à Gemini 2.0 Flash...');
+      
+      // Appeler l'API Gemini
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+        {
+          contents: [{
+            parts: [
+              {
+                text: prompt
+              },
+              {
+                inline_data: {
+                  mime_type: audioType,
+                  data: base64Data
+                }
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 8192
+          }
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 300000 // 5 minutes
+        }
+      );
+      
+      console.log('Réponse Gemini reçue');
+      
+      // Extraire le texte de la réponse
+      const generatedText = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      if (!generatedText) {
+        throw new functions.https.HttpsError('internal', 'Aucune transcription générée');
+      }
+      
+      console.log(`Transcription générée: ${generatedText.length} caractères`);
+      
+      // Retourner le résultat structuré
+      return {
+        transcription: generatedText,
+        metadata: {
+          audioSizeMB: audioSizeMB,
+          analysisType: analysisType,
+          model: 'gemini-2.0-flash',
+          timestamp: new Date().toISOString()
+        }
       };
       
-    } catch (parseError) {
-      console.error('Erreur parsing citations:', parseError);
-      return { sections }; // Retourner les sections originales
+    } catch (error) {
+      console.error('Erreur Gemini:', error.response?.data || error.message);
+      
+      if (error.response?.status === 400) {
+        throw new functions.https.HttpsError(
+          'invalid-argument', 
+          'Format audio non supporté ou données corrompues'
+        );
+      }
+      
+      throw new functions.https.HttpsError(
+        'internal', 
+        'Erreur lors de l\'analyse audio: ' + error.message
+      );
     }
-    
-  } catch (error) {
-    console.error('Erreur ajout citations:', error.response?.data || error.message);
-    throw new functions.https.HttpsError(
-      'internal', 
-      'Erreur lors de l\'ajout des citations: ' + error.message
-    );
-  }
-}); 
+  }); 

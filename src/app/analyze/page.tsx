@@ -213,6 +213,10 @@ function DemoPageContent() {
   const [editedPreviousInfo, setEditedPreviousInfo] = useState<{ [key: string]: string }>({})
   const [editingInitialCase, setEditingInitialCase] = useState(false)
   const [editedInitialCase, setEditedInitialCase] = useState("")
+  const [selectedPromptType, setSelectedPromptType] = useState<string>('general')
+  const [recordingDuration, setRecordingDuration] = useState(0)
+  const [isLongRecording, setIsLongRecording] = useState(false)
+  const [audioAnalysisType, setAudioAnalysisType] = useState<'transcription' | 'medical_consultation' | 'patient_dictation'>('transcription')
   
   // Hooks
   const { user, userCredits, signInWithGoogle, refreshCredits } = useAuth()
@@ -238,6 +242,28 @@ function DemoPageContent() {
   useEffect(() => {
     setIsAudioSupported(AIClientService.isAudioRecordingSupported())
   }, [])
+
+  // Timer pour suivre la durée d'enregistrement
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setRecordingDuration(prev => {
+          const newDuration = prev + 1;
+          // Considérer comme enregistrement long après 30 secondes
+          if (newDuration >= 30 && !isLongRecording) {
+            setIsLongRecording(true);
+            toast.info("Enregistrement long détecté - Gemini sera utilisé pour la transcription");
+          }
+          return newDuration;
+        });
+      }, 1000);
+    } else {
+      setRecordingDuration(0);
+      setIsLongRecording(false);
+    }
+    return () => clearInterval(interval);
+  }, [isRecording, isLongRecording])
 
   useEffect(() => {
     const mode = searchParams.get('mode')
@@ -361,12 +387,21 @@ function DemoPageContent() {
           return
         }
 
-        toast.info("Transcription en cours...")
+        toast.info(isLongRecording ? "Transcription longue avec Gemini en cours..." : "Transcription en cours...")
         
         try {
-          const transcription = await aiService.transcribeAudio(audioBlob)
+          let transcription: string;
+          
+          if (isLongRecording) {
+            // Utiliser Gemini pour les enregistrements longs
+            transcription = await aiService.transcribeLongAudioWithGemini(audioBlob, audioAnalysisType)
+          } else {
+            // Utiliser Whisper pour les enregistrements courts
+            transcription = await aiService.transcribeAudio(audioBlob)
+          }
+          
           setTextContent(transcription)
-          toast.success("Transcription terminée")
+          toast.success(isLongRecording ? "Transcription longue terminée avec Gemini" : "Transcription terminée")
         } catch (error: any) {
           toast.error(error.message || "Erreur lors de la transcription")
           console.error("Erreur de transcription:", error)
@@ -476,13 +511,13 @@ function DemoPageContent() {
           } else {
             // Analyse approfondie avec Perplexity + o3
             result = await aiService.analyzeClinicalCase(
-          textContent,
-          (message) => setProgressMessage(message),
-          (section, index, total) => {
-                console.log(`Section ${index + 1}/${total} reçue:`, section.type)
-            setCurrentSections(prev => [...prev, section])
-              },
-              base64Images.length > 0 ? base64Images : undefined
+              uploadedImages.map(img => img.file), // Les fichiers images
+              textContent, // Le contexte clinique
+              selectedPromptType, // Le type de prompt sélectionné
+              (section) => {
+                console.log(`Section reçue:`, section.type)
+                setCurrentSections(prev => [...prev, section])
+              }
             )
           }
 
@@ -499,8 +534,8 @@ function DemoPageContent() {
           caseText: textContent,
           sections: result.sections,
                 references: result.references || [],
-                perplexityReport: result.perplexityReport || null,
-                requestChain: result.requestChain || [],
+                perplexityReport: result.perplexityAnalysis || null,
+                requestChain: result.metadata?.requestChain || [],
                 images: uploadedImages.length > 0 ? uploadedImages.map(img => ({
                   name: img.name,
                   type: img.type,
@@ -525,10 +560,11 @@ function DemoPageContent() {
                 isDemo: false,
                 sections: result.sections,
                 references: result.references || [],
-                perplexityReport: result.perplexityReport || null,
-                requestChain: result.requestChain || [],
-                imageAnalyses: result.imageAnalyses,
-                isSimpleAnalysis: isSimpleAnalysis
+                perplexityReport: result.perplexityAnalysis || null,
+                requestChain: result.metadata?.requestChain || [],
+                imageAnalyses: result.medgemmaAnalysis?.imageAnalyses,
+                isSimpleAnalysis: isSimpleAnalysis,
+                webSearchLogs: result.webSearchLogs || []
               })
               
               toast.success('Analyse sauvegardée dans votre historique')
@@ -543,10 +579,11 @@ function DemoPageContent() {
               isDemo: false,
               sections: result.sections,
               references: result.references || [],
-              perplexityReport: result.perplexityReport || null,
-              requestChain: result.requestChain || [],
-              imageAnalyses: result.imageAnalyses,
-              isSimpleAnalysis: isSimpleAnalysis
+              perplexityReport: result.perplexityAnalysis || null,
+              requestChain: result.metadata?.requestChain || [],
+              imageAnalyses: result.medgemmaAnalysis?.imageAnalyses,
+              isSimpleAnalysis: isSimpleAnalysis,
+              webSearchLogs: result.webSearchLogs || []
             })
           }
 
@@ -558,7 +595,7 @@ function DemoPageContent() {
 
           setIsAnalyzing(false)
           setShowResults(true)
-          setRequestChain(result.requestChain || [])
+          setRequestChain(result.metadata?.requestChain || [])
           toast.success(isSimpleAnalysis ? "Analyse simple terminée !" : "Analyse approfondie terminée !")
       } catch (error: any) {
           console.error("Erreur lors de l'analyse:", error)
@@ -925,7 +962,19 @@ function DemoPageContent() {
                 <a
                   key={index}
                   href={`#ref-${refNum}`}
-                  className="text-blue-600 hover:text-blue-800 font-semibold"
+                  className="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    const element = document.getElementById(`ref-${refNum}`)
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                      // Ajouter un effet de surbrillance temporaire
+                      element.classList.add('bg-yellow-100')
+                      setTimeout(() => {
+                        element.classList.remove('bg-yellow-100')
+                      }, 2000)
+                    }
+                  }}
                 >
                   [{refNum}]
                 </a>
@@ -1607,9 +1656,27 @@ Exemple de format attendu :
                   <Label htmlFor="content">Cas clinique</Label>
                   {isAudioSupported && (
                     <div className="flex items-center gap-2">
+                      {/* Sélecteur de type d'analyse audio */}
+                      {!isRecording && !isDemoMode && (
+                        <select
+                          value={audioAnalysisType}
+                          onChange={(e) => setAudioAnalysisType(e.target.value as any)}
+                          className="text-sm px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          title="Type d'analyse pour l'enregistrement"
+                        >
+                          <option value="transcription">Transcription simple</option>
+                          <option value="medical_consultation">Consultation médicale</option>
+                          <option value="patient_dictation">Dictée patient</option>
+                        </select>
+                      )}
                       {isRecording && (
                         <span className="text-sm text-gray-600">
                           {formatTime(recordingTime)}
+                          {isLongRecording && (
+                            <span className="ml-2 text-xs text-blue-600 font-medium">
+                              (Gemini actif)
+                            </span>
+                          )}
                         </span>
                       )}
                       {!isRecording ? (

@@ -9,6 +9,8 @@ import {
   addCitationsToSectionsViaFunction
 } from '@/lib/firebase-functions';
 import { medGemmaClient } from './medgemma-client';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 
 interface PerplexityResponse {
   citations: any[];
@@ -40,7 +42,7 @@ export class AIClientService {
   private openaiApiKey: string | undefined;
   private isProduction: boolean = false;
   private useFirebaseFunctions: boolean = false;
-  
+
   // Nouveau : stockage de la chaîne de requêtes/réponses
   private requestChain: Array<{
     timestamp: string;
@@ -103,28 +105,75 @@ export class AIClientService {
     return this.openaiApiKey;
   }
 
-  async searchWithPerplexity(query: string): Promise<PerplexityResponse> {
+  async searchWithPerplexity(
+    clinicalContext: string, 
+    medgemmaAnalysis: string = '', 
+    o3Analysis: string = ''
+  ): Promise<PerplexityResponse> {
     if (!this.perplexityApiKey) {
       throw new Error('Clé API Perplexity non configurée');
     }
 
+    // Construire le prompt structuré pour Perplexity
+    const query = `Recherche académique approfondie basée sur ce cas clinique et les analyses fournies:
+
+CAS CLINIQUE:
+${clinicalContext}
+
+${medgemmaAnalysis ? `ANALYSE D'IMAGERIE (MedGemma):
+${medgemmaAnalysis}
+
+` : ''}${o3Analysis ? `ANALYSE CLINIQUE PRÉLIMINAIRE (o3):
+${o3Analysis}
+
+` : ''}INSTRUCTIONS IMPORTANTES:
+1. Fais une recherche académique exhaustive sur ce cas clinique
+2. Concentre-toi sur les publications médicales récentes (2020-2025), guidelines et études cliniques
+3. Structure ta réponse EXACTEMENT selon ces 7 sections avec ce format précis :
+
+## CLINICAL_CONTEXT:
+[Contexte clinique enrichi par la recherche académique - inclure les données épidémiologiques récentes, prévalence, facteurs de risque selon la littérature]
+
+## KEY_DATA:
+[Données clés validées par la littérature - critères diagnostiques actuels, biomarqueurs, signes pathognomoniques selon les guidelines récentes]
+
+## DIAGNOSTIC_HYPOTHESES:
+[Hypothèses diagnostiques appuyées par la recherche - diagnostics différentiels avec références aux études récentes, scores diagnostiques validés]
+
+## COMPLEMENTARY_EXAMS:
+[Examens recommandés selon les guidelines actuelles - protocoles d'imagerie, analyses biologiques, examens spécialisés avec niveaux de preuve]
+
+## THERAPEUTIC_DECISIONS:
+[Décisions thérapeutiques evidence-based - recommandations HAS/ESC/AHA récentes, protocoles thérapeutiques, nouveaux traitements disponibles]
+
+## PROGNOSIS_FOLLOWUP:
+[Pronostic et suivi selon la littérature - études de cohorte récentes, facteurs pronostiques, protocoles de surveillance]
+
+## PATIENT_EXPLANATIONS:
+[Explications patient basées sur les guidelines - informations validées scientifiquement, ressources éducatives recommandées]
+
+4. Pour CHAQUE affirmation, cite la source avec [1], [2], etc.
+5. Base-toi sur des sources académiques fiables (PubMed, Cochrane, guidelines officielles)
+6. Fournis des informations evidence-based et actualisées
+7. RESPECTE EXACTEMENT le format de sections avec "## SECTION_NAME:"`;
+
     const requestData = {
-      model: 'sonar-reasoning-pro',
-      messages: [
-        {
-          role: 'system',
-          content: 'Tu es un assistant médical expert. Fais une recherche académique exhaustive sur le cas clinique fourni. INSTRUCTIONS IMPORTANTES: 1) Concentre-toi autant que possible sur les publications médicales datant de moins de 5 ans (2020-2025), les guidelines récentes et les études cliniques actuelles associée. 2) Pour CHAQUE affirmation, cite autant que possible la source avec [1], [2], etc. 3) Fournis l\'URL complète de chaque source citée. 4) Structure ta réponse de manière claire avec des sections bien définies.'
-        },
-        {
-          role: 'user',
-          content: query
-        }
-      ],
-      stream: false,
-      search_mode: 'academic',
-      web_search_options: {
-        search_context_size: 'high'
-      }
+          model: 'sonar-reasoning-pro',
+          messages: [
+            {
+              role: 'system',
+          content: 'Tu es un assistant médical expert. Fournis des informations médicales précises et actualisées basées sur la littérature scientifique récente. Cite toujours tes sources avec [1], [2], etc. Structure ta réponse selon le format demandé.'
+            },
+            {
+              role: 'user',
+              content: query
+            }
+          ],
+          stream: false,
+          search_mode: 'academic',
+          web_search_options: {
+            search_context_size: 'high'
+          }
     };
 
     try {
@@ -191,35 +240,23 @@ export class AIClientService {
     }
   }
 
-  private async analyzeWithO3(perplexityDataProcessed: string, clinicalCase: string): Promise<string> {
+  private async analyzeWithO3(clinicalContext: string, medgemmaAnalysis: string): Promise<{ analysis: string }> {
     try {
-      // Extraire les références du rapport Perplexity pour les fournir explicitement à o3
-      let referencesSection = '';
-      const refMatches = perplexityDataProcessed.match(/\[(\d+)\]/g);
-      if (refMatches) {
-        const uniqueRefs = [...new Set(refMatches.map(m => m.replace(/[\[\]]/g, '')))];
-        referencesSection = `\n\nRÉFÉRENCES DISPONIBLES (à utiliser dans ton analyse):
-${uniqueRefs.map(num => `[${num}] - Référence académique validée`).join('\n')}
-
-IMPORTANT: Utilise ces références [1], [2], etc. de manière COHÉRENTE avec le contenu de la recherche académique ci-dessus. Place chaque référence à côté de l'information qu'elle supporte réellement.`;
-      }
-      
-      const prompt = `Tu es un expert médical. Analyse ce cas clinique en te basant sur les informations fournies.
+      const prompt = `Tu es un expert médical. Analyse ce cas clinique de manière approfondie.
 
 CAS CLINIQUE:
-${clinicalCase}
+${clinicalContext}
 
-INFORMATIONS COMPLÉMENTAIRES (recherche académique et analyses):
-${perplexityDataProcessed}${referencesSection}
+${medgemmaAnalysis ? `ANALYSE D'IMAGERIE (MedGemma):
+${medgemmaAnalysis}
 
-INSTRUCTIONS CRITIQUES:
+` : ''}
+
+INSTRUCTIONS:
 1. Rédige une analyse clinique complète et structurée
 2. Utilise OBLIGATOIREMENT le format exact ci-dessous pour chaque section
-3. NE PAS ajouter de sauts de ligne supplémentaires entre les paragraphes
-4. IMPORTANT: Cite les références [1], [2], etc. UNIQUEMENT quand elles correspondent vraiment à l'information mentionnée
-5. NE JAMAIS inventer ou placer des références au hasard
-6. Si une information n'a pas de référence claire dans la recherche académique, ne mets pas de référence
-7. Garde un formatage propre et professionnel
+3. NE PAS ajouter de références [1], [2], etc. dans cette analyse
+4. Reste factuel et basé sur les données cliniques fournies
 
 FORMAT OBLIGATOIRE (respecte EXACTEMENT cette structure):
 
@@ -269,7 +306,7 @@ RAPPELS IMPORTANTS:
         // Sauvegarder la réponse
         this.requestChain[this.requestChain.length - 1].response = response;
         
-        return response;
+        return { analysis: response };
       } else {
         // Mode développement - appel direct o3
         console.log('Appel API o3 direct (mode dev)...');
@@ -297,7 +334,7 @@ RAPPELS IMPORTANTS:
         // Sauvegarder la réponse
         this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
         
-        return outputText;
+        return { analysis: outputText };
       }
     } catch (error: any) {
       console.error('Erreur OpenAI détaillée:', error);
@@ -306,175 +343,101 @@ RAPPELS IMPORTANTS:
   }
 
   async analyzeClinicalCase(
-    caseText: string, 
-    progressCallback?: (message: string) => void,
-    sectionCallback?: (section: any, index: number, total: number) => void,
-    images?: { base64: string, type: string }[]
-  ): Promise<{ sections: any[], references: any[], perplexityReport: any, requestChain?: any[], imageAnalyses?: string[] }> {
-    if (!this.hasApiKeys()) {
-      throw new Error('Les clés API ne sont pas configurées');
-    }
-
-    // Réinitialiser la chaîne de requêtes pour cette nouvelle analyse
-    this.clearRequestChain();
-
+    images: File[], 
+    clinicalContext: string,
+    promptType: string = 'general',
+    onSectionUpdate?: (section: any) => void
+  ): Promise<any> {
     try {
-      // Étape 1 : Analyser les images EN PREMIER si présentes
-      let imageAnalyses = '';
-      const imageAnalysesArray: string[] = [];
-      if (images && images.length > 0) {
-        progressCallback?.('Analyse des images médicales...');
-        console.log(`Analyse de ${images.length} images...`);
-        for (let i = 0; i < images.length; i++) {
-          try {
-            progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
-            const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type, (images[i] as any).promptType || 'general');
-            imageAnalysesArray.push(imageAnalysis);
-            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
-          } catch (imageError: any) {
-            console.error(`Erreur lors de l'analyse de l'image ${i + 1}:`, imageError.message);
-            const errorMsg = 'Erreur lors de l\'analyse de cette image.';
-            imageAnalysesArray.push(errorMsg);
-            imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${errorMsg}`;
-          }
+      const startTime = Date.now();
+      console.log('🚀 Début de l\'analyse du cas clinique');
+      console.log(`📋 Contexte clinique: ${clinicalContext.substring(0, 100)}...`);
+      console.log(`🖼️ Nombre d\'images: ${images.length}`);
+      console.log(`🎯 Type de prompt: ${promptType}`);
+
+      // 1. Analyse des images avec MedGemma
+      console.log('\n📸 1. Analyse des images avec MedGemma...');
+      const medgemmaResult = await medGemmaClient.analyzeImages(images, clinicalContext, promptType);
+      console.log('✅ Analyse MedGemma terminée');
+
+      // 2. Analyse clinique avec o3
+      console.log('\n🔬 2. Analyse clinique avec o3...');
+      const o3Result = await this.analyzeWithO3(clinicalContext, medgemmaResult.analysis);
+      console.log('✅ Analyse o3 terminée');
+
+      // 3. Recherche académique avec Perplexity
+      console.log('\n📚 3. Recherche académique avec Perplexity...');
+      const perplexityResult = await this.searchWithPerplexity(
+        clinicalContext, 
+        medgemmaResult.analysis,
+        o3Result.analysis
+      );
+      console.log('✅ Recherche Perplexity terminée');
+      console.log(`📊 Nombre de sources trouvées: ${perplexityResult.search_results?.length || 0}`);
+
+      // 4. Parser les sections et extraire les références
+      console.log('\n📝 4. Parsing des sections et extraction des références...');
+      const parsedSections = this.parseSections(perplexityResult.answer);
+      console.log(`✅ ${parsedSections.length} sections parsées`);
+      
+      // Appeler le callback pour chaque section (une seule fois)
+      if (onSectionUpdate) {
+        parsedSections.forEach(section => {
+          onSectionUpdate(section);
+        });
+      }
+
+      // Extraire TOUTES les références de search_results
+      const references = this.extractAllReferences(perplexityResult);
+      console.log(`✅ ${references.length} références extraites`);
+
+      // 5. Enrichir les références avec Web Search (auteurs et journal uniquement)
+      console.log('\n🔍 5. Enrichissement des références avec Web Search...');
+      let enrichedReferences = references;
+      let webSearchLogs: any[] = [];
+      
+      try {
+        const enrichReferencesWithWebSearch = httpsCallable(functions, 'enrichReferencesWithWebSearch');
+        const enrichResult = await enrichReferencesWithWebSearch({ 
+          references,
+          perplexityContent: perplexityResult.answer 
+        });
+        
+        if (enrichResult.data) {
+          const enrichData = enrichResult.data as any;
+          enrichedReferences = enrichData.references || references;
+          webSearchLogs = enrichData.webSearchLogs || [];
+          console.log('✅ Références enrichies avec Web Search:', enrichedReferences.length);
+          console.log('📊 Logs Web Search:', webSearchLogs);
         }
-        console.log('Analyse des images terminée');
+      } catch (enrichError) {
+        console.error('❌ Erreur enrichissement Web Search:', enrichError);
+        // Continuer avec les références non enrichies
       }
 
-      // Étape 2 : Analyse clinique avec o3 EN PREMIER
-      progressCallback?.('Analyse clinique avec o3...');
-      console.log('Début analyse clinique avec o3...');
-      
-      // Construire le contexte pour o3
-      let o3Context = caseText;
-      if (imageAnalyses) {
-        o3Context += `\n\n=== ANALYSES D'IMAGERIE MÉDICALE ===\n${imageAnalyses}`;
-      }
-      
-      const o3Analysis = await this.analyzeWithO3Simple(o3Context);
-      console.log('Analyse o3 terminée');
-      
-      // Parser les sections immédiatement
-      const sections = this.parseSections(o3Analysis);
-      console.log('Sections parsées:', sections.length);
-      
-      // Appeler le callback pour chaque section
-      sections.forEach((section, index) => {
-        sectionCallback?.(section, index, sections.length);
-      });
-
-      // Étape 3 : Recherche académique avec Perplexity basée sur l'analyse o3
-      progressCallback?.('Recherche académique dans la littérature médicale...');
-      console.log('Début recherche Perplexity basée sur l\'analyse o3...');
-      
-      // Construire un prompt enrichi pour Perplexity basé sur l'analyse o3
-      const perplexityPrompt = `Recherche académique approfondie basée sur cette analyse clinique:
-
-CAS CLINIQUE INITIAL:
-${caseText}
-
-ANALYSE CLINIQUE (par o3):
-${sections.map(s => `${sectionTitles[s.type as keyof typeof sectionTitles]}:\n${s.content}`).join('\n\n')}
-
-INSTRUCTIONS IMPORTANTES:
-1. Fais une recherche académique exhaustive sur ce cas clinique
-2. Concentre-toi sur les publications médicales récentes (2020-2025), guidelines et études cliniques
-3. Structure ta réponse EXACTEMENT selon ces 7 sections avec ce format précis :
-
-## CLINICAL_CONTEXT:
-[Contexte clinique enrichi par la recherche académique - inclure les données épidémiologiques récentes, prévalence, facteurs de risque selon la littérature]
-
-## KEY_DATA:
-[Données clés validées par la littérature - critères diagnostiques actuels, biomarqueurs, signes pathognomoniques selon les guidelines récentes]
-
-## DIAGNOSTIC_HYPOTHESES:
-[Hypothèses diagnostiques appuyées par la recherche - diagnostics différentiels avec références aux études récentes, scores diagnostiques validés]
-
-## COMPLEMENTARY_EXAMS:
-[Examens recommandés selon les guidelines actuelles - protocoles d'imagerie, analyses biologiques, examens spécialisés avec niveaux de preuve]
-
-## THERAPEUTIC_DECISIONS:
-[Décisions thérapeutiques evidence-based - recommandations HAS/ESC/AHA récentes, protocoles thérapeutiques, nouveaux traitements disponibles]
-
-## PROGNOSIS_FOLLOWUP:
-[Pronostic et suivi selon la littérature - études de cohorte récentes, facteurs pronostiques, protocoles de surveillance]
-
-## PATIENT_EXPLANATIONS:
-[Explications patient basées sur les guidelines - informations validées scientifiquement, ressources éducatives recommandées]
-
-4. Pour CHAQUE affirmation, cite la source avec [1], [2], etc.
-5. Base-toi sur des sources académiques fiables (PubMed, Cochrane, guidelines officielles)
-6. Fournis des informations evidence-based et actualisées
-7. RESPECTE EXACTEMENT le format de sections avec "## SECTION_NAME:"`;
-      
-      const perplexityReport = await this.searchWithPerplexity(perplexityPrompt);
-      console.log('Recherche Perplexity terminée');
-      
-      // Étape 4 : Parser la réponse Perplexity structurée en sections (comme pour o3)
-      progressCallback?.('Analyse des références et structuration...');
-      const perplexitySections = this.parseSections(perplexityReport.answer);
-      console.log('Sections Perplexity parsées:', perplexitySections.length);
-      
-      // Logique de choix intelligente entre o3 et Perplexity
-      let finalSections = sections; // Par défaut o3
-      let usedPerplexityStructure = false;
-      let sourceInfo = 'o3 original';
-      
-      if (perplexitySections.length >= 6) { // Au moins 6 sections pour être valide
-        finalSections = perplexitySections;
-        usedPerplexityStructure = true;
-        sourceInfo = `Perplexity structuré (${perplexitySections.length}/7 sections)`;
-        console.log('✅ AFFICHAGE FINAL : Sections Perplexity (structure complète)');
-      } else if (perplexitySections.length > 0) {
-        finalSections = perplexitySections;
-        usedPerplexityStructure = true;
-        sourceInfo = `Perplexity partiel (${perplexitySections.length}/7 sections)`;
-        console.log('⚠️ AFFICHAGE FINAL : Sections Perplexity (structure partielle)');
-      } else {
-        console.log('❌ AFFICHAGE FINAL : Sections o3 (Perplexity non structuré)');
-        sourceInfo = 'o3 original (Perplexity failed)';
-      }
-      
-      console.log('Source des sections affichées:', sourceInfo);
-      
-      // Ajouter l'info dans la requête chain pour le debug
-      this.requestChain.push({
-        timestamp: new Date().toISOString(),
-        model: 'Parser',
-        type: `Source finale: ${sourceInfo}`,
-        request: `Choix entre o3 (${sections.length} sections) et Perplexity (${perplexitySections.length} sections)`,
-        response: `Utilisation: ${sourceInfo}`
-      });
-      
-      // NE PAS rappeler sectionCallback ici pour éviter les doublons
-      
-      // Étape 5 : Extraction des références de base
-      progressCallback?.('Extraction des références...');
-      let references = await this.extractReferences(perplexityReport);
-      console.log('Références de base extraites:', references.length);
-      
-      // Étape 6a : Enrichissement Web Search des métadonnées manquantes
-      progressCallback?.('Enrichissement des métadonnées avec Web Search...');
-      references = await this.enrichReferencesWithWebSearch(references, perplexityReport.answer);
-      console.log('Références enrichies:', references.length);
-      
-      // Étape 6b : Ajout intelligent des citations dans les sections
-      progressCallback?.('Ajout des citations dans les sections...');
-      const sectionsWithCitations = await this.addCitationsToSections(finalSections, references, perplexityReport.answer);
-      console.log('Citations ajoutées aux sections');
-      
-      console.log('Références analysées et enrichies:', references.length);
-      
-      return {
-        sections: sectionsWithCitations,
-        references,
-        perplexityReport,
-        requestChain: this.requestChain,
-        imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
+      // 6. Retourner le résultat final avec les sections de Perplexity
+      const finalResult = {
+        medgemmaAnalysis: medgemmaResult,
+        o3Analysis: o3Result,
+        perplexityAnalysis: perplexityResult,
+        sections: parsedSections, // Les sections de Perplexity avec leurs [XX]
+        references: enrichedReferences,
+        webSearchLogs,
+        metadata: {
+          totalProcessingTime: Date.now() - startTime,
+          sectionsSource: 'perplexity', // Toujours Perplexity maintenant
+          referencesCount: enrichedReferences.length,
+          webSearchEnriched: webSearchLogs.filter((l: any) => l.enrichmentSuccess).length
+        }
       };
+
+      console.log('\n✅ Analyse complète terminée');
+      console.log('📊 Métadonnées finales:', finalResult.metadata);
+      
+      return finalResult;
+
     } catch (error: any) {
-      console.error('Erreur complète dans analyzeClinicalCase:', error);
-      console.error('Stack trace:', error.stack);
+      console.error('❌ Erreur analyse cas clinique:', error);
       throw error;
     }
   }
@@ -891,6 +854,32 @@ RÈGLES IMPORTANTES:
     return enrichedRefs;
   }
 
+  private extractAllReferences(perplexityReport: PerplexityResponse): any[] {
+    console.log('Extraction de TOUTES les références de search_results...');
+    
+    if (!perplexityReport.search_results || perplexityReport.search_results.length === 0) {
+      console.log('Aucune search_results trouvée');
+      return [];
+    }
+    
+    const references = perplexityReport.search_results.map((result, index) => {
+      const refNumber = index + 1;
+      return {
+        label: refNumber.toString(),
+        title: result.title || `Source ${refNumber}`,
+        url: result.url,
+        date: result.date || null,
+        authors: 'Non disponible',
+        journal: 'Non disponible',
+        year: result.date ? new Date(result.date).getFullYear().toString() : null,
+        webSearchEnriched: false
+      };
+    });
+    
+    console.log(`✅ ${references.length} références extraites de search_results`);
+    return references;
+  }
+
   private async extractReferences(perplexityReport: PerplexityResponse): Promise<any[]> {
     const references: any[] = [];
     console.log('Extraction des références...');
@@ -920,7 +909,7 @@ RÈGLES IMPORTANTES:
         // Si on a une date, extraire l'année
         if (result.date) {
           const yearMatch = result.date.match(/\b(19|20)\d{2}\b/);
-          reference.year = yearMatch ? parseInt(yearMatch[0]) : null;
+          reference.year = yearMatch ? yearMatch[0] : null;
         }
         
         console.log(`Référence ${index + 1} extraite:`, {
@@ -943,12 +932,12 @@ RÈGLES IMPORTANTES:
       perplexityReport.citations.forEach((citation, index) => {
         const url = typeof citation === 'string' ? citation : citation.url || citation;
         
-        references.push({
-          label: String(index + 1),
-          title: `Source ${index + 1}`,
+            references.push({
+              label: String(index + 1),
+              title: `Source ${index + 1}`,
           url: url,
           date: null,
-          year: null,
+              year: null,
           authors: 'À enrichir',
           journal: 'À enrichir',
           keyPoints: '',
@@ -991,7 +980,7 @@ RÈGLES IMPORTANTES:
           // Retourner les références originales en cas d'erreur
           return references;
         }
-      } else {
+          } else {
         // Mode développement - appel direct
         const prompt = `Tu es un expert en recherche académique médicale. Analyse ces références et enrichis-les UNIQUEMENT avec des informations que tu peux déduire avec certitude.
 
@@ -1056,7 +1045,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         } catch (parseError) {
           console.error('Erreur parsing JSON:', parseError);
           console.error('Réponse brute:', responseText);
-          return references;
+    return references;
         }
       }
     } catch (error: any) {
@@ -1127,42 +1116,42 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         if (!medGemmaClient.hasApiKey()) {
           console.log('Mode: Développement - MedGemma non configuré localement');
           console.log('ATTENTION: Fallback sur GPT-4o en mode dev uniquement');
-          
-          const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            {
-              model: 'gpt-4o',
-              messages: [
-                {
-                  role: 'user',
-                  content: [
-                    {
-                      type: 'text',
+        
+        const response = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
                       text: 'Analyse cette image médicale en détail.'
-                    },
-                    {
-                      type: 'image_url',
-                      image_url: {
-                        url: `data:image/jpeg;base64,${imageBase64.replace(/^data:image\/\w+;base64,/, '')}`
-                      }
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:image/jpeg;base64,${imageBase64.replace(/^data:image\/\w+;base64,/, '')}`
                     }
-                  ]
-                }
-              ],
-              max_tokens: 5000,
-              temperature: 0.3
-            },
-            {
-              headers: {
-                'Authorization': `Bearer ${this.openaiApiKey}`,
-                'Content-Type': 'application/json'
+                  }
+                ]
               }
+            ],
+            max_tokens: 5000,
+            temperature: 0.3
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
             }
-          );
+          }
+        );
 
-          const outputText = response.data.choices?.[0]?.message?.content || '';
+        const outputText = response.data.choices?.[0]?.message?.content || '';
           this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
-          return outputText;
+        return outputText;
         } else {
           // Utiliser MedGemma en local
           console.log('Mode: Développement - Utilisation de MedGemma en local');
@@ -1194,6 +1183,12 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
       console.log('Début transcription audio...');
       console.log('Type du blob:', audioBlob.type);
       console.log('Taille du blob:', audioBlob.size, 'bytes');
+      
+      // Si l'audio est trop long (>1MB), utiliser Gemini
+      if (audioBlob.size > 1024 * 1024) {
+        console.log('Audio volumineux détecté, utilisation de Gemini pour la transcription longue');
+        return await this.transcribeLongAudioWithGemini(audioBlob);
+      }
       
       if (this.useFirebaseFunctions) {
         console.log('Utilisation de Firebase Functions pour la transcription');
@@ -1252,6 +1247,102 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
     } catch (error: any) {
       console.error('Erreur de transcription:', error.response?.data || error.message);
       throw new Error('Erreur lors de la transcription: ' + (error.response?.data?.error?.message || error.message));
+    }
+  }
+
+  // Nouvelle méthode pour la transcription longue avec Gemini
+  async transcribeLongAudioWithGemini(
+    audioBlob: Blob, 
+    analysisType: 'transcription' | 'medical_consultation' | 'patient_dictation' = 'transcription'
+  ): Promise<string> {
+    try {
+      console.log('=== TRANSCRIPTION LONGUE AVEC GEMINI ===');
+      console.log('Taille audio:', (audioBlob.size / (1024 * 1024)).toFixed(2), 'MB');
+      console.log('Type d\'analyse:', analysisType);
+      
+      // Convertir le blob en base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          resolve(base64);
+        };
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(audioBlob);
+      const audioBase64 = await base64Promise;
+      
+      if (this.useFirebaseFunctions) {
+        console.log('Utilisation de Firebase Functions pour Gemini');
+        const { httpsCallable } = await import('firebase/functions');
+        const { functions } = await import('@/lib/firebase');
+        
+        const analyzeLongAudioWithGemini = httpsCallable(functions, 'analyzeLongAudioWithGemini');
+        const result = await analyzeLongAudioWithGemini({
+          audioBase64,
+          audioType: audioBlob.type || 'audio/webm',
+          analysisType
+        });
+        
+        const data = result.data as any;
+        console.log('Transcription Gemini reçue:', data.metadata);
+        
+        return data.transcription;
+      } else {
+        // Mode développement - appel direct à Gemini
+        console.log('Appel direct Gemini (mode dev)');
+        
+        // Pour le dev, on peut utiliser la clé API directement
+        const GOOGLE_API_KEY = 'AIzaSyAtV6E_LrLrZln2BfcR8ngomMzhywDvSf_Y';
+        
+        const base64Data = audioBase64.includes(',') 
+          ? audioBase64.split(',')[1] 
+          : audioBase64;
+        
+        let prompt = '';
+        switch (analysisType) {
+          case 'transcription':
+            prompt = 'Génère une transcription complète et précise de cet enregistrement audio en français.';
+            break;
+          case 'medical_consultation':
+            prompt = `Analyse cet enregistrement de consultation médicale et fournis une transcription complète avec identification des éléments médicaux clés.`;
+            break;
+          case 'patient_dictation':
+            prompt = `Transcris cette dictée du patient en extrayant les informations médicales pertinentes.`;
+            break;
+        }
+        
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+          {
+            contents: [{
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: audioBlob.type || 'audio/webm',
+                    data: base64Data
+                  }
+                }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 8192
+            }
+          }
+        );
+        
+        const transcription = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log('Transcription Gemini terminée, longueur:', transcription.length);
+        
+        return transcription;
+      }
+    } catch (error: any) {
+      console.error('Erreur transcription Gemini:', error);
+      // Fallback vers la méthode standard si Gemini échoue
+      console.log('Fallback vers transcription standard');
+      return this.transcribeAudio(audioBlob);
     }
   }
 
@@ -1742,4 +1833,6 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
       return sections; // Fallback
     }
   }
+
+
 } 
