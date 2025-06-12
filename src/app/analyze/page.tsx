@@ -737,98 +737,107 @@ function DemoPageContent() {
 
       toast.info('Génération du PDF en cours...')
       
-      // Créer une fonction pour remplacer les couleurs oklch
-      const replaceOklchColors = () => {
-        const style = document.createElement('style')
-        style.id = 'pdf-export-colors'
-        style.innerHTML = `
-          /* Remplacer les couleurs oklch par des équivalents hex pour l'export PDF */
-          * {
-            --background: #ffffff !important;
-            --foreground: #0a0a0a !important;
-            --card: #ffffff !important;
-            --card-foreground: #0a0a0a !important;
-            --popover: #ffffff !important;
-            --popover-foreground: #0a0a0a !important;
-            --primary: #171717 !important;
-            --primary-foreground: #fafafa !important;
-            --secondary: #f5f5f5 !important;
-            --secondary-foreground: #171717 !important;
-            --muted: #f5f5f5 !important;
-            --muted-foreground: #737373 !important;
-            --accent: #f5f5f5 !important;
-            --accent-foreground: #171717 !important;
-            --destructive: #ef4444 !important;
-            --destructive-foreground: #fafafa !important;
-            --border: #e5e5e5 !important;
-            --input: #e5e5e5 !important;
-            --ring: #0a0a0a !important;
-            --radius: 0.5rem !important;
-          }
+      // Créer un conteneur temporaire avec du HTML simple
+      const tempContainer = document.createElement('div')
+      tempContainer.style.position = 'absolute'
+      tempContainer.style.left = '-9999px'
+      tempContainer.style.width = '210mm'
+      tempContainer.style.backgroundColor = '#ffffff'
+      tempContainer.style.color = '#000000'
+      tempContainer.style.fontFamily = 'Arial, sans-serif'
+      tempContainer.style.padding = '20px'
+      
+      // Construire le contenu HTML simple
+      let htmlContent = `
+        <div style="background: white; color: black; padding: 20px;">
+          <h1 style="color: #1f2937; font-size: 24px; margin-bottom: 10px;">Analyse Clinique</h1>
+          <p style="color: #6b7280; margin-bottom: 20px;">${new Date().toLocaleDateString('fr-FR')}</p>
           
-          /* Forcer les couleurs de fond et texte */
-          .bg-gray-50 { background-color: #f9fafb !important; }
-          .bg-gray-100 { background-color: #f3f4f6 !important; }
-          .bg-blue-50 { background-color: #eff6ff !important; }
-          .bg-green-50 { background-color: #f0fdf4 !important; }
-          .bg-yellow-50 { background-color: #fefce8 !important; }
-          .bg-red-50 { background-color: #fef2f2 !important; }
-          .text-gray-600 { color: #4b5563 !important; }
-          .text-gray-700 { color: #374151 !important; }
-          .text-gray-800 { color: #1f2937 !important; }
-          .text-gray-900 { color: #111827 !important; }
-          .border-gray-200 { border-color: #e5e7eb !important; }
-          .border-gray-300 { border-color: #d1d5db !important; }
+          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Cas clinique initial</h2>
+          <div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <p style="white-space: pre-wrap; color: #1f2937;">${analysisData?.caseText || initialCaseContent || textContent}</p>
+          </div>
+      `
+      
+      // Ajouter les analyses d'images si présentes
+      if (analysisData?.imageAnalyses && analysisData.imageAnalyses.length > 0) {
+        htmlContent += `
+          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Analyses d'imagerie</h2>
         `
-        document.head.appendChild(style)
-        return style
+        analysisData.imageAnalyses.forEach((analysis: string, index: number) => {
+          htmlContent += `
+            <div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+              <h3 style="color: #1f2937; font-size: 16px; margin-bottom: 10px;">Image ${index + 1}</h3>
+              <p style="white-space: pre-wrap; color: #374151;">${analysis}</p>
+            </div>
+          `
+        })
       }
       
-      // Sauvegarder l'état actuel
-      const originalAccordionValues = [...accordionValues]
-      const originalShowRareDisease = showRareDiseaseSection
-      const originalShowInitialCase = showInitialCase
+      // Ajouter les sections d'analyse
+      const sectionsToExport = analysisData?.isDemo 
+        ? Object.entries(demoSections).map(([key, content]) => ({ type: key, content }))
+        : (currentSections.length > 0 ? currentSections : analysisData?.sections || [])
       
-      // Ajouter les styles de remplacement
-      const tempStyle = replaceOklchColors()
+      htmlContent += `<h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Analyse médicale</h2>`
+      
+      sectionsToExport.forEach((section: any) => {
+        const title = sectionTitles[section.type as keyof typeof sectionTitles] || section.type
+        htmlContent += `
+          <div style="margin-bottom: 25px;">
+            <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 5px;">${title}</h3>
+            <div style="color: #374151; line-height: 1.6;">${section.content.replace(/\n/g, '<br>')}</div>
+          </div>
+        `
+      })
+      
+      // Ajouter les références
+      const refs = analysisData?.isDemo ? demoReferences : analysisData?.references || []
+      if (refs.length > 0) {
+        htmlContent += `
+          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Références bibliographiques</h2>
+          <ol style="padding-left: 20px;">
+        `
+        refs.forEach((ref: any) => {
+          htmlContent += `
+            <li style="margin-bottom: 10px; color: #374151;">
+              <strong>${ref.title}</strong><br>
+              ${ref.authors && ref.authors !== 'Non disponible' ? `${ref.authors}. ` : ''}
+              ${ref.journal && ref.journal !== 'Non disponible' ? `${ref.journal}. ` : ''}
+              ${ref.year ? `(${ref.year}). ` : ''}
+              <a href="${ref.url}" style="color: #3b82f6;">${ref.url}</a>
+            </li>
+          `
+        })
+        htmlContent += `</ol>`
+      }
+      
+      // Ajouter les maladies rares si présentes
+      if (rareDiseaseData) {
+        htmlContent += `
+          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Recherche de maladies rares</h2>
+          <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="color: #92400e; font-size: 16px; margin-bottom: 10px;">${rareDiseaseData.disease}</h3>
+            <div style="white-space: pre-wrap; color: #78350f;">${rareDiseaseData.report}</div>
+          </div>
+        `
+      }
+      
+      htmlContent += `</div>`
+      
+      // Ajouter le contenu au conteneur temporaire
+      tempContainer.innerHTML = htmlContent
+      document.body.appendChild(tempContainer)
       
       try {
-        // Ouvrir tous les accordéons temporairement
-        const allAccordionValues = analysisData?.isDemo 
-          ? Object.keys(demoSections).map((_: string, index: number) => String(index))
-          : (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((_: any, index: number) => String(index))
-        
-        // Ajouter l'accordéon des références
-        allAccordionValues.push('references')
-        
-        // Ajouter l'accordéon des maladies rares si disponible
-        if (rareDiseaseData) {
-          allAccordionValues.push('rare-references')
-        }
-        
-        setAccordionValues(allAccordionValues)
-        setShowRareDiseaseSection(true)
-        setShowInitialCase(true)
-        
-        // Attendre que les accordéons s'ouvrent
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
         // Capturer avec html2canvas
-        const canvas = await html2canvas(element, {
+        const canvas = await html2canvas(tempContainer, {
           scale: 2,
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
-          windowWidth: element.scrollWidth,
-          windowHeight: element.scrollHeight,
-          onclone: (clonedDoc) => {
-            // S'assurer que les styles sont appliqués dans le clone
-            const clonedElement = clonedDoc.getElementById('analysis-results')
-            if (clonedElement) {
-              clonedElement.style.backgroundColor = '#ffffff'
-              clonedElement.style.color = '#000000'
-            }
-          }
+          windowWidth: tempContainer.scrollWidth,
+          windowHeight: tempContainer.scrollHeight
         })
         
         // Créer le PDF
@@ -862,14 +871,9 @@ function DemoPageContent() {
         
         toast.success('PDF exporté avec succès')
       } finally {
-        // Restaurer l'état original
-        setAccordionValues(originalAccordionValues)
-        setShowRareDiseaseSection(originalShowRareDisease)
-        setShowInitialCase(originalShowInitialCase)
-        
-        // Retirer les styles temporaires
-        if (tempStyle && tempStyle.parentNode) {
-          tempStyle.parentNode.removeChild(tempStyle)
+        // Nettoyer
+        if (tempContainer.parentNode) {
+          tempContainer.parentNode.removeChild(tempContainer)
         }
       }
     } catch (error) {
