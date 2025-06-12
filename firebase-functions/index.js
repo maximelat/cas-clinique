@@ -14,13 +14,8 @@ const OPENAI_API_KEY = functions.config().openai?.key || process.env.OPENAI_API_
 const MEDGEMMA_API_KEY = functions.config().medgemma?.key || process.env.MEDGEMMA_API_KEY;
 
 // Fonction pour analyser avec o3
-exports.analyzeWithO3 = functions
-  .runWith({ 
-    timeoutSeconds: 540, 
-    memory: '1GB',
-    region: 'europe-west1'
-  })
-  .https.onCall(async (data, context) => {
+exports.analyzeWithO3 = functions.https
+  .onCall(async (data, context) => {
     // CORS est géré automatiquement par onCall
     try {
       const { prompt } = data;
@@ -124,13 +119,8 @@ exports.analyzeWithO3 = functions
   });
 
 // Fonction pour analyser une image avec MedGemma
-exports.analyzeImageWithO3 = functions
-  .runWith({ 
-    timeoutSeconds: 300, 
-    memory: '1GB',
-    region: 'europe-west1'
-  })
-  .https.onCall(async (data, context) => {
+exports.analyzeImageWithO3 = functions.https
+  .onCall(async (data, context) => {
     try {
       const { prompt, imageBase64, imageType = 'medical' } = data;
       
@@ -138,14 +128,18 @@ exports.analyzeImageWithO3 = functions
         throw new functions.https.HttpsError('invalid-argument', 'Image requise');
       }
 
-      // Utiliser MedGemma si disponible
-      if (MEDGEMMA_API_KEY) {
-        console.log('Utilisation de MedGemma pour l\'analyse d\'image médicale...');
-        
-        const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-        
-        // Prompts spécialisés selon le type d'image
-        const imageTypePrompts = {
+      // Vérifier que MedGemma est configuré
+      if (!MEDGEMMA_API_KEY) {
+        throw new functions.https.HttpsError('failed-precondition', 'MedGemma n\'est pas configuré. L\'analyse d\'image n\'est pas disponible.');
+      }
+
+      console.log('Utilisation exclusive de MedGemma pour l\'analyse d\'image médicale...');
+      console.log('Note: MedGemma peut prendre jusqu\'à 15 secondes pour démarrer');
+      
+      const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+      
+      // Prompts spécialisés selon le type d'image
+      const imageTypePrompts = {
           medical: `En tant qu'expert en imagerie médicale, analyse cette image médicale (radiographie, IRM, scanner, échographie, etc.) avec une approche méthodique et détaillée.
 
 Instructions spécifiques:
@@ -242,113 +236,27 @@ Instructions:
         console.log('Réponse MedGemma reçue, longueur:', text.length);
         
         return { text };
-      } else {
-        // Fallback sur GPT-4o si MedGemma n'est pas configuré
-        console.log('MedGemma non configuré, utilisation de GPT-4o pour l\'analyse d\'image...');
-        
-        const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-        
-        const response = await axios.post(
-          'https://api.openai.com/v1/chat/completions',
-          {
-            model: 'gpt-4o',
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: prompt || 'Analyse cette image médicale en détail.'
-                  },
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:image/jpeg;base64,${cleanImageBase64}`
-                    }
-                  }
-                ]
-              }
-            ],
-            max_tokens: 5000,
-            temperature: 0.3
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        const text = response.data.choices?.[0]?.message?.content || '';
-        
-        console.log('Réponse GPT-4o Vision reçue, longueur:', text.length);
-        console.log('Usage Vision:', response.data.usage);
-        
-        return { text };
-      }
     } catch (error) {
-      console.error('Erreur analyse image:', error.response?.data || error.message);
+      console.error('Erreur analyse image MedGemma:', error.response?.data || error.message);
       
-      // Si erreur avec MedGemma, essayer le fallback
-      if (MEDGEMMA_API_KEY && error.response?.status !== 401) {
-        console.log('Erreur MedGemma, tentative avec GPT-4o...');
-        try {
-          const cleanImageBase64 = data.imageBase64.replace(/^data:image\/\w+;base64,/, '');
-          
-          const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            {
-              model: 'gpt-4o',
-              messages: [
-                {
-                  role: 'user',
-                  content: [
-                    {
-                      type: 'text',
-                      text: data.prompt || 'Analyse cette image médicale en détail.'
-                    },
-                    {
-                      type: 'image_url',
-                      image_url: {
-                        url: `data:image/jpeg;base64,${cleanImageBase64}`
-                      }
-                    }
-                  ]
-                }
-              ],
-              max_tokens: 5000,
-              temperature: 0.3
-            },
-            {
-              headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'Content-Type': 'application/json'
-              }
-            }
-          );
-
-          const text = response.data.choices?.[0]?.message?.content || '';
-          return { text };
-        } catch (fallbackError) {
-          console.error('Erreur fallback GPT-4o:', fallbackError);
-        }
+      // Pas de fallback - MedGemma uniquement
+      if (error.response?.status === 503) {
+        throw new functions.https.HttpsError(
+          'unavailable', 
+          'MedGemma est en cours de démarrage. Veuillez réessayer dans 15 secondes.'
+        );
       }
       
       throw new functions.https.HttpsError(
         'internal', 
-        'Erreur lors de l\'analyse d\'image: ' + error.message
+        'Erreur lors de l\'analyse d\'image avec MedGemma: ' + error.message
       );
     }
   });
 
 // Fonction pour analyser les données Perplexity avec GPT-4o-mini
-exports.analyzePerplexityWithGPT4Mini = functions
-  .runWith({ 
-    timeoutSeconds: 300,
-    region: 'europe-west1'
-  })
-  .https.onCall(async (data, context) => {
+exports.analyzePerplexityWithGPT4Mini = functions.https
+  .onCall(async (data, context) => {
     try {
       const { perplexityData } = data;
       
@@ -401,12 +309,8 @@ ${perplexityData}`;
   });
 
 // Fonction pour analyser les références avec GPT-4o
-exports.analyzeReferencesWithGPT4 = functions
-  .runWith({ 
-    timeoutSeconds: 300,
-    region: 'europe-west1'
-  })
-  .https.onCall(async (data, context) => {
+exports.analyzeReferencesWithGPT4 = functions.https
+  .onCall(async (data, context) => {
     try {
       const { prompt } = data;
       
@@ -452,13 +356,8 @@ exports.analyzeReferencesWithGPT4 = functions
   });
 
 // Fonction pour transcrire l'audio
-exports.transcribeAudio = functions
-  .runWith({ 
-    timeoutSeconds: 300, 
-    memory: '512MB',
-    region: 'europe-west1'
-  })
-  .https.onCall(async (data, context) => {
+exports.transcribeAudio = functions.https
+  .onCall(async (data, context) => {
     try {
       const { audioBase64 } = data;
       
@@ -543,12 +442,8 @@ exports.transcribeAudio = functions
   });
 
 // Fonction pour extraire les données structurées d'un cas clinique
-exports.extractStructuredData = functions
-  .runWith({ 
-    timeoutSeconds: 300,
-    region: 'europe-west1'
-  })
-  .https.onCall(async (data, context) => {
+exports.extractStructuredData = functions.https
+  .onCall(async (data, context) => {
     try {
       const { caseText } = data;
       
