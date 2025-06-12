@@ -6,6 +6,7 @@ import {
   analyzePerplexityWithGPT4MiniViaFunction,
   transcribeAudioViaFunction 
 } from '@/lib/firebase-functions';
+import { medGemmaClient } from './medgemma-client';
 
 interface PerplexityResponse {
   citations: any[];
@@ -909,81 +910,136 @@ RÈGLES IMPORTANTES:
 
   // Analyser une image avec o3
   private async analyzeImageWithO3(imageBase64: string, imageType: string = 'medical'): Promise<string> {
-    const imageTypePrompts = {
-      medical: "Analyse cette image médicale (radiographie, IRM, scanner, échographie, etc.) et décris précisément ce que tu observes.",
-      biology: "Analyse ces résultats biologiques et identifie les valeurs anormales, en les comparant aux valeurs de référence.",
-      ecg: "Analyse cet ECG : rythme, fréquence, intervalles, anomalies éventuelles.",
-      other: "Analyse cette image clinique et décris ce que tu observes de pertinent."
-    };
-
-    const prompt = `${imageTypePrompts[imageType as keyof typeof imageTypePrompts] || imageTypePrompts.other}
-    
-    Sois précis et méthodique. Liste toutes les anomalies observées et leur signification clinique potentielle.`;
-
     // Sauvegarder la requête
     this.requestChain.push({
       timestamp: new Date().toISOString(),
-      model: this.useFirebaseFunctions ? 'o3 (via Firebase)' : 'GPT-4o Vision',
+      model: 'MedGemma',
       type: `Analyse d'image ${imageType}`,
-      request: prompt + '\n\n[Image Base64 fournie]',
+      request: `Analyse d'image médicale de type: ${imageType}\n\n[Image Base64 fournie]`,
       response: ''
     });
 
     try {
-      if (this.useFirebaseFunctions) {
-        console.log('Analyse d\'image avec o3 via Firebase Functions...');
-        const response = await analyzeImageWithO3ViaFunction(prompt, imageBase64);
+      // Utiliser MedGemma pour l'analyse d'images médicales
+      console.log('Analyse d\'image avec MedGemma...');
+      
+      // Vérifier si MedGemma a une clé API configurée
+      if (!medGemmaClient.hasApiKey()) {
+        console.warn('MedGemma non configuré, utilisation de l\'ancien système...');
         
-        // Sauvegarder la réponse
-        this.requestChain[this.requestChain.length - 1].response = response;
-        
-        return response;
-      } else {
-        // Mode développement - utiliser GPT-4o pour les images (o3 ne supporte pas encore)
-        console.log('Analyse d\'image avec GPT-4o (mode dev)...');
-        
-        const response = await axios.post(
-          'https://api.openai.com/v1/chat/completions',
-          {
-            model: 'gpt-4o',
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: prompt
-                  },
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:image/jpeg;base64,${imageBase64.replace(/^data:image\/\w+;base64,/, '')}`
+        // Fallback sur l'ancien système si MedGemma n'est pas configuré
+        if (this.useFirebaseFunctions) {
+          console.log('Fallback sur o3 via Firebase Functions...');
+          const response = await analyzeImageWithO3ViaFunction('Analyse cette image médicale en détail.', imageBase64, imageType);
+          this.requestChain[this.requestChain.length - 1].response = response;
+          return response;
+        } else {
+          // Mode développement - utiliser GPT-4o
+          console.log('Fallback sur GPT-4o (mode dev)...');
+          
+          const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+              model: 'gpt-4o',
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Analyse cette image médicale en détail.'
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: {
+                        url: `data:image/jpeg;base64,${imageBase64.replace(/^data:image\/\w+;base64,/, '')}`
+                      }
                     }
-                  }
-                ]
+                  ]
+                }
+              ],
+              max_tokens: 5000,
+              temperature: 0.3
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${this.openaiApiKey}`,
+                'Content-Type': 'application/json'
               }
-            ],
-            max_tokens: 5000,
-            temperature: 0.3
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${this.openaiApiKey}`,
-              'Content-Type': 'application/json'
             }
-          }
-        );
+          );
 
-        const outputText = response.data.choices?.[0]?.message?.content || '';
-        console.log('Réponse GPT-4o Vision dev, usage:', response.data.usage);
-        
-        // Sauvegarder la réponse
-        this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
-        
-        return outputText;
+          const outputText = response.data.choices?.[0]?.message?.content || '';
+          this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
+          return outputText;
+        }
       }
+      
+      // Utiliser MedGemma
+      const response = await medGemmaClient.analyzeImage(imageBase64, imageType);
+      
+      // Sauvegarder la réponse
+      this.requestChain[this.requestChain.length - 1].response = response;
+      
+      console.log('Analyse MedGemma terminée');
+      return response;
+      
     } catch (error: any) {
-      console.error('Erreur analyse image o3:', error);
+      console.error('Erreur analyse image:', error);
+      
+      // En cas d'erreur avec MedGemma, essayer le fallback
+      if (error.message.includes('MedGemma')) {
+        console.log('Erreur MedGemma, tentative de fallback...');
+        
+        try {
+          if (this.useFirebaseFunctions) {
+            const response = await analyzeImageWithO3ViaFunction('Analyse cette image médicale en détail.', imageBase64, imageType);
+            this.requestChain[this.requestChain.length - 1].response = response;
+            return response;
+          } else {
+            // Fallback GPT-4o
+            const response = await axios.post(
+              'https://api.openai.com/v1/chat/completions',
+              {
+                model: 'gpt-4o',
+                messages: [
+                  {
+                    role: 'user',
+                    content: [
+                      {
+                        type: 'text',
+                        text: 'Analyse cette image médicale en détail.'
+                      },
+                      {
+                        type: 'image_url',
+                        image_url: {
+                          url: `data:image/jpeg;base64,${imageBase64.replace(/^data:image\/\w+;base64,/, '')}`
+                        }
+                      }
+                    ]
+                  }
+                ],
+                max_tokens: 5000,
+                temperature: 0.3
+              },
+              {
+                headers: {
+                  'Authorization': `Bearer ${this.openaiApiKey}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+
+            const outputText = response.data.choices?.[0]?.message?.content || '';
+            this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
+            return outputText;
+          }
+        } catch (fallbackError: any) {
+          console.error('Erreur fallback:', fallbackError);
+          throw new Error('Erreur lors de l\'analyse de l\'image: ' + error.message);
+        }
+      }
+      
       throw new Error('Erreur lors de l\'analyse de l\'image: ' + error.message);
     }
   }

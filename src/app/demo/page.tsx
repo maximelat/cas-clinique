@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge"
 import { collection, addDoc, doc, setDoc } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase'
 import RareDiseaseResults from '@/components/RareDiseaseResults'
+import { MedGemmaConfig } from '@/components/MedGemmaConfig'
 
 // Section titles configuration
 const sectionTitles = {
@@ -1357,12 +1358,15 @@ Exemple de format attendu :
               Retour
             </Button>
           </Link>
-              <Link href="/history">
-            <Button variant="outline" size="sm" disabled={!user}>
-                  <History className="mr-2 h-4 w-4" />
-                  Historique
-                </Button>
-              </Link>
+          <div className="flex items-center gap-2">
+            {!isDemoMode && <MedGemmaConfig />}
+            <Link href="/history">
+              <Button variant="outline" size="sm" disabled={!user}>
+                <History className="mr-2 h-4 w-4" />
+                Historique
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Bannière orange MODE DÉMO */}

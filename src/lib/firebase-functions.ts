@@ -14,6 +14,7 @@ interface AnalyzeWithO3Response {
 interface AnalyzeImageRequest {
   prompt: string;
   imageBase64: string;
+  imageType?: string;
 }
 
 interface AnalyzePerplexityRequest {
@@ -82,7 +83,7 @@ export async function analyzeWithO3ViaFunction(prompt: string): Promise<string> 
   }
 }
 
-export async function analyzeImageWithO3ViaFunction(prompt: string, imageBase64: string): Promise<string> {
+export async function analyzeImageWithO3ViaFunction(prompt: string, imageBase64: string, imageType?: string): Promise<string> {
   const functions = getFunctionsInstance();
   if (!functions) {
     throw new Error('Firebase Functions non configuré');
@@ -94,7 +95,7 @@ export async function analyzeImageWithO3ViaFunction(prompt: string, imageBase64:
   );
 
   try {
-    const result = await analyzeImage({ prompt, imageBase64 });
+    const result = await analyzeImage({ prompt, imageBase64, imageType });
     if (result.data.error) {
       throw new Error(result.data.error);
     }

@@ -11,6 +11,7 @@ const cors = require('cors')({
 
 // Configuration
 const OPENAI_API_KEY = functions.config().openai?.key || process.env.OPENAI_API_KEY;
+const MEDGEMMA_API_KEY = functions.config().medgemma?.key || process.env.MEDGEMMA_API_KEY;
 
 // Fonction pour analyser avec o3
 exports.analyzeWithO3 = functions
@@ -119,64 +120,215 @@ exports.analyzeWithO3 = functions
     }
   });
 
-// Fonction pour analyser une image avec o3
+// Fonction pour analyser une image avec MedGemma
 exports.analyzeImageWithO3 = functions
   .region('europe-west1')
   .runWith({ timeoutSeconds: 300, memory: '1GB' })
   .https.onCall(async (data, context) => {
     try {
-      const { prompt, imageBase64 } = data;
+      const { prompt, imageBase64, imageType = 'medical' } = data;
       
-      if (!prompt || !imageBase64) {
-        throw new functions.https.HttpsError('invalid-argument', 'Prompt et image requis');
+      if (!imageBase64) {
+        throw new functions.https.HttpsError('invalid-argument', 'Image requise');
       }
 
-      // Fallback sur GPT-4o pour l'analyse d'images car o3 Responses API ne supporte pas encore les images
-      console.log('Utilisation de GPT-4o pour l\'analyse d\'image (o3 ne supporte pas encore les images)...');
-      
-      const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-      
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-4o',
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: prompt
-                },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:image/jpeg;base64,${cleanImageBase64}`
-                  }
-                }
-              ]
-            }
-          ],
-          max_tokens: 5000,
-          temperature: 0.3
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      // Utiliser MedGemma si disponible
+      if (MEDGEMMA_API_KEY) {
+        console.log('Utilisation de MedGemma pour l\'analyse d\'image médicale...');
+        
+        const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        
+        // Prompts spécialisés selon le type d'image
+        const imageTypePrompts = {
+          medical: `En tant qu'expert en imagerie médicale, analyse cette image médicale (radiographie, IRM, scanner, échographie, etc.) avec une approche méthodique et détaillée.
 
-      // GPT-4o utilise une structure différente
-      const text = response.data.choices?.[0]?.message?.content || '';
-      
-      console.log('Réponse GPT-4o Vision reçue, longueur:', text.length);
-      console.log('Usage Vision:', response.data.usage);
-      
-      return { text };
+Instructions spécifiques:
+1. Identifie le type d'examen et la région anatomique
+2. Décris la qualité technique de l'image
+3. Analyse systématiquement toutes les structures visibles
+4. Identifie et décris précisément toutes les anomalies
+5. Compare avec l'aspect normal attendu
+6. Propose des diagnostics différentiels
+7. Suggère des examens complémentaires si nécessaire
+
+Sois exhaustif et utilise la terminologie médicale appropriée.`,
+          
+          biology: `En tant qu'expert en biologie médicale, analyse ces résultats biologiques de manière complète.
+
+Instructions spécifiques:
+1. Identifie tous les paramètres présents
+2. Compare chaque valeur aux normes de référence
+3. Signale toutes les valeurs anormales (hautes ou basses)
+4. Analyse les patterns et associations entre paramètres
+5. Propose une interprétation clinique
+6. Suggère des examens complémentaires si pertinent
+
+Utilise les unités appropriées et sois précis dans tes observations.`,
+          
+          ecg: `En tant qu'expert en cardiologie, analyse cet ECG de manière systématique et complète.
+
+Instructions spécifiques:
+1. Évalue la qualité technique du tracé
+2. Mesure et analyse:
+   - Rythme (sinusal, arythmie, etc.)
+   - Fréquence cardiaque
+   - Axe électrique
+   - Intervalles PR, QRS, QT/QTc
+   - Morphologie des ondes P, QRS, T
+3. Recherche systématiquement:
+   - Troubles de conduction
+   - Signes d'ischémie ou de nécrose
+   - Hypertrophies
+   - Troubles de repolarisation
+   - Arythmies
+4. Conclusion avec diagnostic ECG
+
+Sois précis dans tes mesures et utilise la terminologie cardiologique standard.`,
+          
+          other: `Analyse cette image clinique en détail et décris tout ce qui est médicalement pertinent.
+
+Instructions:
+1. Identifie le type d'image et le contexte clinique
+2. Décris méthodiquement ce que tu observes
+3. Note toutes les anomalies ou particularités
+4. Propose une interprétation clinique
+5. Suggère la conduite à tenir si approprié`
+        };
+
+        const medGemmaPrompt = imageTypePrompts[imageType] || imageTypePrompts.other;
+        
+        const response = await axios.post(
+          'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions',
+          {
+            model: 'tgi',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:image/jpeg;base64,${cleanImageBase64}`
+                    }
+                  },
+                  {
+                    type: 'text',
+                    text: medGemmaPrompt
+                  }
+                ]
+              }
+            ],
+            max_tokens: 2000,
+            temperature: 0.3,
+            stream: false
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${MEDGEMMA_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 60000
+          }
+        );
+
+        const text = response.data.choices?.[0]?.message?.content || '';
+        
+        console.log('Réponse MedGemma reçue, longueur:', text.length);
+        
+        return { text };
+      } else {
+        // Fallback sur GPT-4o si MedGemma n'est pas configuré
+        console.log('MedGemma non configuré, utilisation de GPT-4o pour l\'analyse d\'image...');
+        
+        const cleanImageBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        
+        const response = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: prompt || 'Analyse cette image médicale en détail.'
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:image/jpeg;base64,${cleanImageBase64}`
+                    }
+                  }
+                ]
+              }
+            ],
+            max_tokens: 5000,
+            temperature: 0.3
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${OPENAI_API_KEY}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const text = response.data.choices?.[0]?.message?.content || '';
+        
+        console.log('Réponse GPT-4o Vision reçue, longueur:', text.length);
+        console.log('Usage Vision:', response.data.usage);
+        
+        return { text };
+      }
     } catch (error) {
-      console.error('Erreur analyse image o3:', error);
+      console.error('Erreur analyse image:', error.response?.data || error.message);
+      
+      // Si erreur avec MedGemma, essayer le fallback
+      if (MEDGEMMA_API_KEY && error.response?.status !== 401) {
+        console.log('Erreur MedGemma, tentative avec GPT-4o...');
+        try {
+          const cleanImageBase64 = data.imageBase64.replace(/^data:image\/\w+;base64,/, '');
+          
+          const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+              model: 'gpt-4o',
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'text',
+                      text: data.prompt || 'Analyse cette image médicale en détail.'
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: {
+                        url: `data:image/jpeg;base64,${cleanImageBase64}`
+                      }
+                    }
+                  ]
+                }
+              ],
+              max_tokens: 5000,
+              temperature: 0.3
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          const text = response.data.choices?.[0]?.message?.content || '';
+          return { text };
+        } catch (fallbackError) {
+          console.error('Erreur fallback GPT-4o:', fallbackError);
+        }
+      }
+      
       throw new functions.https.HttpsError(
         'internal', 
         'Erreur lors de l\'analyse d\'image: ' + error.message
