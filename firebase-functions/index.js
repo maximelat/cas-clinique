@@ -623,11 +623,13 @@ exports.enrichReferencesWithWebSearch = functions.https.onCall(async (data, cont
       throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
     }
 
-    console.log(`Enrichissement de ${references.length} références avec Web Search...`);
+    console.log(`=== ENRICHISSEMENT WEB SEARCH ===`);
+    console.log(`Nombre de références à enrichir: ${references.length}`);
     
     // Traiter par batches de 3 pour éviter les timeouts
     const batchSize = 3;
     const enrichedRefs = [...references];
+    const webSearchLogs = [];
     
     for (let i = 0; i < references.length; i += batchSize) {
       const batch = references.slice(i, i + batchSize);
@@ -635,20 +637,23 @@ exports.enrichReferencesWithWebSearch = functions.https.onCall(async (data, cont
       
       for (const ref of batch) {
         try {
-          const prompt = `Lis cette source académique et extrais les métadonnées précises :
+          const startTime = Date.now();
+          console.log(`\n--- Analyse référence ${ref.label}: ${ref.title?.substring(0, 50)}...`);
+          
+          const prompt = `Visite cette URL académique et extrais les métadonnées RÉELLES :
 
 URL: ${ref.url}
 Titre actuel: ${ref.title || 'Non disponible'}
 
 INSTRUCTIONS STRICTES:
-1. Visite l'URL et lis le contenu de l'article
+1. Utilise l'outil web search pour visiter l'URL
 2. Extrais UNIQUEMENT les informations VISIBLES sur la page
 3. Ne JAMAIS inventer d'informations
 4. Si une information n'est pas trouvée, marque "Non disponible"
 
 Format JSON obligatoire:
 {
-  "title": "Titre exact de l'article",
+  "title": "Titre exact de l'article (garder le titre Perplexity si correct)",
   "authors": "Auteur(s) exact(s) ou Non disponible", 
   "journal": "Nom exact du journal ou Non disponible",
   "year": "Année de publication ou null",
@@ -659,11 +664,20 @@ Format JSON obligatoire:
           const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
             {
-              model: 'gpt-4o-mini',
-              messages: [{ role: 'user', content: prompt }],
-              tools: [{ type: 'web_search_preview' }],
-              tool_choice: { type: 'web_search_preview' },
-              max_tokens: 1000,
+              model: 'gpt-4o-mini-search-preview-2025-03-11', // Modèle correct avec web search
+              messages: [
+                {
+                  role: 'system',
+                  content: 'Tu es un assistant de recherche académique. Utilise TOUJOURS l\'outil web search pour visiter les URLs et extraire les vraies métadonnées. Retourne UNIQUEMENT du JSON valide.'
+                },
+                { 
+                  role: 'user', 
+                  content: prompt 
+                }
+              ],
+              tools: [{ type: 'web_search' }], // Outil web search activé
+              tool_choice: 'auto', // Laisse le modèle choisir quand utiliser web search
+              max_tokens: 1500,
               temperature: 0.1,
               response_format: { type: "json_object" }
             },
@@ -675,35 +689,59 @@ Format JSON obligatoire:
             }
           );
 
+          const responseTime = Date.now() - startTime;
           const responseText = response.data.choices?.[0]?.message?.content || '{}';
+          
+          // Log détaillé du résultat web search
+          const webSearchLog = {
+            referenceLabel: ref.label,
+            url: ref.url,
+            originalTitle: ref.title,
+            webSearchTime: responseTime,
+            webSearchResult: null,
+            enrichmentSuccess: false
+          };
           
           try {
             const enrichedData = JSON.parse(responseText);
+            webSearchLog.webSearchResult = enrichedData;
             
             // Mettre à jour la référence avec les données enrichies
             const refIndex = enrichedRefs.findIndex(r => r.url === ref.url);
             if (refIndex !== -1) {
               enrichedRefs[refIndex] = {
                 ...enrichedRefs[refIndex],
-                title: enrichedData.title || ref.title,
+                title: enrichedData.title || ref.title, // Garder le titre Perplexity si pas mieux
                 authors: enrichedData.authors || 'Non disponible',
-                journal: enrichedData.journal || 'Non disponible', 
-                year: enrichedData.year || null,
+                journal: enrichedData.journal || enrichedRefs[refIndex].journal || 'Non disponible', 
+                year: enrichedData.year || enrichedRefs[refIndex].year || null,
                 doi: enrichedData.doi || null,
-                abstract: enrichedData.abstract || ''
+                abstract: enrichedData.abstract || '',
+                webSearchEnriched: true
               };
+              webSearchLog.enrichmentSuccess = true;
             }
             
-            console.log(`Référence enrichie: ${enrichedData.title?.substring(0, 50)}...`);
+            console.log(`✅ Référence enrichie avec succès`);
+            console.log(`   - Auteurs: ${enrichedData.authors || 'Non trouvé'}`);
+            console.log(`   - Journal: ${enrichedData.journal || 'Non trouvé'}`);
+            console.log(`   - Année: ${enrichedData.year || 'Non trouvé'}`);
             
           } catch (parseError) {
-            console.error('Erreur parsing JSON pour ref:', ref.url, parseError);
-            // Garder la référence originale en cas d'erreur
+            console.error('❌ Erreur parsing JSON pour ref:', ref.url, parseError);
+            webSearchLog.error = parseError.message;
           }
           
+          webSearchLogs.push(webSearchLog);
+          
         } catch (refError) {
-          console.error(`Erreur enrichissement ref ${ref.url}:`, refError.message);
-          // Continuer avec la référence non enrichie
+          console.error(`❌ Erreur enrichissement ref ${ref.url}:`, refError.message);
+          webSearchLogs.push({
+            referenceLabel: ref.label,
+            url: ref.url,
+            error: refError.message,
+            enrichmentSuccess: false
+          });
         }
         
         // Délai entre les requêtes
@@ -711,8 +749,15 @@ Format JSON obligatoire:
       }
     }
     
-    console.log(`Enrichissement terminé: ${enrichedRefs.length} références`);
-    return { references: enrichedRefs };
+    console.log(`\n=== RÉSUMÉ ENRICHISSEMENT ===`);
+    console.log(`Total références: ${enrichedRefs.length}`);
+    console.log(`Enrichies avec succès: ${webSearchLogs.filter(l => l.enrichmentSuccess).length}`);
+    console.log(`Échecs: ${webSearchLogs.filter(l => !l.enrichmentSuccess).length}`);
+    
+    return { 
+      references: enrichedRefs,
+      webSearchLogs: webSearchLogs // Retourner les logs pour le debug
+    };
     
   } catch (error) {
     console.error('Erreur enrichissement Web Search:', error.response?.data || error.message);
@@ -736,7 +781,9 @@ exports.addCitationsToSections = functions.https.onCall(async (data, context) =>
       throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
     }
 
-    console.log('Ajout intelligent des citations aux sections...');
+    console.log('=== AJOUT INTELLIGENT DES CITATIONS ===');
+    console.log(`Sections à traiter: ${sections.length}`);
+    console.log(`Références disponibles: ${references.length}`);
     
     const prompt = `Tu es un expert médical. Ajoute intelligemment les références [1], [2], etc. dans ces sections analysées.
 
@@ -760,14 +807,27 @@ Format de réponse OBLIGATOIRE:
       "type": "CLINICAL_CONTEXT",
       "content": "Contenu avec références [1] ajoutées..."
     }
+  ],
+  "citationPlacements": [
+    {
+      "sectionType": "CLINICAL_CONTEXT",
+      "referenceLabel": "1",
+      "placementReason": "Raison du placement"
+    }
   ]
 }`;
 
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
+        model: 'gpt-4o-mini-search-preview-2025-03-11', // Utiliser le modèle avec web search
+        messages: [
+          {
+            role: 'system',
+            content: 'Tu es un assistant médical expert en placement de citations. Analyse le contenu et place les références de manière pertinente.'
+          },
+          { role: 'user', content: prompt }
+        ],
         max_tokens: 6000,
         temperature: 0.1,
         response_format: { type: "json_object" }
@@ -785,9 +845,20 @@ Format de réponse OBLIGATOIRE:
     try {
       const result = JSON.parse(responseText);
       const updatedSections = result.sections || sections;
+      const citationPlacements = result.citationPlacements || [];
       
+      console.log(`\n=== RÉSUMÉ PLACEMENT CITATIONS ===`);
       console.log(`Citations ajoutées à ${updatedSections.length} sections`);
-      return { sections: updatedSections };
+      console.log(`Placements détaillés: ${citationPlacements.length}`);
+      
+      citationPlacements.forEach(placement => {
+        console.log(`- [${placement.referenceLabel}] dans ${placement.sectionType}: ${placement.placementReason}`);
+      });
+      
+      return { 
+        sections: updatedSections,
+        citationPlacements: citationPlacements // Retourner les détails de placement
+      };
       
     } catch (parseError) {
       console.error('Erreur parsing citations:', parseError);

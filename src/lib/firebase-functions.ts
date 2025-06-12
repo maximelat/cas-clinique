@@ -262,7 +262,7 @@ export async function enrichReferencesWithWebSearchViaFunction(references: any[]
     throw new Error('Firebase Functions non configuré');
   }
 
-  const enrichRefs = httpsCallable<{ references: any[], perplexityContent: string }, { references: any[] }>(
+  const enrichRefs = httpsCallable<{ references: any[], perplexityContent: string }, { references: any[], webSearchLogs?: any[] }>(
     functions, 
     'enrichReferencesWithWebSearch'
   );
@@ -270,6 +270,20 @@ export async function enrichReferencesWithWebSearchViaFunction(references: any[]
   try {
     console.log('Appel Firebase enrichReferencesWithWebSearch...');
     const result = await enrichRefs({ references, perplexityContent });
+    
+    // Logger les détails du web search si disponibles
+    if (result.data.webSearchLogs) {
+      console.log('=== LOGS WEB SEARCH ===');
+      result.data.webSearchLogs.forEach((log: any) => {
+        console.log(`Ref [${log.referenceLabel}]: ${log.enrichmentSuccess ? '✅' : '❌'} ${log.url}`);
+        if (log.webSearchResult) {
+          console.log(`  - Auteurs: ${log.webSearchResult.authors || 'Non trouvé'}`);
+          console.log(`  - Journal: ${log.webSearchResult.journal || 'Non trouvé'}`);
+          console.log(`  - Année: ${log.webSearchResult.year || 'Non trouvé'}`);
+        }
+      });
+    }
+    
     console.log('Références enrichies reçues via Firebase Functions');
     return result.data.references;
   } catch (error: any) {
@@ -284,7 +298,7 @@ export async function addCitationsToSectionsViaFunction(sections: any[], referen
     throw new Error('Firebase Functions non configuré');
   }
 
-  const addCitations = httpsCallable<{ sections: any[], references: any[], originalPerplexityText: string }, { sections: any[] }>(
+  const addCitations = httpsCallable<{ sections: any[], references: any[], originalPerplexityText: string }, { sections: any[], citationPlacements?: any[] }>(
     functions, 
     'addCitationsToSections'
   );
@@ -292,6 +306,15 @@ export async function addCitationsToSectionsViaFunction(sections: any[], referen
   try {
     console.log('Appel Firebase addCitationsToSections...');
     const result = await addCitations({ sections, references, originalPerplexityText });
+    
+    // Logger les détails du placement des citations si disponibles
+    if (result.data.citationPlacements) {
+      console.log('=== LOGS PLACEMENT CITATIONS ===');
+      result.data.citationPlacements.forEach((placement: any) => {
+        console.log(`[${placement.referenceLabel}] → ${placement.sectionType}: ${placement.placementReason}`);
+      });
+    }
+    
     console.log('Citations ajoutées via Firebase Functions');
     return result.data.sections;
   } catch (error: any) {

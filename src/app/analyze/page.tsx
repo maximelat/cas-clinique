@@ -643,16 +643,10 @@ function DemoPageContent() {
         timestamp: request.timestamp,
         model: request.model,
         requestType: request.type,
-        fullRequest: request.request || 'Non disponible', // Requête complète
-        fullResponse: request.response || 'Non disponible', // Réponse complète
-        inputSummary: {
-          length: request.request?.length || 0,
-          preview: request.request?.substring(0, 500) + (request.request?.length > 500 ? '...' : '') || 'Non disponible'
-        },
-        outputSummary: {
-          length: request.response?.length || 0,
-          preview: request.response?.substring(0, 500) + (request.response?.length > 500 ? '...' : '') || 'Non disponible'
-        },
+        fullRequest: request.request || 'Non disponible',
+        fullResponse: request.response || 'Non disponible',
+        requestLength: request.request?.length || 0,
+        responseLength: request.response?.length || 0,
         success: !!request.response,
         duration: index > 0 ? 
           new Date(request.timestamp).getTime() - new Date(analysisData.requestChain[index-1].timestamp).getTime() 
@@ -735,215 +729,152 @@ function DemoPageContent() {
   // Fonction pour exporter en PDF
   const exportToPDF = async () => {
     try {
-    const element = document.getElementById('analysis-results')
-    if (!element) {
+      const element = document.getElementById('analysis-results')
+      if (!element) {
         toast.error('Aucun résultat à exporter')
-      return
-    }
+        return
+      }
 
       toast.info('Génération du PDF en cours...')
+      
+      // Créer une fonction pour remplacer les couleurs oklch
+      const replaceOklchColors = () => {
+        const style = document.createElement('style')
+        style.id = 'pdf-export-colors'
+        style.innerHTML = `
+          /* Remplacer les couleurs oklch par des équivalents hex pour l'export PDF */
+          * {
+            --background: #ffffff !important;
+            --foreground: #0a0a0a !important;
+            --card: #ffffff !important;
+            --card-foreground: #0a0a0a !important;
+            --popover: #ffffff !important;
+            --popover-foreground: #0a0a0a !important;
+            --primary: #171717 !important;
+            --primary-foreground: #fafafa !important;
+            --secondary: #f5f5f5 !important;
+            --secondary-foreground: #171717 !important;
+            --muted: #f5f5f5 !important;
+            --muted-foreground: #737373 !important;
+            --accent: #f5f5f5 !important;
+            --accent-foreground: #171717 !important;
+            --destructive: #ef4444 !important;
+            --destructive-foreground: #fafafa !important;
+            --border: #e5e5e5 !important;
+            --input: #e5e5e5 !important;
+            --ring: #0a0a0a !important;
+            --radius: 0.5rem !important;
+          }
+          
+          /* Forcer les couleurs de fond et texte */
+          .bg-gray-50 { background-color: #f9fafb !important; }
+          .bg-gray-100 { background-color: #f3f4f6 !important; }
+          .bg-blue-50 { background-color: #eff6ff !important; }
+          .bg-green-50 { background-color: #f0fdf4 !important; }
+          .bg-yellow-50 { background-color: #fefce8 !important; }
+          .bg-red-50 { background-color: #fef2f2 !important; }
+          .text-gray-600 { color: #4b5563 !important; }
+          .text-gray-700 { color: #374151 !important; }
+          .text-gray-800 { color: #1f2937 !important; }
+          .text-gray-900 { color: #111827 !important; }
+          .border-gray-200 { border-color: #e5e7eb !important; }
+          .border-gray-300 { border-color: #d1d5db !important; }
+        `
+        document.head.appendChild(style)
+        return style
+      }
       
       // Sauvegarder l'état actuel
       const originalAccordionValues = [...accordionValues]
       const originalShowRareDisease = showRareDiseaseSection
       const originalShowInitialCase = showInitialCase
       
-      // Ouvrir tous les accordéons temporairement
-      const allAccordionValues = analysisData?.isDemo 
-        ? Object.keys(demoSections).map((_, index) => String(index))
-        : (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((_: any, index: number) => String(index))
+      // Ajouter les styles de remplacement
+      const tempStyle = replaceOklchColors()
       
-      // Ajouter l'accordéon des références
-      allAccordionValues.push('references')
-      
-      // Ajouter l'accordéon des maladies rares si disponible
-      if (rareDiseaseData) {
-        allAccordionValues.push('rare-references')
-      }
-      
-      setAccordionValues(allAccordionValues)
-      setShowInitialCase(true)
-      setShowRareDiseaseSection(true)
-      
-      // Attendre que les accordéons s'ouvrent et le DOM se mette à jour
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // Créer un clone temporaire pour nettoyer les styles problématiques
-      const clonedElement = element.cloneNode(true) as HTMLElement
-      
-      // Définir les remplacements de couleurs oklch
-      const colorReplacements: { [key: string]: string } = {
-        'oklch(1 0 0)': '#ffffff',
-        'oklch(0.145 0 0)': '#1f2937',
-        'oklch(0.985 0 0)': '#f9fafb',
-        'oklch(0.205 0 0)': '#374151',
-        'oklch(0.97 0 0)': '#f3f4f6',
-        'oklch(0.556 0 0)': '#6b7280',
-        'oklch(0.922 0 0)': '#e5e7eb',
-        'oklch(0.708 0 0)': '#9ca3af',
-        'oklch(0.577 0.245 27.325)': '#ef4444',
-        'oklch(0.646 0.222 41.116)': '#f97316',
-        'oklch(0.6 0.118 184.704)': '#3b82f6',
-        'oklch(0.398 0.07 227.392)': '#1e40af',
-        'oklch(0.828 0.189 84.429)': '#eab308',
-        'oklch(0.769 0.188 70.08)': '#65a30d'
-      }
-      
-      // Supprimer ou remplacer les couleurs oklch problématiques
-      const allElements = clonedElement.querySelectorAll('*')
-      allElements.forEach((el) => {
-        const element = el as HTMLElement
-        const computedStyles = window.getComputedStyle(element)
+      try {
+        // Ouvrir tous les accordéons temporairement
+        const allAccordionValues = analysisData?.isDemo 
+          ? Object.keys(demoSections).map((_, index) => String(index))
+          : (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((_, index) => String(index))
         
-        // Vérifier les propriétés de couleur courantes
-        const colorProperties = [
-          'color', 'background-color', 'border-color', 
-          'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
-          'fill', 'stroke', 'outline-color', 'text-decoration-color'
-        ]
+        // Ajouter l'accordéon des références
+        allAccordionValues.push('references')
         
-        colorProperties.forEach(prop => {
-          const value = computedStyles.getPropertyValue(prop)
-          if (value && value.includes('oklch')) {
-            // Chercher une correspondance exacte
-            let replacement = colorReplacements[value]
-            
-            // Si pas de correspondance exacte, utiliser des fallbacks logiques
-            if (!replacement) {
-              if (value.includes('oklch(1') || value.includes('oklch(0.9')) {
-                replacement = '#ffffff' // Blanc/très clair
-              } else if (value.includes('oklch(0.1') || value.includes('oklch(0.2')) {
-                replacement = '#1f2937' // Très sombre
-              } else if (value.includes('oklch(0.5') || value.includes('oklch(0.6')) {
-                replacement = '#6b7280' // Gris moyen
-              } else if (value.includes('oklch(0.8') || value.includes('oklch(0.7')) {
-                replacement = '#e5e7eb' // Gris clair
-              } else {
-                replacement = '#374151' // Gris par défaut
-              }
-            }
-            
-            element.style.setProperty(prop, replacement, 'important')
-          }
-        })
-        
-        // Supprimer les classes CSS qui pourraient contenir des couleurs oklch
-        element.classList.forEach(className => {
-          if (className.includes('bg-') || className.includes('text-') || className.includes('border-')) {
-            // Appliquer des couleurs de fallback pour les classes Tailwind communes
-            if (className.includes('bg-white') || className.includes('bg-gray-50')) {
-              element.style.setProperty('background-color', '#ffffff', 'important')
-            } else if (className.includes('bg-gray-900') || className.includes('bg-slate-900')) {
-              element.style.setProperty('background-color', '#1f2937', 'important')
-            } else if (className.includes('text-gray-900')) {
-              element.style.setProperty('color', '#1f2937', 'important')
-            } else if (className.includes('text-gray-600')) {
-              element.style.setProperty('color', '#6b7280', 'important')
-            }
-          }
-        })
-      })
-      
-      // Ajouter temporairement le clone au DOM (nécessaire pour html2canvas)
-      clonedElement.style.position = 'absolute'
-      clonedElement.style.left = '-9999px'
-      clonedElement.style.width = element.offsetWidth + 'px'
-      clonedElement.style.backgroundColor = '#ffffff'
-      document.body.appendChild(clonedElement)
-      
-      const canvas = await html2canvas(clonedElement, {
-        scale: 1.5, // Réduit légèrement pour éviter les problèmes de mémoire
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        allowTaint: true,
-        foreignObjectRendering: false, // Évite certains problèmes CSS
-        onclone: (clonedDoc) => {
-          // S'assurer que tous les styles sont appliqués dans le document cloné
-          const clonedEl = clonedDoc.getElementById('analysis-results')
-          if (clonedEl) {
-            clonedEl.style.backgroundColor = '#ffffff'
-            clonedEl.style.color = '#1f2937'
-          }
+        // Ajouter l'accordéon des maladies rares si disponible
+        if (rareDiseaseData) {
+          allAccordionValues.push('rare-references')
         }
-      })
-      
-      // Supprimer le clone
-      document.body.removeChild(clonedElement)
-      
-      const imgData = canvas.toDataURL('image/png', 0.8) // Compression légère
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      })
-      
-      // Ajouter un titre
-      pdf.setFontSize(20)
-      pdf.text('Analyse Clinique', 105, 20, { align: 'center' })
-      pdf.setFontSize(12)
-      pdf.text(new Date().toLocaleDateString('fr-FR'), 105, 30, { align: 'center' })
-      
-      // Calculer les dimensions pour l'image
-      const imgWidth = 190 // Marges de 10mm de chaque côté
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      const pageHeight = 270 // Hauteur utilisable (297 - marges)
-      let yPosition = 40 // Commencer après le titre
-      
-      // Ajouter l'image page par page si nécessaire
-      let remainingHeight = imgHeight
-      let currentPage = 1
-      
-      while (remainingHeight > 0) {
-        const availableHeight = pageHeight - yPosition
-        const sliceHeight = Math.min(remainingHeight, availableHeight)
         
-        // Calculer la portion de l'image à afficher
-        const sourceY = imgHeight - remainingHeight
-        const sourceHeight = sliceHeight
+        setAccordionValues(allAccordionValues)
+        setShowRareDiseaseSection(true)
+        setShowInitialCase(true)
         
-        if (currentPage > 1) {
+        // Attendre que les accordéons s'ouvrent
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Capturer avec html2canvas
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: element.scrollWidth,
+          windowHeight: element.scrollHeight,
+          onclone: (clonedDoc) => {
+            // S'assurer que les styles sont appliqués dans le clone
+            const clonedElement = clonedDoc.getElementById('analysis-results')
+            if (clonedElement) {
+              clonedElement.style.backgroundColor = '#ffffff'
+              clonedElement.style.color = '#000000'
+            }
+          }
+        })
+        
+        // Créer le PDF
+        const imgData = canvas.toDataURL('image/png')
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4'
+        })
+        
+        const imgWidth = 210
+        const pageHeight = 297
+        const imgHeight = (canvas.height * imgWidth) / canvas.width
+        let heightLeft = imgHeight
+        let position = 0
+        
+        // Ajouter l'image au PDF, page par page
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+        
+        while (heightLeft >= 0) {
+          position = heightLeft - imgHeight
           pdf.addPage()
-          yPosition = 20
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+          heightLeft -= pageHeight
         }
         
-        // Ajouter la portion d'image
-        pdf.addImage(
-          imgData, 
-          'PNG', 
-          10, 
-          yPosition, 
-          imgWidth, 
-          sliceHeight,
-          undefined,
-          'FAST'
-        )
+        // Sauvegarder le PDF
+        const fileName = `analyse-clinique-${analysisData?.caseTitle?.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '-') || 'export'}-${new Date().toISOString().split('T')[0]}.pdf`
+        pdf.save(fileName)
         
-        remainingHeight -= sliceHeight
-        currentPage++
-        yPosition = 20 // Pour les pages suivantes
+        toast.success('PDF exporté avec succès')
+      } finally {
+        // Restaurer l'état original
+        setAccordionValues(originalAccordionValues)
+        setShowRareDiseaseSection(originalShowRareDisease)
+        setShowInitialCase(originalShowInitialCase)
+        
+        // Retirer les styles temporaires
+        if (tempStyle && tempStyle.parentNode) {
+          tempStyle.parentNode.removeChild(tempStyle)
+        }
       }
-      
-      const date = new Date().toISOString().split('T')[0]
-      const title = analysisData?.title || generateCaseTitle(textContent)
-      const sanitizedTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase()
-      pdf.save(`analyse_clinique_${sanitizedTitle}_${date}.pdf`)
-      
-      // Restaurer l'état original
-      setAccordionValues(originalAccordionValues)
-      setShowInitialCase(originalShowInitialCase)
-      setShowRareDiseaseSection(originalShowRareDisease)
-      
-      toast.success('PDF exporté avec succès')
-    } catch (error: any) {
+    } catch (error) {
       console.error('Erreur export PDF:', error)
-      toast.error(`Erreur lors de l'export PDF: ${error.message}`)
-      
-      // Restaurer l'état en cas d'erreur
-      const originalAccordionValues: string[] = []
-      setAccordionValues(originalAccordionValues)
-      setShowInitialCase(false)
-      setShowRareDiseaseSection(false)
+      toast.error('Erreur lors de l\'export PDF')
     }
   }
 
