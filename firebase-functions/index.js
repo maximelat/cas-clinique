@@ -490,47 +490,47 @@ exports.analyzePerplexityResults = functions.https.onCall(async (data, context) 
     console.log('Search results trouvés:', searchResults.length);
     
     // Analyser le contenu avec GPT-4o pour améliorer l'extraction des références
-    const prompt = `Analyse cette réponse Perplexity et améliore l'extraction des références en utilisant les dates disponibles:
+    const prompt = `Analyse cette réponse Perplexity et créé des références enrichies pour TOUTES les sources disponibles:
 
 RÉPONSE PERPLEXITY:
 ${typeof perplexityResponse === 'string' ? perplexityResponse : JSON.stringify(perplexityResponse, null, 2)}
 
-SEARCH RESULTS AVEC DATES:
+SEARCH RESULTS AVEC DATES (TOUTES LES SOURCES À INCLURE):
 ${JSON.stringify(searchResults, null, 2)}
 
 INSTRUCTIONS:
-1. Identifie toutes les références utilisées dans le texte (format [1], [2], etc.)
-2. Pour chaque référence, associe-la au search_result correspondant
-3. Extrait les informations suivantes pour chaque référence:
+1. Crée une référence pour CHAQUE source dans search_results (même si elle n'est pas citée dans le texte)
+2. Pour chaque référence, utilise les informations exactes de search_results:
    - title: Titre exact de l'article
    - url: URL de la source
-   - date: Date de publication si disponible dans search_results
-   - authors: Auteurs si déductibles de l'URL ou du titre
-   - journal: Journal ou source si déductible
-   - keyPoints: Points clés en rapport avec le cas clinique analysé
+   - date: Date de publication exacte depuis search_results
+   - authors: "Non disponible" (sauf si déductible de l'URL/titre)
+   - journal: Déduis depuis l'URL ou mets "Non disponible"
+   - keyPoints: Point clé de cette source en rapport avec le cas clinique
 
-4. Retourne un JSON avec les sections suivantes:
-   - analysisText: Le texte de l'analyse avec les références correctement placées
-   - references: Array des références enrichies avec toutes les métadonnées
+3. Retourne un JSON avec les sections suivantes:
+   - analysisText: Le texte de l'analyse Perplexity (inchangé)
+   - references: Array avec TOUTES les références enrichies (une par search_result)
 
-IMPORTANT: 
-- Utilise les dates exactes des search_results quand disponibles
-- Ne place les références que là où elles sont pertinentes
-- Si une référence [X] est mentionnée, elle doit correspondre à un search_result
-- Retourne UNIQUEMENT du JSON valide
+RÈGLES IMPORTANTES:
+- NE PAS filtrer les références selon le texte - inclure TOUTES les sources de search_results
+- Utilise les dates exactes des search_results
+- Pour les auteurs : mets "Non disponible" sauf si clairement identifiable
+- Pour les journaux : déduis depuis l'URL si possible, sinon "Non disponible"
+- Numérote les références [1], [2], etc. dans l'ordre des search_results
 
-Format de sortie:
+Format de sortie OBLIGATOIRE:
 {
-  "analysisText": "Texte analysé avec références [1], [2], etc.",
+  "analysisText": "Texte analysé Perplexity inchangé...",
   "references": [
     {
       "label": "1",
-      "title": "Titre exact",
+      "title": "Titre exact du search_result",
       "url": "URL exacte",
-      "date": "2024-01-01",
-      "authors": "Auteurs si disponibles",
-      "journal": "Journal ou source",
-      "keyPoints": "Points clés pertinents"
+      "date": "Date exacte depuis search_results",
+      "authors": "Non disponible",
+      "journal": "Journal déduit ou Non disponible",
+      "keyPoints": "Points clés de cette source"
     }
   ]
 }`;

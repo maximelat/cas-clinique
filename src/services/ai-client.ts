@@ -801,8 +801,96 @@ RÈGLES IMPORTANTES:
     console.log('Search results disponibles:', perplexityReport.search_results?.length || 0);
     console.log('Citations brutes:', JSON.stringify(perplexityReport.citations, null, 2));
 
-    // Utiliser les citations directement si disponibles
-    if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
+    // PRIORITÉ 1: Utiliser les search_results (plus complets que les citations)
+    if (perplexityReport.search_results && perplexityReport.search_results.length > 0) {
+      console.log('Utilisation des search_results pour créer les références');
+      
+      perplexityReport.search_results.forEach((result, index) => {
+        const refLabel = String(index + 1);
+        
+        // Extraire l'année depuis la date
+        let year = null;
+        if (result.date) {
+          try {
+            year = new Date(result.date).getFullYear();
+          } catch (e) {
+            // Si la date n'est pas valide, essayer de l'extraire du texte
+            const yearMatch = result.date.match(/(\d{4})/);
+            if (yearMatch) year = parseInt(yearMatch[1]);
+          }
+        }
+        
+        // Déduire le journal depuis l'URL et le titre
+        let journal = '';
+        if (result.url) {
+          if (result.url.includes('academic.oup.com')) {
+            journal = 'Oxford Academic';
+          } else if (result.url.includes('semanticscholar.org')) {
+            journal = 'Semantic Scholar';
+          } else if (result.url.includes('link.springer.com')) {
+            journal = 'Springer';
+          } else if (result.url.includes('cfp.ca')) {
+            journal = 'Canadian Family Physician';
+          } else if (result.url.includes('doi.emh.ch')) {
+            journal = 'Swiss Medical Weekly';
+          } else if (result.url.includes('latunisiemedicale.com')) {
+            journal = 'La Tunisie Médicale';
+          } else if (result.url.includes('sistemas.uft.edu.br')) {
+            journal = 'Revista ENCENA';
+          } else if (result.url.includes('shs.cairn.info')) {
+            journal = 'Cairn.info';
+          } else if (result.url.includes('persee.fr')) {
+            journal = 'Persée';
+          } else if (result.url.includes('jama.jamanetwork.com')) {
+            journal = 'JAMA';
+          } else if (result.url.includes('pmc.ncbi.nlm.nih.gov')) {
+            journal = 'PubMed Central';
+          } else if (result.url.includes('pubmed.ncbi.nlm.nih.gov')) {
+            journal = 'PubMed';
+          } else if (result.url.includes('orphanet')) {
+            journal = 'Orphanet - Base de données des maladies rares';
+          } else if (result.url.includes('omim.org')) {
+            journal = 'OMIM - Online Mendelian Inheritance in Man';
+          } else if (result.url.includes('nejm.org')) {
+            journal = 'New England Journal of Medicine';
+          } else if (result.url.includes('thelancet.com')) {
+            journal = 'The Lancet';
+          } else if (result.url.includes('nature.com')) {
+            journal = 'Nature';
+          } else if (result.url.includes('sciencedirect.com')) {
+            journal = 'ScienceDirect';
+          }
+          
+          // Essayer d'extraire des informations plus spécifiques depuis le titre
+          if (!journal && result.title) {
+            if (result.title.includes('QJM')) {
+              journal = 'QJM: An International Journal of Medicine';
+            } else if (result.title.includes('Journal of Bone and Joint Surgery')) {
+              journal = 'The Journal of Bone and Joint Surgery';
+            } else if (result.title.includes('Archives of Orthopaedic and Trauma Surgery')) {
+              journal = 'Archives of Orthopaedic and Trauma Surgery';
+            } else if (result.title.includes('Haute Autorité de santé')) {
+              journal = 'Haute Autorité de Santé';
+            }
+          }
+        }
+        
+        references.push({
+          label: refLabel,
+          title: result.title || `Source ${refLabel}`,
+          url: result.url || '#',
+          authors: '', // Sera enrichi par GPT-4o si nécessaire
+          year: year,
+          journal: journal,
+          date: result.date || ''
+        });
+      });
+    }
+    
+    // PRIORITÉ 2: Utiliser les citations si pas de search_results
+    else if (perplexityReport.citations && Array.isArray(perplexityReport.citations)) {
+      console.log('Utilisation des citations simples');
+      
       perplexityReport.citations.forEach((citation, index) => {
         const refLabel = String(index + 1);
         
@@ -835,7 +923,7 @@ RÈGLES IMPORTANTES:
           }
         }
         
-        // Déduire le journal depuis l'URL si non fourni
+        // Déduire le journal depuis l'URL si non fourni (même logique que ci-dessus)
         if (!journal && url) {
           if (url.includes('pmc.ncbi.nlm.nih.gov')) {
             journal = 'PubMed Central';
@@ -868,23 +956,10 @@ RÈGLES IMPORTANTES:
       });
     }
     
-    // Si pas de citations, utiliser search_results
-    else if (perplexityReport.search_results && perplexityReport.search_results.length > 0) {
-      perplexityReport.search_results.forEach((result, index) => {
-        references.push({
-          label: String(index + 1),
-          title: result.title || `Source ${index + 1}`,
-          url: result.url || '#',
-          authors: '',
-          year: result.date ? new Date(result.date).getFullYear() : null,
-          journal: '',
-          date: result.date || ''
-        });
-      });
-    }
-    
-    // En dernier recours, extraire depuis le texte
+    // PRIORITÉ 3: En dernier recours, extraire depuis le texte
     else if (perplexityReport.answer) {
+      console.log('Extraction depuis le texte de réponse (fallback)');
+      
       // Chercher les références dans le texte
       const refPattern = /\[(\d+)\]\s*([^[\n]+)?/g;
       const matches = Array.from(perplexityReport.answer.matchAll(refPattern));
@@ -912,7 +987,7 @@ RÈGLES IMPORTANTES:
     console.log(`${references.length} références extraites`);
     
     // Enrichir les références avec GPT-4o si nécessaire
-    if (references.length > 0 && references.some(ref => !ref.authors || !ref.year)) {
+    if (references.length > 0 && references.some(ref => !ref.authors || !ref.year || ref.authors === 'Non disponible')) {
       console.log('Enrichissement des références avec GPT-4o...');
       try {
         const enrichedRefs = await this.enrichReferencesWithGPT4(references);
@@ -957,20 +1032,29 @@ RÈGLES IMPORTANTES:
         }
       } else {
         // Mode développement - appel direct
-        const prompt = `Tu es un expert en recherche académique médicale. Enrichis ces références avec les métadonnées manquantes.
+        const prompt = `Tu es un expert en recherche académique médicale. Analyse ces références et enrichis-les UNIQUEMENT avec des informations que tu peux déduire avec certitude.
 
-RÉFÉRENCES À ENRICHIR:
+RÉFÉRENCES À ANALYSER:
 ${JSON.stringify(references, null, 2)}
 
-INSTRUCTIONS:
-1. Pour chaque référence, ajoute les informations manquantes:
-   - authors: Liste des auteurs principaux (format: "Nom P, Nom2 Q")
-   - year: Année de publication (format: 2024)
-   - journal: Nom du journal ou de la source
-   - title: Titre complet si manquant
-2. Retourne UNIQUEMENT un tableau JSON valide avec les références enrichies
-3. Conserve toutes les propriétés existantes
-4. N'invente pas d'informations - mets null si tu ne peux pas déterminer
+INSTRUCTIONS STRICTES:
+1. Pour chaque référence, examine l'URL et le titre pour déduire des informations fiables
+2. Ne JAMAIS inventer d'auteurs - si tu ne peux pas les identifier précisément, mets "Non disponible"
+3. Pour les années : utilise la date fournie ou celle dans l'URL, sinon null
+4. Pour les journaux : déduis uniquement depuis l'URL ou des indices clairs dans le titre
+5. SOIS CONSERVATEUR - mieux vaut "Non disponible" qu'une information inventée
+
+RÈGLES SPÉCIFIQUES:
+- academic.oup.com : probablement Oxford Academic, mais cherche le journal exact dans l'URL
+- semanticscholar.org : pas un journal, c'est un agrégateur
+- springer.com : cherche le nom du journal spécifique
+- pubmed/pmc : extraire le journal depuis l'URL si possible
+- cfp.ca : Canadian Family Physician
+- Pour les auteurs : UNIQUEMENT si clairement identifiables dans l'URL ou titre
+
+6. Retourne UNIQUEMENT un tableau JSON valide avec les références enrichies
+7. Conserve toutes les propriétés existantes
+8. Utilise "Non disponible" au lieu de null pour les champs manquants
 
 IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
 
@@ -981,7 +1065,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
             messages: [
               {
                 role: 'system',
-                content: 'Tu es un assistant qui retourne UNIQUEMENT du JSON valide, sans aucun texte supplémentaire.'
+                content: 'Tu es un assistant qui retourne UNIQUEMENT du JSON valide, sans aucun texte supplémentaire. Tu es TRÈS conservateur et ne jamais inventer d\'informations.'
               },
               {
                 role: 'user',
@@ -989,7 +1073,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
               }
             ],
             max_tokens: 4000,
-            temperature: 0.3,
+            temperature: 0.1, // Très faible pour éviter l'invention
             response_format: { type: "json_object" }
           },
           {
