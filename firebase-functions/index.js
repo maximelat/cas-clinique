@@ -491,118 +491,56 @@ exports.analyzePerplexityResults = functions.https.onCall(async (data, context) 
       throw new functions.https.HttpsError('invalid-argument', 'Réponse Perplexity requise');
     }
 
-    if (!OPENAI_API_KEY) {
-      throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
+    console.log('Analyse des résultats Perplexity (version simplifiée)...');
+    
+    // Parser la réponse Perplexity
+    let parsedResponse;
+    try {
+      parsedResponse = typeof perplexityResponse === 'string' ? JSON.parse(perplexityResponse) : perplexityResponse;
+    } catch (e) {
+      console.error('Erreur parsing Perplexity response:', e);
+      throw new functions.https.HttpsError('invalid-argument', 'Format de réponse Perplexity invalide');
     }
-
-    console.log('Analyse des résultats Perplexity...');
     
     // Extraire les search_results avec les dates
-    const searchResults = JSON.parse(perplexityResponse).search_results || [];
+    const searchResults = parsedResponse.search_results || [];
     console.log('Search results trouvés:', searchResults.length);
     
-    // Analyser le contenu avec GPT-4o pour améliorer l'extraction des références
-    const prompt = `Analyse cette réponse Perplexity et créé des références enrichies pour TOUTES les sources disponibles:
-
-RÉPONSE PERPLEXITY:
-${typeof perplexityResponse === 'string' ? perplexityResponse : JSON.stringify(perplexityResponse, null, 2)}
-
-SEARCH RESULTS AVEC DATES (TOUTES LES SOURCES À INCLURE):
-${JSON.stringify(searchResults, null, 2)}
-
-INSTRUCTIONS:
-1. Crée une référence pour CHAQUE source dans search_results (même si elle n'est pas citée dans le texte)
-2. Pour chaque référence, utilise les informations exactes de search_results:
-   - title: Titre exact de l'article
-   - url: URL de la source
-   - date: Date de publication exacte depuis search_results
-   - authors: "Non disponible" (sauf si déductible de l'URL/titre)
-   - journal: Déduis depuis l'URL ou mets "Non disponible"
-   - keyPoints: Point clé de cette source en rapport avec le cas clinique
-
-3. Retourne un JSON avec les sections suivantes:
-   - analysisText: Le texte de l'analyse Perplexity (inchangé)
-   - references: Array avec TOUTES les références enrichies (une par search_result)
-
-RÈGLES IMPORTANTES:
-- NE PAS filtrer les références selon le texte - inclure TOUTES les sources de search_results
-- Utilise les dates exactes des search_results
-- Pour les auteurs : mets "Non disponible" sauf si clairement identifiable
-- Pour les journaux : déduis depuis l'URL si possible, sinon "Non disponible"
-- Numérote les références [1], [2], etc. dans l'ordre des search_results
-
-Format de sortie OBLIGATOIRE:
-{
-  "analysisText": "Texte analysé Perplexity inchangé...",
-  "references": [
-    {
-      "label": "1",
-      "title": "Titre exact du search_result",
-      "url": "URL exacte",
-      "date": "Date exacte depuis search_results",
-      "authors": "Non disponible",
-      "journal": "Journal déduit ou Non disponible",
-      "keyPoints": "Points clés de cette source"
-    }
-  ]
-}`;
-
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: 'Tu es un expert en analyse de littérature médicale. Tu retournes UNIQUEMENT du JSON valide, bien formaté.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: 6000,
-        temperature: 0.3,
-        response_format: { type: "json_object" }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const responseText = response.data.choices?.[0]?.message?.content || '{}';
-    console.log('Réponse GPT-4o brute:', responseText);
-    
-    let analysisResult;
-    try {
-      analysisResult = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('Erreur parsing JSON:', parseError);
-      console.error('Réponse brute:', responseText);
-      
-      // Fallback: retourner la structure de base
-      analysisResult = {
-        analysisText: typeof perplexityResponse === 'string' ? perplexityResponse : JSON.stringify(perplexityResponse),
-        references: searchResults.map((result, index) => ({
-          label: String(index + 1),
-          title: result.title || `Source ${index + 1}`,
-          url: result.url || '#',
-          date: result.date || null,
-          authors: '',
-          journal: '',
-          keyPoints: ''
-        }))
+    // Créer directement les références depuis search_results
+    const references = searchResults.map((result, index) => {
+      const ref = {
+        label: String(index + 1),
+        title: result.title || `Source ${index + 1}`,
+        url: result.url || '#',
+        date: result.date || null,
+        authors: 'À enrichir',
+        journal: 'À déterminer',
+        keyPoints: '',
+        year: null
       };
-    }
+      
+      // Extraire l'année si date disponible
+      if (result.date) {
+        const yearMatch = result.date.match(/\b(19|20)\d{2}\b/);
+        ref.year = yearMatch ? parseInt(yearMatch[0]) : null;
+      }
+      
+      return ref;
+    });
     
-    console.log('Analyse terminée:', JSON.stringify(analysisResult, null, 2));
-    return analysisResult;
+    console.log(`${references.length} références créées depuis search_results`);
+    
+    // Retourner le résultat simplifié
+    return {
+      analysisText: parsedResponse.choices?.[0]?.message?.content || parsedResponse.answer || '',
+      references: references
+    };
     
   } catch (error) {
-    console.error('Erreur analyse Perplexity:', error.response?.data || error.message);
+    console.error('Erreur analyse Perplexity:', error.message);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
     throw new functions.https.HttpsError(
       'internal', 
       'Erreur lors de l\'analyse Perplexity: ' + error.message
@@ -668,29 +606,92 @@ Format JSON obligatoire:
               messages: [
                 {
                   role: 'system',
-                  content: 'Tu es un assistant de recherche académique. Utilise TOUJOURS l\'outil web search pour visiter les URLs et extraire les vraies métadonnées. Retourne UNIQUEMENT du JSON valide.'
+                  content: 'Tu es un assistant de recherche académique. Tu DOIS utiliser l\'outil web_search pour visiter chaque URL fournie et extraire les métadonnées réelles. NE PAS inventer d\'informations.'
                 },
                 { 
                   role: 'user', 
                   content: prompt 
                 }
               ],
-              tools: [{ type: 'web_search' }], // Outil web search activé
-              tool_choice: 'auto', // Laisse le modèle choisir quand utiliser web search
-              max_tokens: 1500,
-              temperature: 0.1,
-              response_format: { type: "json_object" }
+              tools: [{ 
+                type: 'web_search',
+                web_search: {
+                  enable_retrieval: true
+                }
+              }],
+              tool_choice: 'required', // Forcer l'utilisation de web search
+              max_tokens: 2000,
+              temperature: 0.1
             },
             {
               headers: {
                 'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json'
-              }
+              },
+              timeout: 30000 // 30 secondes de timeout
             }
           );
 
           const responseTime = Date.now() - startTime;
-          const responseText = response.data.choices?.[0]?.message?.content || '{}';
+          console.log(`Temps de réponse: ${responseTime}ms`);
+          
+          // Extraire le contenu de la réponse
+          let enrichedData = {
+            title: ref.title, // Garder le titre Perplexity par défaut
+            authors: 'Non disponible',
+            journal: 'Non disponible',
+            year: ref.year,
+            doi: null,
+            abstract: ''
+          };
+          
+          // Vérifier si web search a été utilisé
+          const message = response.data.choices?.[0]?.message;
+          if (message?.tool_calls) {
+            console.log(`Web search utilisé pour ${ref.url}`);
+            
+            // Essayer d'extraire les données du contenu
+            const content = message.content;
+            if (content) {
+              try {
+                // Essayer de parser comme JSON
+                const parsed = JSON.parse(content);
+                enrichedData = { ...enrichedData, ...parsed };
+              } catch (e) {
+                // Si pas du JSON, extraire les infos du texte
+                console.log('Extraction depuis texte brut');
+                
+                // Chercher les auteurs
+                const authorsMatch = content.match(/[Aa]uthor[s]?:\s*([^\n]+)/);
+                if (authorsMatch) enrichedData.authors = authorsMatch[1].trim();
+                
+                // Chercher le journal
+                const journalMatch = content.match(/[Jj]ournal:\s*([^\n]+)/);
+                if (journalMatch) enrichedData.journal = journalMatch[1].trim();
+                
+                // Chercher l'année
+                const yearMatch = content.match(/[Yy]ear:\s*(\d{4})/);
+                if (yearMatch) enrichedData.year = parseInt(yearMatch[1]);
+              }
+            }
+          } else {
+            console.log(`Web search NON utilisé pour ${ref.url} - données par défaut`);
+          }
+          
+          // Mettre à jour la référence avec les données enrichies
+          const refIndex = enrichedRefs.findIndex(r => r.url === ref.url);
+          if (refIndex !== -1) {
+            enrichedRefs[refIndex] = {
+              ...enrichedRefs[refIndex],
+              title: enrichedData.title || ref.title, // Garder le titre Perplexity si pas mieux
+              authors: enrichedData.authors || 'Non disponible',
+              journal: enrichedData.journal || enrichedRefs[refIndex].journal || 'Non disponible', 
+              year: enrichedData.year || enrichedRefs[refIndex].year || null,
+              doi: enrichedData.doi || null,
+              abstract: enrichedData.abstract || '',
+              webSearchEnriched: true
+            };
+          }
           
           // Log détaillé du résultat web search
           const webSearchLog = {
@@ -698,39 +699,9 @@ Format JSON obligatoire:
             url: ref.url,
             originalTitle: ref.title,
             webSearchTime: responseTime,
-            webSearchResult: null,
-            enrichmentSuccess: false
+            webSearchResult: enrichedData,
+            enrichmentSuccess: true
           };
-          
-          try {
-            const enrichedData = JSON.parse(responseText);
-            webSearchLog.webSearchResult = enrichedData;
-            
-            // Mettre à jour la référence avec les données enrichies
-            const refIndex = enrichedRefs.findIndex(r => r.url === ref.url);
-            if (refIndex !== -1) {
-              enrichedRefs[refIndex] = {
-                ...enrichedRefs[refIndex],
-                title: enrichedData.title || ref.title, // Garder le titre Perplexity si pas mieux
-                authors: enrichedData.authors || 'Non disponible',
-                journal: enrichedData.journal || enrichedRefs[refIndex].journal || 'Non disponible', 
-                year: enrichedData.year || enrichedRefs[refIndex].year || null,
-                doi: enrichedData.doi || null,
-                abstract: enrichedData.abstract || '',
-                webSearchEnriched: true
-              };
-              webSearchLog.enrichmentSuccess = true;
-            }
-            
-            console.log(`✅ Référence enrichie avec succès`);
-            console.log(`   - Auteurs: ${enrichedData.authors || 'Non trouvé'}`);
-            console.log(`   - Journal: ${enrichedData.journal || 'Non trouvé'}`);
-            console.log(`   - Année: ${enrichedData.year || 'Non trouvé'}`);
-            
-          } catch (parseError) {
-            console.error('❌ Erreur parsing JSON pour ref:', ref.url, parseError);
-            webSearchLog.error = parseError.message;
-          }
           
           webSearchLogs.push(webSearchLog);
           

@@ -901,47 +901,38 @@ RÈGLES IMPORTANTES:
     // PRIORITÉ 1: Utiliser les search_results (plus complets que les citations)
     if (perplexityReport.search_results && perplexityReport.search_results.length > 0) {
       console.log('Utilisation des search_results pour créer les références');
+      console.log('Search results complets:', JSON.stringify(perplexityReport.search_results, null, 2));
       
       perplexityReport.search_results.forEach((result, index) => {
-        // Essayer d'extraire l'année depuis l'URL ou la date
-        let extractedYear = null;
-        if (result.date) {
-          const yearMatch = result.date.match(/\b(19|20)\d{2}\b/);
-          extractedYear = yearMatch ? parseInt(yearMatch[0]) : null;
-        }
-        
-        // Essayer d'extraire des infos depuis l'URL
-        let journalFromUrl = 'Non disponible';
-        if (result.url) {
-          if (result.url.includes('ncbi.nlm.nih.gov') || result.url.includes('pubmed')) {
-            journalFromUrl = 'PubMed/NCBI';
-          } else if (result.url.includes('semanticscholar.org')) {
-            journalFromUrl = 'Semantic Scholar';
-          } else if (result.url.includes('elsevier.com')) {
-            journalFromUrl = 'Elsevier';
-          } else if (result.url.includes('degruyter.com')) {
-            journalFromUrl = 'De Gruyter';
-          } else if (result.url.includes('springer.com')) {
-            journalFromUrl = 'Springer';
-          } else if (result.url.includes('wiley.com')) {
-            journalFromUrl = 'Wiley';
-          }
-        }
-        
-        references.push({
+        // Utiliser DIRECTEMENT les données de Perplexity
+        const reference = {
           label: String(index + 1),
-          title: result.title || `Source ${index + 1}`,
+          title: result.title || `Source ${index + 1}`, // Titre exact de Perplexity
           url: result.url || '#',
-          date: result.date || null,
-          year: extractedYear,
+          date: result.date || null, // Date exacte de Perplexity
+          year: null,
           authors: 'À enrichir', // Sera enrichi par Web Search
-          journal: journalFromUrl,
+          journal: 'À déterminer', // Sera enrichi par Web Search
           keyPoints: '',
           source: 'perplexity_search_results'
+        };
+        
+        // Si on a une date, extraire l'année
+        if (result.date) {
+          const yearMatch = result.date.match(/\b(19|20)\d{2}\b/);
+          reference.year = yearMatch ? parseInt(yearMatch[0]) : null;
+        }
+        
+        console.log(`Référence ${index + 1} extraite:`, {
+          title: reference.title,
+          date: reference.date,
+          year: reference.year
         });
+        
+        references.push(reference);
       });
       
-      console.log(`${references.length} références extraites`);
+      console.log(`${references.length} références extraites avec titres et dates de Perplexity`);
       return references;
     }
 
