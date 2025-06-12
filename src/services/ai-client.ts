@@ -413,25 +413,49 @@ INSTRUCTIONS IMPORTANTES:
       const perplexitySections = this.parseSections(perplexityReport.answer);
       console.log('Sections Perplexity parsées:', perplexitySections.length);
       
-      // Si Perplexity a réussi à structurer en 7 sections, l'utiliser à la place de o3
-      const finalSections = perplexitySections.length === 7 ? perplexitySections : sections;
-      const usedPerplexityStructure = perplexitySections.length === 7;
+      // TOUJOURS utiliser les sections Perplexity si elles existent (même si < 7)
+      const finalSections = perplexitySections.length > 0 ? perplexitySections : sections;
+      const usedPerplexityStructure = perplexitySections.length > 0;
       
-      console.log('Sections finales utilisées:', usedPerplexityStructure ? 'Perplexity structuré' : 'o3 original');
+      console.log('Sections finales utilisées:', usedPerplexityStructure ? `Perplexity structuré (${perplexitySections.length} sections)` : 'o3 original');
       
       // Appeler le callback pour chaque section finale
       finalSections.forEach((section, index) => {
         sectionCallback?.(section, index, finalSections.length);
       });
       
-      // Étape 5 : Analyser les résultats Perplexity et extraire les références
-      const references = await this.analyzePerplexityResults(perplexityReport);
+      // Étape 5 : Analyser les références en 2 étapes distinctes
+      progressCallback?.('Analyse des sources Perplexity...');
       
-      console.log('Références analysées et enrichies:', references.length);
+      // Étape 5a : Extraire et enrichir les références avec Web Search
+      const baseReferences = await this.extractReferences(perplexityReport);
+      console.log('Références de base extraites:', baseReferences.length);
+      
+      let enrichedReferences = baseReferences;
+      if (baseReferences.length > 0) {
+        progressCallback?.('Enrichissement des métadonnées avec Web Search...');
+        enrichedReferences = await this.enrichReferencesWithWebSearch(baseReferences, '');
+        console.log('Références enrichies:', enrichedReferences.length);
+      }
+      
+      // Étape 5b : Ajouter les balises [1], [2] dans le contenu structuré
+      let finalSectionsWithCitations = finalSections;
+      if (enrichedReferences.length > 0 && usedPerplexityStructure) {
+        progressCallback?.('Ajout des citations dans le contenu...');
+        finalSectionsWithCitations = await this.addCitationsToSections(finalSections, enrichedReferences, perplexityReport.answer);
+        console.log('Citations ajoutées aux sections');
+        
+        // Mettre à jour les sections avec les citations
+        finalSectionsWithCitations.forEach((section, index) => {
+          sectionCallback?.(section, index, finalSectionsWithCitations.length);
+        });
+      }
+      
+      console.log('Références analysées et enrichies:', enrichedReferences.length);
       
       return {
-        sections: finalSections,
-        references,
+        sections: finalSectionsWithCitations,
+        references: enrichedReferences,
         perplexityReport,
         requestChain: this.requestChain,
         imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
@@ -1932,6 +1956,95 @@ IMPORTANT: Si tu ne peux pas accéder à une source ou extraire une information,
       }
       
       return enrichedData || batch.map(() => null);
+    }
+  }
+
+  // Méthode améliorée pour ajouter les citations aux sections avec GPT-4o mini
+  private async addCitationsToSections(sections: any[], references: any[], originalPerplexityText: string): Promise<any[]> {
+    try {
+      console.log('Ajout intelligent des citations aux sections...');
+      
+      if (references.length === 0 || sections.length === 0) {
+        return sections;
+      }
+
+      const prompt = `Tu es un expert médical. Ajoute intelligemment les références [1], [2], etc. dans ces sections analysées.
+
+SECTIONS ANALYSÉES:
+${sections.map((s, i) => `## ${s.type}:\n${s.content}`).join('\n\n')}
+
+RÉFÉRENCES DISPONIBLES:
+${references.map(ref => `[${ref.label}] "${ref.title}" - ${ref.journal || 'Journal non spécifié'} (${ref.year || 'Année non spécifiée'})`).join('\n')}
+
+TEXTE PERPLEXITY ORIGINAL (pour référence):
+${originalPerplexityText.substring(0, 3000)}...
+
+INSTRUCTIONS:
+1. Ajoute les références [1], [2], etc. UNIQUEMENT là où c'est pertinent
+2. Place chaque référence après l'affirmation qu'elle supporte
+3. Ne force pas l'ajout de toutes les références si elles ne correspondent pas
+4. Garde le formatage Markdown intact
+5. Retourne le JSON avec les sections mises à jour
+
+Format de sortie:
+{
+  "sections": [
+    {
+      "type": "CLINICAL_CONTEXT",
+      "content": "Contenu avec références [1] ajoutées de manière pertinente..."
+    }
+  ]
+}`;
+
+      if (this.useFirebaseFunctions) {
+        console.log('Ajout citations via Firebase Functions non encore implémenté');
+        return sections;
+      } else {
+        // Mode développement - appel direct à GPT-4o mini
+        const response = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'Tu es un assistant médical qui ajoute intelligemment des références académiques. Tu retournes UNIQUEMENT du JSON valide.'
+              },
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            max_tokens: 8000,
+            temperature: 0.1,
+            response_format: { type: "json_object" }
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const responseText = response.data.choices?.[0]?.message?.content || '{}';
+        
+        try {
+          const parsed = JSON.parse(responseText);
+          if (parsed.sections && Array.isArray(parsed.sections)) {
+            console.log('Citations ajoutées avec succès');
+            return parsed.sections;
+          }
+        } catch (parseError) {
+          console.error('Erreur parsing citations:', parseError);
+        }
+        
+        // Fallback : retourner les sections originales
+        return sections;
+      }
+    } catch (error: any) {
+      console.error('Erreur ajout citations:', error);
+      return sections;
     }
   }
 } 

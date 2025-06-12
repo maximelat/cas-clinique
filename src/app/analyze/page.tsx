@@ -696,11 +696,6 @@ function DemoPageContent() {
       // Ajouter l'accordéon des références
       allAccordionValues.push('references')
       
-      // Ajouter l'accordéon de la recherche académique si disponible
-      if (analysisData?.perplexityReport && !analysisData?.isDemo) {
-        allAccordionValues.push('academic-research')
-      }
-      
       // Ajouter l'accordéon des maladies rares si disponible
       if (rareDiseaseData) {
         allAccordionValues.push('rare-references')
@@ -2658,96 +2653,9 @@ Exemple de format attendu :
                   </Accordion>
                 )}
                 
-                {/* Recherche académique (Rapport Perplexity) - Nouvelle section */}
-                {analysisData?.perplexityReport && !analysisData?.isDemo && (
-                  <Accordion type="multiple" className="mt-8">
-                    <AccordionItem value="academic-research" className="border rounded-lg">
-                      <AccordionTrigger className="px-6 hover:no-underline bg-blue-50">
-                        <span className="text-left font-medium flex items-center gap-2">
-                          <FileSearch className="h-4 w-4" />
-                          Recherche académique complète (Perplexity)
-                        </span>
-                      </AccordionTrigger>
-                      <AccordionContent className="px-6 pb-6">
-                        <div className="mt-4">
-                          <div className="bg-blue-50 rounded-lg p-4 mb-4">
-                            <div className="flex items-start gap-3">
-                              <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                              <div className="text-sm text-blue-800 space-y-1">
-                                <p className="font-medium">Recherche académique basée sur l'analyse o3</p>
-                                <p>Sources récentes (2020-2025) validant et enrichissant le diagnostic.</p>
-                              </div>
-                            </div>
-                          </div>
+                {/* Section supprimée - Le contenu Perplexity est maintenant intégré dans les 7 sections principales */}
 
-                          {/* Contenu Perplexity avec formatage Markdown */}
-                          <div className="prose prose-sm max-w-none">
-                            <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                h1: ({ node, ...props }) => <h2 className="text-lg font-bold mt-4 mb-2" {...props} />,
-                                h2: ({ node, ...props }) => <h3 className="text-base font-bold mt-3 mb-2" {...props} />,
-                                h3: ({ node, ...props }) => <h4 className="text-sm font-bold mt-2 mb-1" {...props} />,
-                                p: ({ node, ...props }) => <p className="mb-3" {...props} />,
-                                ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-3" {...props} />,
-                                ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-3" {...props} />,
-                                li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                                strong: ({ node, ...props }) => <strong className="font-bold" {...props} />,
-                                a: ({ node, ...props }) => {
-                                  const href = props.href || ''
-                                  if (href.startsWith('#')) {
-                                    return <span className="text-blue-600 font-medium">{props.children}</span>
-                                  }
-                                  return <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />
-                                }
-                              }}
-                            >
-                              {analysisData.perplexityReport.answer || "Aucun contenu de recherche disponible"}
-                            </ReactMarkdown>
-                          </div>
-
-                          {/* Sources trouvées par Perplexity */}
-                          {analysisData.perplexityReport.search_results && analysisData.perplexityReport.search_results.length > 0 && (
-                            <div className="mt-6 border-t pt-4">
-                              <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                                <BookOpen className="h-4 w-4" />
-                                Sources de la recherche ({analysisData.perplexityReport.search_results.length})
-                              </h4>
-                              <ul className="space-y-3">
-                                {analysisData.perplexityReport.search_results.map((source: any, index: number) => (
-                                  <li key={index} className="border-l-4 border-blue-500 pl-4 py-2 bg-blue-50 rounded-r">
-                                    <div className="font-medium text-gray-900">
-                                      [{index + 1}] {source.title || `Source ${index + 1}`}
-                                    </div>
-                                    {source.date && (
-                                      <div className="text-sm text-gray-600 mt-1">
-                                        Date : {new Date(source.date).toLocaleDateString('fr-FR')}
-                                      </div>
-                                    )}
-                                    {source.url && source.url !== '#' && (
-                                      <div className="mt-1">
-                                        <a 
-                                          href={source.url} 
-                                          target="_blank" 
-                                          rel="noopener noreferrer"
-                                          className="text-blue-600 hover:text-blue-800 underline text-sm"
-                                        >
-                                          Consulter la source ↗
-                                        </a>
-                                      </div>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                )}
-
-                {/* Références bibliographiques - Placées APRÈS la recherche académique */}
+                {/* Références bibliographiques */}
                 <Accordion type="multiple" className="mt-8">
                   <AccordionItem value="references" className="border rounded-lg">
                     <AccordionTrigger className="px-6 hover:no-underline bg-gray-50">
