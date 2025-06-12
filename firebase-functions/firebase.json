@@ -2,7 +2,7 @@
   "functions": {
     "source": ".",
     "runtime": "nodejs18",
-    "region": "europe-west1",
+    "region": "us-central1",
     "ignore": [
       "node_modules",
       ".git",

@@ -54,7 +54,7 @@ function getFunctionsInstance() {
   if (!functionsInstance) {
     const app = getFirebaseApp();
     if (app) {
-      functionsInstance = getFunctions(app, 'us-central1'); // Changé de europe-west1 à us-central1
+      functionsInstance = getFunctions(app, 'europe-west1'); // Revenir à europe-west1
     }
   }
   return functionsInstance;
