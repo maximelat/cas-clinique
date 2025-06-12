@@ -103,29 +103,31 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
       ? "Analysez cette image dermatologique en détail. Décrivez les lésions observées, les caractéristiques cliniques importantes, et proposez un diagnostic différentiel avec justification."
       : "Analysez cette image médicale en détail. Décrivez les éléments pathologiques visibles, les structures anatomiques concernées, et proposez une interprétation clinique.";
 
+    // Utiliser l'endpoint HuggingFace spécifique pour MedGemma
     const response = await axios.post(
-      'https://api.medgemma.ai/v1/chat/completions',
+      'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions',
       {
-        model: 'medgemma-2b',
+        model: 'tgi',
         messages: [
           {
             role: 'user',
             content: [
               {
-                type: 'text',
-                text: medgemmaPrompt
-              },
-              {
                 type: 'image_url',
                 image_url: {
                   url: `data:image/jpeg;base64,${imageBase64}`
                 }
+              },
+              {
+                type: 'text',
+                text: medgemmaPrompt
               }
             ]
           }
         ],
         max_tokens: 2000,
-        temperature: 0.1
+        temperature: 0.1,
+        stream: false
       },
       {
         headers: {
@@ -140,13 +142,18 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
 
     console.log('=== RÉPONSE MEDGEMMA REÇUE ===');
     console.log('Temps de réponse:', responseTime, 'ms');
+    console.log('Status:', response.status);
+    console.log('Response data keys:', Object.keys(response.data));
     
     const text = response.data.choices?.[0]?.message?.content || '';
     console.log('Longueur texte analysé:', text.length, 'caractères');
+    console.log('Début de la réponse:', text.substring(0, 200), '...');
+    console.log('Usage tokens:', response.data.usage);
     console.log('=== FIN ANALYSE MEDGEMMA ===');
 
     if (!text) {
       console.error('ERREUR: Réponse vide de MedGemma');
+      console.error('Structure complète:', JSON.stringify(response.data, null, 2));
       throw new functions.https.HttpsError('internal', 'Réponse vide de MedGemma');
     }
 
@@ -155,6 +162,12 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
     console.error('=== ERREUR MEDGEMMA ===');
     console.error('Message:', error.message);
     console.error('Status:', error.response?.status);
+    console.error('Data:', error.response?.data);
+    console.error('Config utilisée:', {
+      hasKey: !!MEDGEMMA_API_KEY,
+      keyLength: MEDGEMMA_API_KEY?.length,
+      endpoint: 'https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud/v1/chat/completions'
+    });
     
     throw new functions.https.HttpsError(
       'internal', 
