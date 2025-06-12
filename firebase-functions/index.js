@@ -1,4 +1,5 @@
 const functions = require('firebase-functions');
+const { defineSecret } = require('firebase-functions/params');
 const axios = require('axios');
 const cors = require('cors')({ 
   origin: [
@@ -9,13 +10,13 @@ const cors = require('cors')({
   ]
 });
 
-// Configuration
-const OPENAI_API_KEY = functions.config().openai?.key || process.env.OPENAI_API_KEY;
-const MEDGEMMA_API_KEY = functions.config().medgemma?.key || process.env.MEDGEMMA_API_KEY;
+// Définir les secrets
+const openaiApiKey = defineSecret('OPENAI_API_KEY');
+const medgemmaApiKey = defineSecret('MEDGEMMA_API_KEY');
 
 // Fonction pour analyser avec o3
 exports.analyzeWithO3 = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [openaiApiKey] }, async (data, context) => {
     // CORS est géré automatiquement par onCall
     try {
       const { prompt } = data;
@@ -23,6 +24,9 @@ exports.analyzeWithO3 = functions.https
       if (!prompt) {
         throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
       }
+
+      // Récupérer la clé API
+      const OPENAI_API_KEY = openaiApiKey.value();
 
       // Vérifier la configuration de la clé API
       if (!OPENAI_API_KEY) {
@@ -120,13 +124,16 @@ exports.analyzeWithO3 = functions.https
 
 // Fonction pour analyser une image avec MedGemma
 exports.analyzeImageWithMedGemma = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [medgemmaApiKey] }, async (data, context) => {
     try {
       const { imageBase64, imageType = 'medical' } = data;
       
       if (!imageBase64) {
         throw new functions.https.HttpsError('invalid-argument', 'Image requise');
       }
+
+      // Récupérer la clé API
+      const MEDGEMMA_API_KEY = medgemmaApiKey.value();
 
       // Vérifier que MedGemma est configuré
       if (!MEDGEMMA_API_KEY) {
@@ -284,7 +291,7 @@ Instructions:
 
 // Garder l'ancienne fonction pour la compatibilité mais la faire pointer vers MedGemma
 exports.analyzeImageWithO3 = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [medgemmaApiKey] }, async (data, context) => {
     console.log('ATTENTION: analyzeImageWithO3 est déprécié, utilise maintenant MedGemma');
     // Rediriger vers la nouvelle fonction
     return exports.analyzeImageWithMedGemma.handler(data, context);
@@ -300,7 +307,7 @@ exports.analyzePerplexityWithGPT4Mini = functions.https
         throw new functions.https.HttpsError('invalid-argument', 'Données Perplexity requises');
       }
 
-      if (!OPENAI_API_KEY) {
+      if (!openaiApiKey.value()) {
         console.error('Clé OpenAI non configurée');
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
@@ -325,7 +332,7 @@ ${perplexityData}`;
         },
         {
           headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${openaiApiKey.value()}`,
             'Content-Type': 'application/json'
           }
         }
@@ -354,7 +361,7 @@ exports.analyzeReferencesWithGPT4 = functions.https
         throw new functions.https.HttpsError('invalid-argument', 'Prompt requis');
       }
 
-      if (!OPENAI_API_KEY) {
+      if (!openaiApiKey.value()) {
         console.error('Clé OpenAI non configurée');
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
@@ -374,7 +381,7 @@ exports.analyzeReferencesWithGPT4 = functions.https
         },
         {
           headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${openaiApiKey.value()}`,
             'Content-Type': 'application/json'
           }
         }
@@ -401,7 +408,7 @@ exports.transcribeAudio = functions.https
         throw new functions.https.HttpsError('invalid-argument', 'Audio requis');
       }
 
-      if (!OPENAI_API_KEY) {
+      if (!openaiApiKey.value()) {
         console.error('Clé OpenAI non configurée');
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
@@ -435,7 +442,7 @@ exports.transcribeAudio = functions.https
         formData,
         {
           headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${openaiApiKey.value()}`,
             ...formData.getHeaders()
           },
           maxBodyLength: Infinity,
@@ -487,7 +494,7 @@ exports.extractStructuredData = functions.https
         throw new functions.https.HttpsError('invalid-argument', 'Texte du cas clinique requis');
       }
 
-      if (!OPENAI_API_KEY) {
+      if (!openaiApiKey.value()) {
         console.error('Clé OpenAI non configurée');
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
@@ -528,7 +535,7 @@ EXAMENS_COMPLEMENTAIRES: [contenu]`;
         },
         {
           headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${openaiApiKey.value()}`,
             'Content-Type': 'application/json'
           }
         }
@@ -561,7 +568,7 @@ EXAMENS_COMPLEMENTAIRES: [contenu]`;
 
 // Nouvelle fonction dédiée pour enrichir les références
 exports.enrichReferences = functions.https
-  .onCall(async (data, context) => {
+  .onCall({ secrets: [openaiApiKey] }, async (data, context) => {
     try {
       const { references } = data;
       
@@ -569,7 +576,7 @@ exports.enrichReferences = functions.https
         throw new functions.https.HttpsError('invalid-argument', 'Références requises');
       }
 
-      if (!OPENAI_API_KEY) {
+      if (!openaiApiKey.value()) {
         console.error('Clé OpenAI non configurée');
         throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée sur le serveur');
       }
@@ -613,7 +620,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         },
         {
           headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${openaiApiKey.value()}`,
             'Content-Type': 'application/json'
           }
         }
