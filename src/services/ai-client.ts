@@ -357,7 +357,34 @@ RAPPELS IMPORTANTS:
 
       // 1. Analyse des images avec MedGemma
       console.log('\n📸 1. Analyse des images avec MedGemma...');
-      const medgemmaResult = await medGemmaClient.analyzeImages(images, clinicalContext, promptType);
+      let imageAnalyses: string[] = [];
+      
+      if (images.length > 0) {
+        for (let i = 0; i < images.length; i++) {
+          console.log(`Analyse de l'image ${i + 1}/${images.length}...`);
+          
+          // Convertir File en base64
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onloadend = () => {
+              const base64 = reader.result as string;
+              resolve(base64.split(',')[1]); // Retirer le préfixe data:image/...;base64,
+            };
+            reader.onerror = reject;
+          });
+          reader.readAsDataURL(images[i]);
+          const base64Data = await base64Promise;
+          
+          // Analyser l'image avec MedGemma
+          const imageAnalysis = await this.analyzeImageWithO3(base64Data, 'medical', promptType);
+          imageAnalyses.push(imageAnalysis);
+        }
+      }
+      
+      const medgemmaResult = {
+        analysis: imageAnalyses.join('\n\n'),
+        imageAnalyses: imageAnalyses
+      };
       console.log('✅ Analyse MedGemma terminée');
 
       // 2. Analyse clinique avec o3
@@ -900,7 +927,7 @@ RÈGLES IMPORTANTES:
           title: result.title || `Source ${index + 1}`, // Titre exact de Perplexity
           url: result.url || '#',
           date: result.date || null, // Date exacte de Perplexity
-          year: null,
+          year: '',
           authors: 'À enrichir', // Sera enrichi par Web Search
           journal: 'À déterminer', // Sera enrichi par Web Search
           keyPoints: '',
@@ -910,7 +937,7 @@ RÈGLES IMPORTANTES:
         // Si on a une date, extraire l'année
         if (result.date) {
           const yearMatch = result.date.match(/\b(19|20)\d{2}\b/);
-          reference.year = yearMatch ? yearMatch[0] : null;
+          reference.year = yearMatch ? yearMatch[0] : '';
         }
         
         console.log(`Référence ${index + 1} extraite:`, {
@@ -938,7 +965,7 @@ RÈGLES IMPORTANTES:
               title: `Source ${index + 1}`,
           url: url,
           date: null,
-              year: null,
+              year: '',
           authors: 'À enrichir',
           journal: 'À enrichir',
           keyPoints: '',
@@ -1441,8 +1468,8 @@ Contenu de la section pronostic et suivi...
 ## PATIENT_EXPLANATIONS:
 Contenu de la section explications au patient...`;
 
-      const analysis = await this.analyzeWithO3(analysisPrompt, '');
-      const sections = this.parseSections(analysis);
+      const analysisResult = await this.analyzeWithO3(analysisPrompt, '');
+      const sections = this.parseSections(analysisResult.analysis);
 
       // Retourner le résultat sans références
       return {

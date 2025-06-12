@@ -71,4 +71,4 @@ export function getGoogleProvider(): GoogleAuthProvider {
   return googleProvider;
 }
 
-export { auth, googleProvider, db }; 
+export { app, auth, googleProvider, db }; 
