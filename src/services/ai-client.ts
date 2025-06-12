@@ -384,9 +384,10 @@ INSTRUCTIONS:
       const perplexityReport = await this.searchWithPerplexity(perplexityPrompt);
       console.log('Recherche Perplexity terminée');
       
-      // Étape 4 : Extraire les références directement sans analyse GPT-4o intermédiaire
-      const references = this.extractReferences(perplexityReport);
-      console.log('Références extraites:', references.length);
+      // Étape 4 : Extraire et enrichir les références
+      progressCallback?.('Analyse des références...');
+      const references = await this.extractReferences(perplexityReport);
+      console.log('Références extraites et enrichies:', references.length);
       
       return {
         sections,
@@ -764,7 +765,7 @@ RÈGLES IMPORTANTES:
     return enrichedRefs;
   }
 
-  private extractReferences(perplexityReport: PerplexityResponse): any[] {
+  private async extractReferences(perplexityReport: PerplexityResponse): Promise<any[]> {
     const references: any[] = [];
     console.log('Extraction des références...');
     console.log('Citations disponibles:', perplexityReport.citations?.length || 0);
@@ -880,8 +881,101 @@ RÈGLES IMPORTANTES:
     }
     
     console.log(`${references.length} références extraites`);
+    
+    // Enrichir les références avec GPT-4o si nécessaire
+    if (references.length > 0 && references.some(ref => !ref.authors || !ref.year)) {
+      console.log('Enrichissement des références avec GPT-4o...');
+      try {
+        const enrichedRefs = await this.enrichReferencesWithGPT4(references);
+        return enrichedRefs;
+      } catch (error) {
+        console.error('Erreur enrichissement références:', error);
+        // Retourner les références non enrichies en cas d'erreur
+        return references;
+      }
+    }
+    
     console.log('Références finales:', JSON.stringify(references, null, 2));
     return references;
+  }
+
+  private async enrichReferencesWithGPT4(references: any[]): Promise<any[]> {
+    const prompt = `Enrichis ces références bibliographiques en ajoutant les informations manquantes (auteurs, année, journal).
+Pour chaque référence, recherche et ajoute :
+- Les noms complets des auteurs
+- L'année de publication
+- Le nom du journal ou de la source
+- Un titre plus descriptif si nécessaire
+
+Références à enrichir :
+${references.map((ref, idx) => `
+[${ref.label}] ${ref.title}
+URL: ${ref.url}
+Auteurs actuels: ${ref.authors || 'Non précisé'}
+Année: ${ref.year || 'Non précisée'}
+Journal: ${ref.journal || 'Non précisé'}
+`).join('\n')}
+
+Retourne UNIQUEMENT un JSON valide avec ce format exact :
+[
+  {
+    "label": "1",
+    "title": "Titre complet de l'article",
+    "url": "URL originale",
+    "authors": "Auteur1 A, Auteur2 B, et al.",
+    "year": 2024,
+    "journal": "Nom du journal",
+    "date": "2024-01-15"
+  }
+]`;
+
+    try {
+      let response;
+      
+      if (this.useFirebaseFunctions) {
+        const { analyzeReferencesWithGPT4ViaFunction } = await import('@/lib/firebase-functions');
+        response = await analyzeReferencesWithGPT4ViaFunction(prompt);
+      } else {
+        const result = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o-mini-2024-07-18',
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 2000,
+            temperature: 0.3
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${this.openaiApiKey}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        response = result.data.choices?.[0]?.message?.content || '[]';
+      }
+
+      // Parser la réponse JSON
+      const enrichedRefs = JSON.parse(response);
+      
+      // Fusionner avec les références originales
+      return references.map((ref, idx) => {
+        const enriched = enrichedRefs.find((e: any) => e.label === ref.label);
+        if (enriched) {
+          return {
+            ...ref,
+            title: enriched.title || ref.title,
+            authors: enriched.authors || ref.authors,
+            year: enriched.year || ref.year,
+            journal: enriched.journal || ref.journal,
+            date: enriched.date || ref.date
+          };
+        }
+        return ref;
+      });
+    } catch (error) {
+      console.error('Erreur parsing références enrichies:', error);
+      return references;
+    }
   }
 
   // Méthode pour vérifier et corriger les références dans le texte
@@ -1310,7 +1404,7 @@ IMPORTANT: Fournis un rapport COMPLET et DÉTAILLÉ. Ne coupe PAS le contenu.`;
       perplexityReport.answer = perplexityReport.answer.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
       // Extraire et analyser les références
-      const references = this.extractReferences(perplexityReport);
+      const references = await this.extractReferences(perplexityReport);
       
       // Parser le rapport pour identifier la maladie rare principale
       const diseaseMatch = perplexityReport.answer.match(/(?:maladie rare principale|diagnostic principal)[\s:]*([^\n]+)/i);
@@ -1413,9 +1507,9 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
 
       const perplexityReport = await this.searchWithPerplexity(deepSearchPrompt);
       
-      // Étape 4 : Extraire les références
+      // Étape 4 : Extraire et enrichir les références
       progressCallback?.('Analyse des références...');
-      const references = this.extractReferences(perplexityReport);
+      const references = await this.extractReferences(perplexityReport);
       
       return {
         sections,
