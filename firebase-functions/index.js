@@ -15,8 +15,11 @@ const MEDGEMMA_API_KEY = functions.config().medgemma?.key || process.env.MEDGEMM
 
 // Fonction pour analyser avec o3
 exports.analyzeWithO3 = functions
-  .region('europe-west1')
-  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .runWith({ 
+    timeoutSeconds: 540, 
+    memory: '1GB',
+    region: 'europe-west1'
+  })
   .https.onCall(async (data, context) => {
     // CORS est géré automatiquement par onCall
     try {
@@ -122,8 +125,11 @@ exports.analyzeWithO3 = functions
 
 // Fonction pour analyser une image avec MedGemma
 exports.analyzeImageWithO3 = functions
-  .region('europe-west1')
-  .runWith({ timeoutSeconds: 300, memory: '1GB' })
+  .runWith({ 
+    timeoutSeconds: 300, 
+    memory: '1GB',
+    region: 'europe-west1'
+  })
   .https.onCall(async (data, context) => {
     try {
       const { prompt, imageBase64, imageType = 'medical' } = data;
@@ -338,8 +344,10 @@ Instructions:
 
 // Fonction pour analyser les données Perplexity avec GPT-4o-mini
 exports.analyzePerplexityWithGPT4Mini = functions
-  .region('europe-west1')
-  .runWith({ timeoutSeconds: 300 })
+  .runWith({ 
+    timeoutSeconds: 300,
+    region: 'europe-west1'
+  })
   .https.onCall(async (data, context) => {
     try {
       const { perplexityData } = data;
@@ -394,8 +402,10 @@ ${perplexityData}`;
 
 // Fonction pour analyser les références avec GPT-4o
 exports.analyzeReferencesWithGPT4 = functions
-  .region('europe-west1')
-  .runWith({ timeoutSeconds: 300 })
+  .runWith({ 
+    timeoutSeconds: 300,
+    region: 'europe-west1'
+  })
   .https.onCall(async (data, context) => {
     try {
       const { prompt } = data;
@@ -443,8 +453,11 @@ exports.analyzeReferencesWithGPT4 = functions
 
 // Fonction pour transcrire l'audio
 exports.transcribeAudio = functions
-  .region('europe-west1')
-  .runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .runWith({ 
+    timeoutSeconds: 300, 
+    memory: '512MB',
+    region: 'europe-west1'
+  })
   .https.onCall(async (data, context) => {
     try {
       const { audioBase64 } = data;
@@ -531,8 +544,10 @@ exports.transcribeAudio = functions
 
 // Fonction pour extraire les données structurées d'un cas clinique
 exports.extractStructuredData = functions
-  .region('europe-west1')
-  .runWith({ timeoutSeconds: 300 })
+  .runWith({ 
+    timeoutSeconds: 300,
+    region: 'europe-west1'
+  })
   .https.onCall(async (data, context) => {
     try {
       const { caseText } = data;

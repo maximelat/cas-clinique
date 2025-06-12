@@ -923,17 +923,16 @@ RÈGLES IMPORTANTES:
       // Utiliser MedGemma pour l'analyse d'images médicales
       console.log('Analyse d\'image avec MedGemma...');
       
-      // Vérifier si MedGemma a une clé API configurée
-      if (!medGemmaClient.hasApiKey()) {
-        console.warn('MedGemma non configuré, utilisation de l\'ancien système...');
-        
-        // Fallback sur l'ancien système si MedGemma n'est pas configuré
-        if (this.useFirebaseFunctions) {
-          console.log('Fallback sur o3 via Firebase Functions...');
-          const response = await analyzeImageWithO3ViaFunction('Analyse cette image médicale en détail.', imageBase64, imageType);
-          this.requestChain[this.requestChain.length - 1].response = response;
-          return response;
-        } else {
+      // En production, toujours utiliser Firebase Functions qui gère MedGemma
+      if (this.useFirebaseFunctions) {
+        console.log('Analyse d\'image via Firebase Functions (MedGemma ou GPT-4o)...');
+        const response = await analyzeImageWithO3ViaFunction('Analyse cette image médicale en détail.', imageBase64, imageType);
+        this.requestChain[this.requestChain.length - 1].response = response;
+        return response;
+      } else {
+        // Mode développement - vérifier si MedGemma est configuré localement
+        if (!medGemmaClient.hasApiKey()) {
+          console.log('MedGemma non configuré en local, utilisation de GPT-4o...');
           // Mode développement - utiliser GPT-4o
           console.log('Fallback sur GPT-4o (mode dev)...');
           
@@ -972,17 +971,17 @@ RÈGLES IMPORTANTES:
           const outputText = response.data.choices?.[0]?.message?.content || '';
           this.requestChain[this.requestChain.length - 1].response = JSON.stringify(response.data, null, 2);
           return outputText;
+        } else {
+          // Utiliser MedGemma en local
+          const response = await medGemmaClient.analyzeImage(imageBase64, imageType);
+          
+          // Sauvegarder la réponse
+          this.requestChain[this.requestChain.length - 1].response = response;
+          
+          console.log('Analyse MedGemma terminée');
+          return response;
         }
       }
-      
-      // Utiliser MedGemma
-      const response = await medGemmaClient.analyzeImage(imageBase64, imageType);
-      
-      // Sauvegarder la réponse
-      this.requestChain[this.requestChain.length - 1].response = response;
-      
-      console.log('Analyse MedGemma terminée');
-      return response;
       
     } catch (error: any) {
       console.error('Erreur analyse image:', error);
