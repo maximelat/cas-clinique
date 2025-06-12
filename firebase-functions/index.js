@@ -760,27 +760,78 @@ exports.analyzeLongAudioWithGemini = functions
       let prompt = '';
       switch (analysisType) {
         case 'transcription':
-          prompt = 'Génère une transcription complète et précise de cet enregistrement audio en français.';
+          // Après consultation - transcription structurée du cas clinique
+          prompt = `Écoute cette consultation médicale et transcris le cas clinique de façon structurée.
+
+INSTRUCTIONS:
+1. Transcris d'abord l'INTÉGRALITÉ de l'enregistrement
+2. Puis structure les informations en sections médicales claires :
+   - Contexte patient (âge, sexe, profession)
+   - Motif de consultation principal
+   - Anamnèse détaillée
+   - Antécédents médicaux et chirurgicaux
+   - Traitements en cours
+   - Examen clinique
+   - Examens complémentaires
+   - Hypothèses diagnostiques
+   - Conduite à tenir
+
+Format de sortie : d'abord la transcription complète, puis les sections structurées.`;
           break;
         case 'medical_consultation':
-          prompt = `Analyse cet enregistrement de consultation médicale et fournis:
-1. Une transcription complète
-2. Un résumé structuré avec:
-   - Motif de consultation
-   - Symptômes principaux
-   - Antécédents mentionnés
+          // Pendant consultation - séparer patient/médecin
+          prompt = `Écoute cette consultation médicale et sépare clairement les éléments décrits par le patient de ceux du médecin.
+
+INSTRUCTIONS:
+1. Transcris l'INTÉGRALITÉ du dialogue
+2. Identifie et sépare :
+   
+   PAROLES DU PATIENT :
+   - Symptômes décrits avec leurs propres mots
+   - Chronologie des troubles
+   - Impact sur la vie quotidienne
+   - Questions et inquiétudes
+   
+   PAROLES DU MÉDECIN :
+   - Questions posées
+   - Explications données
    - Examen clinique décrit
-   - Hypothèses diagnostiques évoquées
-   - Plan de prise en charge proposé`;
+   - Diagnostic évoqué
+   - Plan de traitement proposé
+   
+3. Mets en évidence les éléments cliniques importants
+
+Format : Transcription complète avec [PATIENT] et [MÉDECIN] pour identifier qui parle, puis résumé structuré.`;
           break;
         case 'patient_dictation':
-          prompt = `Transcris cette dictée du patient et extrais:
-1. La transcription complète
-2. Les informations médicales clés:
-   - Symptômes et leur chronologie
-   - Facteurs déclenchants/aggravants
+          // Avant consultation - préparer la consultation
+          prompt = `Écoute cet enregistrement du patient et transcris-le pour préparer la consultation d'un point de vue médical.
+
+INSTRUCTIONS:
+1. Transcris l'INTÉGRALITÉ de ce que dit le patient
+2. Extrais et organise les informations médicales pertinentes :
+   
+   MOTIF DE CONSULTATION :
+   - Symptôme principal
+   - Durée d'évolution
+   
+   ANAMNÈSE :
+   - Description détaillée des symptômes
+   - Facteurs déclenchants/aggravants/soulageants
+   - Horaire et fréquence
+   - Symptômes associés
+   
+   CONTEXTE :
+   - Antécédents similaires
    - Traitements essayés
-   - Impact sur la vie quotidienne`;
+   - Impact fonctionnel
+   
+   POINTS D'ATTENTION pour la consultation :
+   - Questions à approfondir
+   - Examens à envisager
+   - Diagnostics différentiels possibles
+
+Format : Transcription complète suivie de l'analyse structurée pour le médecin.`;
           break;
         default:
           prompt = 'Transcris et analyse cet enregistrement audio.';

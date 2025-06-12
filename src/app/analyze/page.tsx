@@ -387,13 +387,16 @@ function DemoPageContent() {
           return
         }
 
-        toast.info(isLongRecording ? "Transcription longue avec Gemini en cours..." : "Transcription en cours...")
+        // Déterminer si on utilise Gemini (enregistrement > 30s ou types spéciaux)
+        const useGemini = recordingDuration >= 30 || audioAnalysisType !== 'transcription';
+        
+        toast.info(useGemini ? "Transcription avec Gemini en cours..." : "Transcription en cours...")
         
         try {
           let transcription: string;
           
-          if (isLongRecording) {
-            // Utiliser Gemini pour les enregistrements longs
+          if (useGemini) {
+            // Utiliser Gemini pour les enregistrements longs ou types spéciaux
             transcription = await aiService.transcribeLongAudioWithGemini(audioBlob, audioAnalysisType)
           } else {
             // Utiliser Whisper pour les enregistrements courts
@@ -401,7 +404,7 @@ function DemoPageContent() {
           }
           
           setTextContent(transcription)
-          toast.success(isLongRecording ? "Transcription longue terminée avec Gemini" : "Transcription terminée")
+          toast.success(useGemini ? "Transcription terminée avec Gemini" : "Transcription terminée")
         } catch (error: any) {
           toast.error(error.message || "Erreur lors de la transcription")
           console.error("Erreur de transcription:", error)
@@ -774,145 +777,117 @@ function DemoPageContent() {
 
       toast.info('Génération du PDF en cours...')
       
-      // Créer un conteneur temporaire avec du HTML simple
-      const tempContainer = document.createElement('div')
-      tempContainer.style.position = 'absolute'
-      tempContainer.style.left = '-9999px'
-      tempContainer.style.width = '210mm'
-      tempContainer.style.backgroundColor = '#ffffff'
-      tempContainer.style.color = '#000000'
-      tempContainer.style.fontFamily = 'Arial, sans-serif'
-      tempContainer.style.padding = '20px'
+      // Utiliser jsPDF directement sans html2canvas pour éviter les problèmes de couleurs
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
       
-      // Construire le contenu HTML simple
-      let htmlContent = `
-        <div style="background: white; color: black; padding: 20px;">
-          <h1 style="color: #1f2937; font-size: 24px; margin-bottom: 10px;">Analyse Clinique</h1>
-          <p style="color: #6b7280; margin-bottom: 20px;">${new Date().toLocaleDateString('fr-FR')}</p>
-          
-          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Cas clinique initial</h2>
-          <div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <p style="white-space: pre-wrap; color: #1f2937;">${analysisData?.caseText || initialCaseContent || textContent}</p>
-          </div>
-      `
+      // Configuration
+      const margin = 15
+      const pageWidth = 210 - 2 * margin
+      const lineHeight = 7
+      let y = margin
       
-      // Ajouter les analyses d'images si présentes
-      if (analysisData?.imageAnalyses && analysisData.imageAnalyses.length > 0) {
-        htmlContent += `
-          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Analyses d'imagerie</h2>
-        `
-        analysisData.imageAnalyses.forEach((analysis: string, index: number) => {
-          htmlContent += `
-            <div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-              <h3 style="color: #1f2937; font-size: 16px; margin-bottom: 10px;">Image ${index + 1}</h3>
-              <p style="white-space: pre-wrap; color: #374151;">${analysis}</p>
-            </div>
-          `
-        })
+      // Fonction helper pour ajouter du texte avec gestion des pages
+      const addText = (text: string, fontSize: number = 12, isBold: boolean = false) => {
+        pdf.setFontSize(fontSize)
+        if (isBold) {
+          pdf.setFont('helvetica', 'bold')
+        } else {
+          pdf.setFont('helvetica', 'normal')
+        }
+        
+        const lines = pdf.splitTextToSize(text, pageWidth)
+        
+        for (const line of lines) {
+          if (y + lineHeight > 297 - margin) {
+            pdf.addPage()
+            y = margin
+          }
+          pdf.text(line, margin, y)
+          y += lineHeight
+        }
+        
+        y += 3 // Espacement entre paragraphes
       }
       
-      // Ajouter les sections d'analyse
+      // Titre principal
+      addText('Analyse Clinique', 18, true)
+      addText(new Date().toLocaleDateString('fr-FR'), 10, false)
+      y += 5
+      
+      // Cas clinique initial
+      addText('Cas clinique initial', 14, true)
+      addText(analysisData?.caseText || initialCaseContent || textContent, 11, false)
+      y += 5
+      
+      // Analyses d'imagerie si présentes
+      if (analysisData?.imageAnalyses && analysisData.imageAnalyses.length > 0) {
+        addText('Analyses d\'imagerie', 14, true)
+        analysisData.imageAnalyses.forEach((analysis: string, index: number) => {
+          addText(`Image ${index + 1}:`, 12, true)
+          addText(analysis, 11, false)
+        })
+        y += 5
+      }
+      
+      // Sections d'analyse
       const sectionsToExport = analysisData?.isDemo 
         ? Object.entries(demoSections).map(([key, content]) => ({ type: key, content }))
         : (currentSections.length > 0 ? currentSections : analysisData?.sections || [])
       
-      htmlContent += `<h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Analyse médicale</h2>`
+      addText('Analyse médicale', 14, true)
       
       sectionsToExport.forEach((section: any) => {
         const title = sectionTitles[section.type as keyof typeof sectionTitles] || section.type
-        htmlContent += `
-          <div style="margin-bottom: 25px;">
-            <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 10px; border-bottom: 2px solid #e5e7eb; padding-bottom: 5px;">${title}</h3>
-            <div style="color: #374151; line-height: 1.6;">${section.content.replace(/\n/g, '<br>')}</div>
-          </div>
-        `
+        addText(title, 12, true)
+        
+        // Nettoyer le contenu des références [X] pour le PDF
+        let cleanContent = section.content
+        cleanContent = cleanContent.replace(/\[\d+\]/g, '')
+        
+        addText(cleanContent, 11, false)
+        y += 3
       })
       
-      // Ajouter les références
+      // Références
       const refs = analysisData?.isDemo ? demoReferences : analysisData?.references || []
       if (refs.length > 0) {
-        htmlContent += `
-          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Références bibliographiques</h2>
-          <ol style="padding-left: 20px;">
-        `
-        refs.forEach((ref: any) => {
-          htmlContent += `
-            <li style="margin-bottom: 10px; color: #374151;">
-              <strong>${ref.title}</strong><br>
-              ${ref.authors && ref.authors !== 'Non disponible' ? `${ref.authors}. ` : ''}
-              ${ref.journal && ref.journal !== 'Non disponible' ? `${ref.journal}. ` : ''}
-              ${ref.year ? `(${ref.year}). ` : ''}
-              <a href="${ref.url}" style="color: #3b82f6;">${ref.url}</a>
-            </li>
-          `
-        })
-        htmlContent += `</ol>`
-      }
-      
-      // Ajouter les maladies rares si présentes
-      if (rareDiseaseData) {
-        htmlContent += `
-          <h2 style="color: #374151; font-size: 20px; margin-top: 30px; margin-bottom: 15px;">Recherche de maladies rares</h2>
-          <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="color: #92400e; font-size: 16px; margin-bottom: 10px;">${rareDiseaseData.disease}</h3>
-            <div style="white-space: pre-wrap; color: #78350f;">${rareDiseaseData.report}</div>
-          </div>
-        `
-      }
-      
-      htmlContent += `</div>`
-      
-      // Ajouter le contenu au conteneur temporaire
-      tempContainer.innerHTML = htmlContent
-      document.body.appendChild(tempContainer)
-      
-      try {
-        // Capturer avec html2canvas
-        const canvas = await html2canvas(tempContainer, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          windowWidth: tempContainer.scrollWidth,
-          windowHeight: tempContainer.scrollHeight
-        })
-        
-        // Créer le PDF
-        const imgData = canvas.toDataURL('image/png')
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4'
-        })
-        
-        const imgWidth = 210
-        const pageHeight = 297
-        const imgHeight = (canvas.height * imgWidth) / canvas.width
-        let heightLeft = imgHeight
-        let position = 0
-        
-        // Ajouter l'image au PDF, page par page
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
-        
-        while (heightLeft >= 0) {
-          position = heightLeft - imgHeight
+        if (y + 20 > 297 - margin) {
           pdf.addPage()
-          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-          heightLeft -= pageHeight
+          y = margin
         }
         
-        // Sauvegarder le PDF
-        const fileName = `analyse-clinique-${analysisData?.caseTitle?.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '-') || 'export'}-${new Date().toISOString().split('T')[0]}.pdf`
-        pdf.save(fileName)
+        addText('Références bibliographiques', 14, true)
         
-        toast.success('PDF exporté avec succès')
-      } finally {
-        // Nettoyer
-        if (tempContainer.parentNode) {
-          tempContainer.parentNode.removeChild(tempContainer)
-        }
+        refs.forEach((ref: any, index: number) => {
+          let refText = `[${ref.label}] ${ref.title}`
+          if (ref.authors && ref.authors !== 'Non disponible') {
+            refText += ` - ${ref.authors}`
+          }
+          if (ref.journal && ref.journal !== 'Non disponible') {
+            refText += `, ${ref.journal}`
+          }
+          if (ref.year) {
+            refText += ` (${ref.year})`
+          }
+          
+          addText(refText, 10, false)
+          
+          // Ajouter l'URL en bleu
+          pdf.setTextColor(0, 0, 255)
+          addText(ref.url, 9, false)
+          pdf.setTextColor(0, 0, 0)
+        })
       }
+      
+      // Sauvegarder le PDF
+      const fileName = `analyse-clinique-${analysisData?.caseTitle?.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '-') || 'export'}-${new Date().toISOString().split('T')[0]}.pdf`
+      pdf.save(fileName)
+      
+      toast.success('PDF exporté avec succès')
     } catch (error) {
       console.error('Erreur export PDF:', error)
       toast.error('Erreur lors de l\'export PDF')
@@ -1656,23 +1631,10 @@ Exemple de format attendu :
                   <Label htmlFor="content">Cas clinique</Label>
                   {isAudioSupported && (
                     <div className="flex items-center gap-2">
-                      {/* Sélecteur de type d'analyse audio */}
-                      {!isRecording && !isDemoMode && (
-                        <select
-                          value={audioAnalysisType}
-                          onChange={(e) => setAudioAnalysisType(e.target.value as any)}
-                          className="text-sm px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          title="Type d'analyse pour l'enregistrement"
-                        >
-                          <option value="transcription">Transcription simple</option>
-                          <option value="medical_consultation">Consultation médicale</option>
-                          <option value="patient_dictation">Dictée patient</option>
-                        </select>
-                      )}
                       {isRecording && (
                         <span className="text-sm text-gray-600">
                           {formatTime(recordingTime)}
-                          {isLongRecording && (
+                          {recordingDuration >= 30 && (
                             <span className="ml-2 text-xs text-blue-600 font-medium">
                               (Gemini actif)
                             </span>
@@ -1680,16 +1642,102 @@ Exemple de format attendu :
                         </span>
                       )}
                       {!isRecording ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleStartRecording}
+                        <>
+                          {/* Bouton dictée courte (OpenAI) */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setAudioAnalysisType('transcription');
+                              handleStartRecording();
+                            }}
+                            disabled={isTranscribing || isDemoMode}
+                            title="Dictée courte avec OpenAI Whisper"
+                          >
+                            <Mic className="h-4 w-4 mr-2" />
+                            Dictée courte
+                          </Button>
+                          
+                          {/* Menu déroulant pour les enregistrements longs avec Gemini */}
+                          <div className="relative group">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-1"
                               disabled={isTranscribing || isDemoMode}
-                        >
-                          <Mic className="h-4 w-4 mr-2" />
-                          Dicter
-                        </Button>
+                            >
+                              <Mic className="h-4 w-4 mr-1" />
+                              <span className="text-xs">Enregistrement long</span>
+                              <ChevronDown className="h-3 w-3 ml-1" />
+                            </Button>
+                            
+                            {/* Dropdown menu */}
+                            <div className="absolute right-0 mt-1 w-64 bg-white border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                              <button
+                                className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b"
+                                onClick={() => {
+                                  setAudioAnalysisType('patient_dictation');
+                                  handleStartRecording();
+                                }}
+                                disabled={isTranscribing || isDemoMode}
+                              >
+                                <div className="font-medium text-sm">Avant consultation</div>
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Écouter le patient et préparer la consultation
+                                </div>
+                                <div className="text-xs text-blue-600 mt-1">
+                                  <span className="inline-flex items-center gap-1">
+                                    <Sparkles className="h-3 w-3" />
+                                    Gemini 2.0
+                                  </span>
+                                </div>
+                              </button>
+                              
+                              <button
+                                className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b"
+                                onClick={() => {
+                                  setAudioAnalysisType('medical_consultation');
+                                  handleStartRecording();
+                                }}
+                                disabled={isTranscribing || isDemoMode}
+                              >
+                                <div className="font-medium text-sm">Pendant consultation</div>
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Séparer patient/médecin et structurer
+                                </div>
+                                <div className="text-xs text-blue-600 mt-1">
+                                  <span className="inline-flex items-center gap-1">
+                                    <Sparkles className="h-3 w-3" />
+                                    Gemini 2.0
+                                  </span>
+                                </div>
+                              </button>
+                              
+                              <button
+                                className="w-full text-left px-4 py-3 hover:bg-gray-50"
+                                onClick={() => {
+                                  setAudioAnalysisType('transcription');
+                                  setIsLongRecording(true);
+                                  handleStartRecording();
+                                }}
+                                disabled={isTranscribing || isDemoMode}
+                              >
+                                <div className="font-medium text-sm">Après consultation</div>
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Transcrire le cas clinique structuré
+                                </div>
+                                <div className="text-xs text-blue-600 mt-1">
+                                  <span className="inline-flex items-center gap-1">
+                                    <Sparkles className="h-3 w-3" />
+                                    Gemini 2.0
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          </div>
+                        </>
                       ) : (
                         <div className="flex gap-2">
                           {isPaused ? (
