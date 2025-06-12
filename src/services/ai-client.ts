@@ -4,7 +4,9 @@ import {
   analyzeWithO3ViaFunction, 
   analyzeImageWithO3ViaFunction,
   analyzePerplexityWithGPT4MiniViaFunction,
-  transcribeAudioViaFunction 
+  transcribeAudioViaFunction,
+  enrichReferencesWithWebSearchViaFunction,
+  addCitationsToSectionsViaFunction
 } from '@/lib/firebase-functions';
 import { medGemmaClient } from './medgemma-client';
 
@@ -419,43 +421,28 @@ INSTRUCTIONS IMPORTANTES:
       
       console.log('Sections finales utilisées:', usedPerplexityStructure ? `Perplexity structuré (${perplexitySections.length} sections)` : 'o3 original');
       
-      // Appeler le callback pour chaque section finale
-      finalSections.forEach((section, index) => {
-        sectionCallback?.(section, index, finalSections.length);
-      });
+      // NE PAS rappeler sectionCallback ici pour éviter les doublons
       
-      // Étape 5 : Analyser les références en 2 étapes distinctes
-      progressCallback?.('Analyse des sources Perplexity...');
+      // Étape 5 : Extraction des références de base
+      progressCallback?.('Extraction des références...');
+      let references = await this.extractReferences(perplexityReport);
+      console.log('Références de base extraites:', references.length);
       
-      // Étape 5a : Extraire et enrichir les références avec Web Search
-      const baseReferences = await this.extractReferences(perplexityReport);
-      console.log('Références de base extraites:', baseReferences.length);
+      // Étape 6a : Enrichissement Web Search des métadonnées manquantes
+      progressCallback?.('Enrichissement des métadonnées avec Web Search...');
+      references = await this.enrichReferencesWithWebSearch(references, perplexityReport.answer);
+      console.log('Références enrichies:', references.length);
       
-      let enrichedReferences = baseReferences;
-      if (baseReferences.length > 0) {
-        progressCallback?.('Enrichissement des métadonnées avec Web Search...');
-        enrichedReferences = await this.enrichReferencesWithWebSearch(baseReferences, '');
-        console.log('Références enrichies:', enrichedReferences.length);
-      }
+      // Étape 6b : Ajout intelligent des citations dans les sections
+      progressCallback?.('Ajout des citations dans les sections...');
+      const sectionsWithCitations = await this.addCitationsToSections(finalSections, references, perplexityReport.answer);
+      console.log('Citations ajoutées aux sections');
       
-      // Étape 5b : Ajouter les balises [1], [2] dans le contenu structuré
-      let finalSectionsWithCitations = finalSections;
-      if (enrichedReferences.length > 0 && usedPerplexityStructure) {
-        progressCallback?.('Ajout des citations dans le contenu...');
-        finalSectionsWithCitations = await this.addCitationsToSections(finalSections, enrichedReferences, perplexityReport.answer);
-        console.log('Citations ajoutées aux sections');
-        
-        // Mettre à jour les sections avec les citations
-        finalSectionsWithCitations.forEach((section, index) => {
-          sectionCallback?.(section, index, finalSectionsWithCitations.length);
-        });
-      }
-      
-      console.log('Références analysées et enrichies:', enrichedReferences.length);
+      console.log('Références analysées et enrichies:', references.length);
       
       return {
-        sections: finalSectionsWithCitations,
-        references: enrichedReferences,
+        sections: sectionsWithCitations,
+        references,
         perplexityReport,
         requestChain: this.requestChain,
         imageAnalyses: imageAnalysesArray.length > 0 ? imageAnalysesArray : undefined
@@ -1830,133 +1817,17 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
 
       console.log(`Enrichissement de ${references.length} références avec GPT-4o mini Web Search...`);
 
-      // Traiter les références par batches de 3 pour éviter les timeouts
-      const batchSize = 3;
-      const enrichedRefs = [...references];
-      
-      for (let i = 0; i < references.length; i += batchSize) {
-        const batch = references.slice(i, i + batchSize);
-        
-        try {
-          const batchResults = await this.processBatchWithWebSearch(batch, perplexityContent);
-          
-          // Mettre à jour les références enrichies
-          batchResults.forEach((enrichedRef, batchIndex) => {
-            const globalIndex = i + batchIndex;
-            if (enrichedRef && globalIndex < enrichedRefs.length) {
-              enrichedRefs[globalIndex] = { ...enrichedRefs[globalIndex], ...enrichedRef };
-            }
-          });
-          
-          // Attendre un peu entre les batches pour éviter le rate limiting
-          if (i + batchSize < references.length) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        } catch (batchError) {
-          console.error(`Erreur batch ${i}-${i + batchSize}:`, batchError);
-          // Continuer avec le batch suivant en cas d'erreur
-        }
+      if (this.useFirebaseFunctions) {
+        const { enrichReferencesWithWebSearchViaFunction } = await import('@/lib/firebase-functions');
+        return await enrichReferencesWithWebSearchViaFunction(references, perplexityContent);
+      } else {
+        console.log('Web Search via Firebase Functions non encore implémenté');
+        return references;
       }
-
-      console.log('Enrichissement terminé');
-      return enrichedRefs;
       
     } catch (error: any) {
       console.error('Erreur enrichissement Web Search:', error);
-      // Retourner les références originales en cas d'erreur
-      return references;
-    }
-  }
-
-  // Traiter un batch de références avec Web Search
-  private async processBatchWithWebSearch(batch: any[], perplexityContent: string): Promise<any[]> {
-    const prompt = `Tu es un expert en recherche académique médicale. Utilise l'outil de recherche web pour lire ces sources et extraire les VRAIES métadonnées.
-
-SOURCES À ANALYSER:
-${batch.map((ref, i) => `
-[${ref.label}] "${ref.title}"
-URL: ${ref.url}
-Date actuelle: ${ref.date || 'Non disponible'}
-`).join('\n')}
-
-CONTENU PERPLEXITY POUR RÉFÉRENCE:
-${perplexityContent.substring(0, 2000)}...
-
-INSTRUCTIONS:
-1. Utilise l'outil de recherche web pour visiter chaque URL
-2. Extrais les VRAIES informations (ne jamais inventer) :
-   - authors: Auteurs réels de l'article
-   - journal: Nom exact du journal/source  
-   - year: Année de publication réelle
-   - title: Titre exact si différent
-3. Pour le bonus : si tu trouves dans le contenu Perplexity des références [1], [2], etc. qui correspondent exactement au contenu de cette source, note-le
-4. Retourne un JSON avec les métadonnées enrichies
-
-Format de sortie:
-{
-  "enriched_references": [
-    {
-      "label": "1",
-      "authors": "Nom réel des auteurs ou null",
-      "journal": "Nom exact du journal ou null", 
-      "year": 2024,
-      "title": "Titre exact ou null",
-      "citation_matches": ["[1]", "[3]"] ou []
-    }
-  ]
-}
-
-IMPORTANT: Si tu ne peux pas accéder à une source ou extraire une information, mets null plutôt que d'inventer.`;
-
-    if (this.useFirebaseFunctions) {
-      // TODO: Implémenter via Firebase Functions si nécessaire
-      console.log('Web Search via Firebase Functions non encore implémenté');
-      return batch.map(() => null);
-    } else {
-      // Mode développement - appel direct
-      const response = await axios.post(
-        'https://api.openai.com/v1/responses',
-        {
-          model: 'gpt-4o-mini',
-          tools: [{ type: "web_search_preview" }],
-          tool_choice: { type: "web_search_preview" }, // Force l'utilisation du web search
-          input: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          max_output_tokens: 4000
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${this.openaiApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      // Extraire le contenu de la réponse avec Web Search
-      const outputItems = response.data.output || [];
-      let enrichedData = null;
-      
-      // Trouver le message avec le contenu JSON
-      for (const item of outputItems) {
-        if (item.type === 'message' && item.content) {
-          const textContent = item.content.find((c: any) => c.type === 'output_text')?.text || '';
-          try {
-            const parsed = JSON.parse(textContent);
-            if (parsed.enriched_references) {
-              enrichedData = parsed.enriched_references;
-              break;
-            }
-          } catch (e) {
-            // Pas du JSON valide, continuer
-          }
-        }
-      }
-      
-      return enrichedData || batch.map(() => null);
+      return references; // Fallback
     }
   }
 
@@ -1969,83 +1840,17 @@ IMPORTANT: Si tu ne peux pas accéder à une source ou extraire une information,
         return sections;
       }
 
-      const prompt = `Tu es un expert médical. Ajoute intelligemment les références [1], [2], etc. dans ces sections analysées.
-
-SECTIONS ANALYSÉES:
-${sections.map((s, i) => `## ${s.type}:\n${s.content}`).join('\n\n')}
-
-RÉFÉRENCES DISPONIBLES:
-${references.map(ref => `[${ref.label}] "${ref.title}" - ${ref.journal || 'Journal non spécifié'} (${ref.year || 'Année non spécifiée'})`).join('\n')}
-
-TEXTE PERPLEXITY ORIGINAL (pour référence):
-${originalPerplexityText.substring(0, 3000)}...
-
-INSTRUCTIONS:
-1. Ajoute les références [1], [2], etc. UNIQUEMENT là où c'est pertinent
-2. Place chaque référence après l'affirmation qu'elle supporte
-3. Ne force pas l'ajout de toutes les références si elles ne correspondent pas
-4. Garde le formatage Markdown intact
-5. Retourne le JSON avec les sections mises à jour
-
-Format de sortie:
-{
-  "sections": [
-    {
-      "type": "CLINICAL_CONTEXT",
-      "content": "Contenu avec références [1] ajoutées de manière pertinente..."
-    }
-  ]
-}`;
-
       if (this.useFirebaseFunctions) {
+        const { addCitationsToSectionsViaFunction } = await import('@/lib/firebase-functions');
+        return await addCitationsToSectionsViaFunction(sections, references, originalPerplexityText);
+      } else {
         console.log('Ajout citations via Firebase Functions non encore implémenté');
         return sections;
-      } else {
-        // Mode développement - appel direct à GPT-4o mini
-        const response = await axios.post(
-          'https://api.openai.com/v1/chat/completions',
-          {
-            model: 'gpt-4o-mini',
-            messages: [
-              {
-                role: 'system',
-                content: 'Tu es un assistant médical qui ajoute intelligemment des références académiques. Tu retournes UNIQUEMENT du JSON valide.'
-              },
-              {
-                role: 'user',
-                content: prompt
-              }
-            ],
-            max_tokens: 8000,
-            temperature: 0.1,
-            response_format: { type: "json_object" }
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${this.openaiApiKey}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        const responseText = response.data.choices?.[0]?.message?.content || '{}';
-        
-        try {
-          const parsed = JSON.parse(responseText);
-          if (parsed.sections && Array.isArray(parsed.sections)) {
-            console.log('Citations ajoutées avec succès');
-            return parsed.sections;
-          }
-        } catch (parseError) {
-          console.error('Erreur parsing citations:', parseError);
-        }
-        
-        // Fallback : retourner les sections originales
-        return sections;
       }
+      
     } catch (error: any) {
       console.error('Erreur ajout citations:', error);
-      return sections;
+      return sections; // Fallback
     }
   }
 } 

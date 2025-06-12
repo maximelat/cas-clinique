@@ -255,4 +255,48 @@ export async function analyzePerplexityViaFunction(perplexityResponse: any): Pro
     console.error('Erreur analyse Perplexity via Firebase:', error);
     throw error;
   }
+}
+
+export async function enrichReferencesWithWebSearchViaFunction(references: any[], perplexityContent: string): Promise<any[]> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
+  const enrichRefs = httpsCallable<{ references: any[], perplexityContent: string }, { references: any[] }>(
+    functions, 
+    'enrichReferencesWithWebSearch'
+  );
+
+  try {
+    console.log('Appel Firebase enrichReferencesWithWebSearch...');
+    const result = await enrichRefs({ references, perplexityContent });
+    console.log('Références enrichies reçues via Firebase Functions');
+    return result.data.references;
+  } catch (error: any) {
+    console.error('Erreur Firebase Function Web Search:', error);
+    // Fallback : retourner les références originales
+    return references;
+  }
+}
+
+export async function addCitationsToSectionsViaFunction(sections: any[], references: any[], originalPerplexityText: string): Promise<any[]> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
+  const addCitations = httpsCallable<{ sections: any[], references: any[], originalPerplexityText: string }, { sections: any[] }>(
+    functions, 
+    'addCitationsToSections'
+  );
+
+  try {
+    console.log('Appel Firebase addCitationsToSections...');
+    const result = await addCitations({ sections, references, originalPerplexityText });
+    console.log('Citations ajoutées via Firebase Functions');
+    return result.data.sections;
+  } catch (error: any) {
+    console.error('Erreur Firebase Function Citations:', error);
+    // Fallback : retourner les sections originales
+    return sections;
+  }
 } 

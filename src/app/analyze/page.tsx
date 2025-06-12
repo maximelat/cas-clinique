@@ -611,30 +611,86 @@ function DemoPageContent() {
   
   // Fonction pour exporter la chaîne de requêtes (maxime.latry@gmail.com seulement)
   const exportRequestChain = () => {
-    if (!requestChain || requestChain.length === 0) {
-      toast.error('Aucune chaîne de requêtes disponible')
+    if (!analysisData?.requestChain) {
+      toast.error('Aucune chaîne de requêtes à exporter')
       return
     }
-    
-    const date = new Date().toISOString().split('T')[0]
-    const filename = `chaine_requetes_${date}.json`
-    
-    const chainData = {
-      date: new Date().toISOString(),
-      caseTitle: caseTitle || generateCaseTitle(textContent),
-      totalRequests: requestChain.length,
-      requests: requestChain
+
+    // Créer un rapport complet des requêtes
+    const requestChainReport = {
+      metadata: {
+        exportedAt: new Date().toISOString(),
+        analysisId: analysisData.id || 'unknown',
+        userId: user?.uid || 'unknown',
+        caseTitle: analysisData.caseTitle || caseTitle,
+        totalRequests: analysisData.requestChain.length,
+        analysisType: analysisData.isDemo ? 'demo' : 'real',
+        version: analysisData.version || 1
+      },
+      
+      flowSummary: {
+        step1: "Analyse images MedGemma",
+        step2: "Analyse clinique o3", 
+        step3: "Recherche académique Perplexity structurée",
+        step4: "Extraction références (toutes les sources)",
+        step5: "Enrichissement Web Search GPT-4o mini",
+        step6: "Ajout citations intelligentes",
+        step7: "Affichage sections Perplexity + références"
+      },
+      
+      detailedChain: analysisData.requestChain.map((request, index) => ({
+        stepNumber: index + 1,
+        timestamp: request.timestamp,
+        model: request.model,
+        requestType: request.type,
+        inputSummary: {
+          length: request.request?.length || 0,
+          preview: request.request?.substring(0, 200) + (request.request?.length > 200 ? '...' : '') || 'Non disponible'
+        },
+        outputSummary: {
+          length: request.response?.length || 0,
+          preview: request.response?.substring(0, 200) + (request.response?.length > 200 ? '...' : '') || 'Non disponible'
+        },
+        success: !!request.response,
+        duration: index > 0 ? 
+          new Date(request.timestamp).getTime() - new Date(analysisData.requestChain[index-1].timestamp).getTime() 
+          : 0
+      })),
+      
+      statistics: {
+        totalDuration: analysisData.requestChain.length > 1 ? 
+          new Date(analysisData.requestChain[analysisData.requestChain.length - 1].timestamp).getTime() - 
+          new Date(analysisData.requestChain[0].timestamp).getTime() : 0,
+        modelsUsed: [...new Set(analysisData.requestChain.map(r => r.model))],
+        successRate: `${Math.round((analysisData.requestChain.filter(r => r.response).length / analysisData.requestChain.length) * 100)}%`,
+        averageRequestLength: Math.round(
+          analysisData.requestChain.reduce((acc, r) => acc + (r.request?.length || 0), 0) / analysisData.requestChain.length
+        ),
+        averageResponseLength: Math.round(
+          analysisData.requestChain.reduce((acc, r) => acc + (r.response?.length || 0), 0) / analysisData.requestChain.length
+        )
+      },
+      
+      currentState: {
+        sectionsCount: analysisData.sections?.length || 0,
+        referencesCount: analysisData.references?.length || 0,
+        hasPerplexityReport: !!analysisData.perplexityReport,
+        hasImageAnalyses: !!analysisData.imageAnalyses,
+        lastModified: analysisData.lastRelaunched || analysisData.date
+      }
     }
-    
-    const blob = new Blob([JSON.stringify(chainData, null, 2)], { type: 'application/json' })
+
+    const blob = new Blob([JSON.stringify(requestChainReport, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename
+    a.download = `request-chain-${analysisData.caseTitle?.substring(0, 30).replace(/[^a-zA-Z0-9]/g, '-') || 'analysis'}-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
     
-    toast.success('Chaîne de requêtes exportée')
+    toast.success('Chaîne de requêtes exportée avec détails complets')
   }
   
   // Fonction pour exporter le rapport de recherche Perplexity

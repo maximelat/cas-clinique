@@ -606,4 +606,197 @@ Format de sortie OBLIGATOIRE:
       'Erreur lors de l\'analyse Perplexity: ' + error.message
     );
   }
+});
+
+// Fonction pour enrichir les références avec Web Search
+exports.enrichReferencesWithWebSearch = functions.https.onCall(async (data, context) => {
+  try {
+    const { references, perplexityContent } = data;
+    
+    if (!references || !Array.isArray(references)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Références requises');
+    }
+
+    if (!OPENAI_API_KEY) {
+      throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
+    }
+
+    console.log(`Enrichissement de ${references.length} références avec Web Search...`);
+    
+    // Traiter par batches de 3 pour éviter les timeouts
+    const batchSize = 3;
+    const enrichedRefs = [...references];
+    
+    for (let i = 0; i < references.length; i += batchSize) {
+      const batch = references.slice(i, i + batchSize);
+      console.log(`Traitement batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(references.length/batchSize)}`);
+      
+      for (const ref of batch) {
+        try {
+          const prompt = `Lis cette source académique et extrais les métadonnées précises :
+
+URL: ${ref.url}
+Titre actuel: ${ref.title || 'Non disponible'}
+
+INSTRUCTIONS STRICTES:
+1. Visite l'URL et lis le contenu de l'article
+2. Extrais UNIQUEMENT les informations VISIBLES sur la page
+3. Ne JAMAIS inventer d'informations
+4. Si une information n'est pas trouvée, marque "Non disponible"
+
+Format JSON obligatoire:
+{
+  "title": "Titre exact de l'article",
+  "authors": "Auteur(s) exact(s) ou Non disponible", 
+  "journal": "Nom exact du journal ou Non disponible",
+  "year": "Année de publication ou null",
+  "doi": "DOI si disponible ou null",
+  "abstract": "Résumé de 2-3 lignes du contenu pertinent"
+}`;
+
+          const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+              model: 'gpt-4o-mini',
+              messages: [{ role: 'user', content: prompt }],
+              tools: [{ type: 'web_search_preview' }],
+              tool_choice: { type: 'web_search_preview' },
+              max_tokens: 1000,
+              temperature: 0.1,
+              response_format: { type: "json_object" }
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          const responseText = response.data.choices?.[0]?.message?.content || '{}';
+          
+          try {
+            const enrichedData = JSON.parse(responseText);
+            
+            // Mettre à jour la référence avec les données enrichies
+            const refIndex = enrichedRefs.findIndex(r => r.url === ref.url);
+            if (refIndex !== -1) {
+              enrichedRefs[refIndex] = {
+                ...enrichedRefs[refIndex],
+                title: enrichedData.title || ref.title,
+                authors: enrichedData.authors || 'Non disponible',
+                journal: enrichedData.journal || 'Non disponible', 
+                year: enrichedData.year || null,
+                doi: enrichedData.doi || null,
+                abstract: enrichedData.abstract || ''
+              };
+            }
+            
+            console.log(`Référence enrichie: ${enrichedData.title?.substring(0, 50)}...`);
+            
+          } catch (parseError) {
+            console.error('Erreur parsing JSON pour ref:', ref.url, parseError);
+            // Garder la référence originale en cas d'erreur
+          }
+          
+        } catch (refError) {
+          console.error(`Erreur enrichissement ref ${ref.url}:`, refError.message);
+          // Continuer avec la référence non enrichie
+        }
+        
+        // Délai entre les requêtes
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    console.log(`Enrichissement terminé: ${enrichedRefs.length} références`);
+    return { references: enrichedRefs };
+    
+  } catch (error) {
+    console.error('Erreur enrichissement Web Search:', error.response?.data || error.message);
+    throw new functions.https.HttpsError(
+      'internal', 
+      'Erreur lors de l\'enrichissement avec Web Search: ' + error.message
+    );
+  }
+});
+
+// Fonction pour ajouter les citations aux sections
+exports.addCitationsToSections = functions.https.onCall(async (data, context) => {
+  try {
+    const { sections, references, originalPerplexityText } = data;
+    
+    if (!sections || !Array.isArray(sections)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Sections requises');
+    }
+
+    if (!OPENAI_API_KEY) {
+      throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
+    }
+
+    console.log('Ajout intelligent des citations aux sections...');
+    
+    const prompt = `Tu es un expert médical. Ajoute intelligemment les références [1], [2], etc. dans ces sections analysées.
+
+SECTIONS ANALYSÉES:
+${sections.map((s, i) => `## ${s.type}:\n${s.content}`).join('\n\n')}
+
+RÉFÉRENCES DISPONIBLES:
+${references.map(ref => `[${ref.label}] "${ref.title}" - ${ref.journal || 'Journal non spécifié'} (${ref.year || 'Année non spécifiée'})`).join('\n')}
+
+INSTRUCTIONS:
+1. Pour chaque affirmation médicale dans les sections, ajoute la référence [X] la plus pertinente
+2. Ajoute les références UNIQUEMENT là où le contenu correspond vraiment à la source
+3. Ne force PAS les références si elles ne correspondent pas
+4. Préserve exactement la structure des sections avec ## TYPE:
+5. Retourne les sections modifiées en JSON
+
+Format de réponse OBLIGATOIRE:
+{
+  "sections": [
+    {
+      "type": "CLINICAL_CONTEXT",
+      "content": "Contenu avec références [1] ajoutées..."
+    }
+  ]
+}`;
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 6000,
+        temperature: 0.1,
+        response_format: { type: "json_object" }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const responseText = response.data.choices?.[0]?.message?.content || '{}';
+    
+    try {
+      const result = JSON.parse(responseText);
+      const updatedSections = result.sections || sections;
+      
+      console.log(`Citations ajoutées à ${updatedSections.length} sections`);
+      return { sections: updatedSections };
+      
+    } catch (parseError) {
+      console.error('Erreur parsing citations:', parseError);
+      return { sections }; // Retourner les sections originales
+    }
+    
+  } catch (error) {
+    console.error('Erreur ajout citations:', error.response?.data || error.message);
+    throw new functions.https.HttpsError(
+      'internal', 
+      'Erreur lors de l\'ajout des citations: ' + error.message
+    );
+  }
 }); 
