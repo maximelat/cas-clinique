@@ -36,7 +36,7 @@ export default function HistoryPage() {
   // Charger l'historique
   useEffect(() => {
     if (!user) {
-      router.push("/")
+      router.push("/auth")
       return
     }
     
@@ -106,7 +106,7 @@ export default function HistoryPage() {
               Retrouvez toutes vos analyses précédentes
             </p>
           </div>
-          <Link href="/demo">
+          <Link href="/analyze">
             <Button variant="outline">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Retour
@@ -143,7 +143,7 @@ export default function HistoryPage() {
                 {searchTerm ? "Aucune analyse trouvée pour cette recherche" : "Aucune analyse dans l'historique"}
               </p>
               {!searchTerm && (
-                <Link href="/demo">
+                <Link href="/analyze">
                   <Button className="mt-4">
                     Nouvelle analyse
                   </Button>

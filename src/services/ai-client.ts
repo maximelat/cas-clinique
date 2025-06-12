@@ -384,10 +384,10 @@ INSTRUCTIONS:
       const perplexityReport = await this.searchWithPerplexity(perplexityPrompt);
       console.log('Recherche Perplexity terminée');
       
-      // Étape 4 : Extraire et enrichir les références
-      progressCallback?.('Analyse des références...');
-      const references = await this.extractReferences(perplexityReport);
-      console.log('Références extraites et enrichies:', references.length);
+      // Étape 4 : Analyser les résultats Perplexity et extraire les références
+      progressCallback?.('Analyse avancée des références...');
+      const references = await this.analyzePerplexityResults(perplexityReport);
+      console.log('Références analysées et enrichies:', references.length);
       
       return {
         sections,
@@ -705,6 +705,35 @@ RÈGLES IMPORTANTES:
   private async callGPT4ViaFirebase(prompt: string): Promise<string> {
     const { analyzeReferencesWithGPT4ViaFunction } = await import('@/lib/firebase-functions');
     return await analyzeReferencesWithGPT4ViaFunction(prompt);
+  }
+
+  private async analyzePerplexityResults(perplexityReport: PerplexityResponse): Promise<any[]> {
+    try {
+      console.log('Analyse avancée des résultats Perplexity...');
+      
+      if (this.useFirebaseFunctions) {
+        console.log('Utilisation de Firebase Functions pour analyser Perplexity...');
+        const { analyzePerplexityViaFunction } = await import('@/lib/firebase-functions');
+        
+        try {
+          const result = await analyzePerplexityViaFunction(JSON.stringify(perplexityReport));
+          console.log('Analyse Perplexity terminée via Firebase Functions');
+          return result.references || [];
+        } catch (error: any) {
+          console.error('Erreur analyse Perplexity via Firebase:', error);
+          // Fallback vers l'ancienne méthode
+          return await this.extractReferences(perplexityReport);
+        }
+      } else {
+        // Mode développement - utiliser l'ancienne méthode
+        console.log('Mode développement - utilisation de l\'ancienne méthode d\'extraction');
+        return await this.extractReferences(perplexityReport);
+      }
+    } catch (error: any) {
+      console.error('Erreur analyse Perplexity:', error);
+      // Fallback vers l'ancienne méthode
+      return await this.extractReferences(perplexityReport);
+    }
   }
 
   private enrichReferencesFromAnalysis(references: any[], analysis: string): any[] {
@@ -1381,7 +1410,7 @@ IMPORTANT: Fournis un rapport COMPLET et DÉTAILLÉ. Ne coupe PAS le contenu.`;
       perplexityReport.answer = perplexityReport.answer.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 
       // Extraire et analyser les références
-      const references = await this.extractReferences(perplexityReport);
+      const references = await this.analyzePerplexityResults(perplexityReport);
       
       // Parser le rapport pour identifier la maladie rare principale
       const diseaseMatch = perplexityReport.answer.match(/(?:maladie rare principale|diagnostic principal)[\s:]*([^\n]+)/i);
@@ -1485,8 +1514,8 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
       const perplexityReport = await this.searchWithPerplexity(deepSearchPrompt);
       
       // Étape 4 : Extraire et enrichir les références
-      progressCallback?.('Analyse des références...');
-      const references = await this.extractReferences(perplexityReport);
+      progressCallback?.('Analyse avancée des références...');
+      const references = await this.analyzePerplexityResults(perplexityReport);
       
       return {
         sections,

@@ -25,7 +25,7 @@ export default function AdminPage() {
   // Vérifier l'accès admin
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) {
-      router.push('/demo');
+      router.push('/analyze');
     }
   }, [user, isAdmin, loading, router]);
 
@@ -112,7 +112,7 @@ export default function AdminPage() {
           <h1 className="text-3xl font-bold">Administration</h1>
           <p className="text-gray-600 mt-1">Gérer les crédits des utilisateurs</p>
         </div>
-        <Link href="/demo">
+                    <Link href="/analyze">
           <Button variant="outline">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Retour

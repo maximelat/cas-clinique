@@ -443,4 +443,132 @@ ${JSON.stringify(references, null, 2)}`;
       'Erreur lors de l\'enrichissement des références: ' + error.message
     );
   }
+});
+
+// Fonction pour analyser et améliorer les résultats Perplexity
+exports.analyzePerplexityResults = functions.https.onCall(async (data, context) => {
+  try {
+    const { perplexityResponse } = data;
+    
+    if (!perplexityResponse) {
+      throw new functions.https.HttpsError('invalid-argument', 'Réponse Perplexity requise');
+    }
+
+    if (!OPENAI_API_KEY) {
+      throw new functions.https.HttpsError('failed-precondition', 'Clé API OpenAI non configurée');
+    }
+
+    console.log('Analyse des résultats Perplexity...');
+    
+    // Extraire les search_results avec les dates
+    const searchResults = JSON.parse(perplexityResponse).search_results || [];
+    console.log('Search results trouvés:', searchResults.length);
+    
+    // Analyser le contenu avec GPT-4o pour améliorer l'extraction des références
+    const prompt = `Analyse cette réponse Perplexity et améliore l'extraction des références en utilisant les dates disponibles:
+
+RÉPONSE PERPLEXITY:
+${typeof perplexityResponse === 'string' ? perplexityResponse : JSON.stringify(perplexityResponse, null, 2)}
+
+SEARCH RESULTS AVEC DATES:
+${JSON.stringify(searchResults, null, 2)}
+
+INSTRUCTIONS:
+1. Identifie toutes les références utilisées dans le texte (format [1], [2], etc.)
+2. Pour chaque référence, associe-la au search_result correspondant
+3. Extrait les informations suivantes pour chaque référence:
+   - title: Titre exact de l'article
+   - url: URL de la source
+   - date: Date de publication si disponible dans search_results
+   - authors: Auteurs si déductibles de l'URL ou du titre
+   - journal: Journal ou source si déductible
+   - keyPoints: Points clés en rapport avec le cas clinique analysé
+
+4. Retourne un JSON avec les sections suivantes:
+   - analysisText: Le texte de l'analyse avec les références correctement placées
+   - references: Array des références enrichies avec toutes les métadonnées
+
+IMPORTANT: 
+- Utilise les dates exactes des search_results quand disponibles
+- Ne place les références que là où elles sont pertinentes
+- Si une référence [X] est mentionnée, elle doit correspondre à un search_result
+- Retourne UNIQUEMENT du JSON valide
+
+Format de sortie:
+{
+  "analysisText": "Texte analysé avec références [1], [2], etc.",
+  "references": [
+    {
+      "label": "1",
+      "title": "Titre exact",
+      "url": "URL exacte",
+      "date": "2024-01-01",
+      "authors": "Auteurs si disponibles",
+      "journal": "Journal ou source",
+      "keyPoints": "Points clés pertinents"
+    }
+  ]
+}`;
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'Tu es un expert en analyse de littérature médicale. Tu retournes UNIQUEMENT du JSON valide, bien formaté.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 6000,
+        temperature: 0.3,
+        response_format: { type: "json_object" }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const responseText = response.data.choices?.[0]?.message?.content || '{}';
+    console.log('Réponse GPT-4o brute:', responseText);
+    
+    let analysisResult;
+    try {
+      analysisResult = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Erreur parsing JSON:', parseError);
+      console.error('Réponse brute:', responseText);
+      
+      // Fallback: retourner la structure de base
+      analysisResult = {
+        analysisText: typeof perplexityResponse === 'string' ? perplexityResponse : JSON.stringify(perplexityResponse),
+        references: searchResults.map((result, index) => ({
+          label: String(index + 1),
+          title: result.title || `Source ${index + 1}`,
+          url: result.url || '#',
+          date: result.date || null,
+          authors: '',
+          journal: '',
+          keyPoints: ''
+        }))
+      };
+    }
+    
+    console.log('Analyse terminée:', JSON.stringify(analysisResult, null, 2));
+    return analysisResult;
+    
+  } catch (error) {
+    console.error('Erreur analyse Perplexity:', error.response?.data || error.message);
+    throw new functions.https.HttpsError(
+      'internal', 
+      'Erreur lors de l\'analyse Perplexity: ' + error.message
+    );
+  }
 }); 

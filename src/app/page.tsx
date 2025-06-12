@@ -87,7 +87,7 @@ export default function HomePage() {
               className="text-lg px-8 py-6 bg-blue-600 hover:bg-blue-700 shadow-xl"
               onClick={() => {
                 if (user) {
-                  router.push('/demo?mode=real');
+                  router.push('/analyze?mode=real');
                 } else {
                   router.push('/auth');
                 }
@@ -99,7 +99,7 @@ export default function HomePage() {
               size="lg"
               variant="outline"
               className="text-lg px-8 py-6 border-2"
-              onClick={() => router.push('/demo?mode=demo')}
+              onClick={() => router.push('/analyze?mode=demo')}
             >
               <Stethoscope className="mr-2 h-5 w-5" /> Mode Démo
             </Button>
@@ -167,7 +167,7 @@ export default function HomePage() {
           <p className="text-xl mb-8 opacity-90">
             Découvrez la puissance de l'IA médicale appliquée à vos cas cliniques
           </p>
-          <Link href="/demo">
+          <Link href="/analyze">
             <Button size="lg" className="text-lg px-8 py-6 bg-white text-blue-600 hover:bg-gray-100 shadow-xl">
               Commencer maintenant <ChevronRight className="ml-2 h-5 w-5" />
             </Button>

@@ -15,7 +15,7 @@ export default function AuthPage() {
   // Rediriger si déjà connecté
   useEffect(() => {
     if (user) {
-      router.push('/demo?mode=real');
+      router.push('/analyze?mode=real');
     }
   }, [user, router]);
 
@@ -106,7 +106,7 @@ export default function AuthPage() {
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-600">
             Vous voulez d'abord tester ?{' '}
-            <Link href="/demo?mode=demo" className="text-blue-600 hover:underline font-medium">
+                          <Link href="/analyze?mode=demo" className="text-blue-600 hover:underline font-medium">
               Essayer le mode démo
             </Link>
           </p>

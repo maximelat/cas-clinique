@@ -237,4 +237,22 @@ export async function enrichReferencesViaFunction(references: any[]): Promise<an
     console.error('Erreur Firebase Function enrichissement références:', error);
     throw new Error('Erreur lors de l\'enrichissement des références: ' + error.message);
   }
+}
+
+export async function analyzePerplexityViaFunction(perplexityResponse: any): Promise<{ analysisText: string, references: any[] }> {
+  if (!functions) {
+    throw new Error('Firebase Functions non configuré');
+  }
+
+  const analyzePerplexityResults = httpsCallable(functions, 'analyzePerplexityResults');
+  
+  try {
+    console.log('Appel analyzePerplexityResults via Firebase...');
+    const result = await analyzePerplexityResults({ perplexityResponse });
+    console.log('Résultat analyse Perplexity:', result.data);
+    return result.data as { analysisText: string, references: any[] };
+  } catch (error: any) {
+    console.error('Erreur analyse Perplexity via Firebase:', error);
+    throw error;
+  }
 } 
