@@ -91,3 +91,31 @@
 - Reprise approfondie : 2 crédits  
 - Relance analyse : 1 crédit
 - Recherche maladies rares : 1 crédit 
+
+
+___ UPDATE 
+
+graph TD
+    A["1. Analyse Image MedGemma<br/>(promptType sélectionné)"] --> B["2. Analyse o3 avec image<br/>(structure 7 sections)"]
+    B --> C["3. Perplexity Search<br/>(basé sur o3, structure 7 sections)"]
+    C --> D["4. Parse sections Perplexity<br/>(REMPLACE o3 si succès)"]
+    D --> E["5. Extract références<br/>(TOUTES les 10 sources)"]
+    E --> F["6. Web Search GPT-4o mini<br/>(métadonnées RÉELLES)"]
+    F --> G["7. Ajout citations intelligentes<br/>(placement précis [1], [2])"]
+    G --> H["8. Affichage final<br/>(sections Perplexity + références enrichies)"]
+    
+    style A fill:#e1f5fe
+    style F fill:#c8e6c9
+    style G fill:#c8e6c9
+    style H fill:#fff3e0
+
+
+Flux final validé :
+MedGemma → Analyse image avec prompt sélectionné
+o3 → Structure en 7 sections avec imagerie
+Perplexity → Recherche académique structurée
+Parser → Sections Perplexity remplacent o3
+Extract → TOUTES les 10 sources Perplexity
+Web Search → Métadonnées réelles (auteurs, journaux, années)
+Citations → Placement intelligent [1], [2] dans les sections
+Affichage → Sections enrichies + références complètes

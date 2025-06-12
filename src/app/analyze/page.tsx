@@ -638,7 +638,7 @@ function DemoPageContent() {
         step7: "Affichage sections Perplexity + références"
       },
       
-      detailedChain: analysisData.requestChain.map((request, index) => ({
+      detailedChain: analysisData.requestChain.map((request: any, index: number) => ({
         stepNumber: index + 1,
         timestamp: request.timestamp,
         model: request.model,
@@ -661,13 +661,13 @@ function DemoPageContent() {
         totalDuration: analysisData.requestChain.length > 1 ? 
           new Date(analysisData.requestChain[analysisData.requestChain.length - 1].timestamp).getTime() - 
           new Date(analysisData.requestChain[0].timestamp).getTime() : 0,
-        modelsUsed: [...new Set(analysisData.requestChain.map(r => r.model))],
-        successRate: `${Math.round((analysisData.requestChain.filter(r => r.response).length / analysisData.requestChain.length) * 100)}%`,
+        modelsUsed: [...new Set(analysisData.requestChain.map((r: any) => r.model))],
+        successRate: `${Math.round((analysisData.requestChain.filter((r: any) => r.response).length / analysisData.requestChain.length) * 100)}%`,
         averageRequestLength: Math.round(
-          analysisData.requestChain.reduce((acc, r) => acc + (r.request?.length || 0), 0) / analysisData.requestChain.length
+          analysisData.requestChain.reduce((acc: number, r: any) => acc + (r.request?.length || 0), 0) / analysisData.requestChain.length
         ),
         averageResponseLength: Math.round(
-          analysisData.requestChain.reduce((acc, r) => acc + (r.response?.length || 0), 0) / analysisData.requestChain.length
+          analysisData.requestChain.reduce((acc: number, r: any) => acc + (r.response?.length || 0), 0) / analysisData.requestChain.length
         )
       },
       
