@@ -80,14 +80,13 @@ exports.analyzeWithO3 = functions.https.onCall(async (data, context) => {
 // Fonction pour analyser une image avec MedGemma
 exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) => {
   try {
-    const { imageBase64, imageType = 'medical' } = data;
+    const { imageBase64, imageType = 'general', promptType = 'general' } = data;
     
     if (!imageBase64) {
       throw new functions.https.HttpsError('invalid-argument', 'Image requise');
     }
 
     if (!MEDGEMMA_API_KEY) {
-      console.error('ERREUR: Clé MedGemma non configurée');
       throw new functions.https.HttpsError('failed-precondition', 'Clé API MedGemma non configurée');
     }
 
@@ -96,12 +95,23 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
     
     console.log('=== ANALYSE IMAGE MEDGEMMA ===');
     console.log('Timestamp:', timestamp);
+    console.log('Type d\'image:', imageType);
+    console.log('Type de prompt:', promptType);
     console.log('Clé MedGemma configurée:', !!MEDGEMMA_API_KEY);
-    console.log('Longueur clé MedGemma:', MEDGEMMA_API_KEY?.length);
 
-    const medgemmaPrompt = imageType === 'dermatology' 
-      ? "Analysez cette image dermatologique en détail. Décrivez les lésions observées, les caractéristiques cliniques importantes, et proposez un diagnostic différentiel avec justification."
-      : "Analysez cette image médicale en détail. Décrivez les éléments pathologiques visibles, les structures anatomiques concernées, et proposez une interprétation clinique.";
+    // Sélection du prompt selon le type choisi par l'utilisateur
+    const prompts = {
+      general: "Analysez cette image médicale. Décrivez brièvement les éléments pathologiques visibles et donnez vos conclusions principales pour l'analyse clinique. Soyez concis et orienté diagnostic.",
+      dermatology: "Analysez cette lésion dermatologique. Décrivez les caractéristiques cliniques importantes et proposez un diagnostic différentiel avec justification courte.",
+      radiology: "Analysez cette imagerie médicale. Identifiez les anomalies visibles, les structures anatomiques concernées et vos conclusions radiologiques principales.",
+      pathology: "Analysez cette lame histologique/cytologique. Décrivez les éléments morphologiques significatifs et vos conclusions anatomopathologiques.",
+      cardiology: "Analysez cette imagerie cardiaque (ECG/Echo/Angio). Identifiez les anomalies et donnez vos conclusions cardiologiques principales.",
+      ophthalmology: "Analysez cette imagerie ophtalmologique. Décrivez les anomalies du fond d'œil/segment antérieur et vos conclusions diagnostiques.",
+      emergency: "Analyse rapide d'urgence. Identifiez immédiatement les signes critiques et donnez vos conclusions prioritaires pour la prise en charge."
+    };
+
+    const medgemmaPrompt = prompts[promptType] || prompts.general;
+    console.log('Prompt utilisé:', promptType);
 
     // Détecter le format de l'image depuis les premiers bytes en base64
     let imageFormat = 'jpeg'; // par défaut

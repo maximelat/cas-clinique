@@ -94,19 +94,19 @@ export async function analyzeWithO3ViaFunction(prompt: string): Promise<string> 
   }
 }
 
-export async function analyzeImageWithMedGemmaViaFunction(imageBase64: string, imageType?: string): Promise<string> {
+export async function analyzeImageWithMedGemmaViaFunction(imageBase64: string, imageType?: string, promptType?: string): Promise<string> {
   if (!functions) {
     throw new Error('Firebase Functions non configuré');
   }
 
-  const analyzeImage = httpsCallable<{ imageBase64: string; imageType?: string }, AnalyzeWithO3Response>(
+  const analyzeImage = httpsCallable<{ imageBase64: string; imageType?: string; promptType?: string }, AnalyzeWithO3Response>(
     functions, 
     'analyzeImageWithMedGemma'
   );
 
   try {
-    console.log('Appel Firebase analyzeImageWithMedGemma...');
-    const result = await analyzeImage({ imageBase64, imageType });
+    console.log('Appel Firebase analyzeImageWithMedGemma...', { imageType, promptType });
+    const result = await analyzeImage({ imageBase64, imageType, promptType });
     if (result.data.error) {
       throw new Error(result.data.error);
     }

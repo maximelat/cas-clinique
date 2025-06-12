@@ -326,7 +326,7 @@ RAPPELS IMPORTANTS:
         for (let i = 0; i < images.length; i++) {
           try {
             progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
-            const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type);
+            const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type, (images[i] as any).promptType || 'general');
             imageAnalysesArray.push(imageAnalysis);
             imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
           } catch (imageError: any) {
@@ -1215,13 +1215,13 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
   }
 
   // Analyser une image avec medgemma
-  private async analyzeImageWithO3(imageBase64: string, imageType: string = 'medical'): Promise<string> {
+  private async analyzeImageWithO3(imageBase64: string, imageType: string = 'medical', promptType: string = 'general'): Promise<string> {
     // Sauvegarder la requête
     this.requestChain.push({
       timestamp: new Date().toISOString(),
       model: 'MedGemma',
-      type: `Analyse d'image ${imageType}`,
-      request: `Analyse d'image médicale de type: ${imageType}\n\n[Image Base64 fournie]`,
+      type: `Analyse d'image ${imageType} (${promptType})`,
+      request: `Analyse d'image médicale de type: ${imageType} avec prompt: ${promptType}\n\n[Image Base64 fournie]`,
       response: ''
     });
 
@@ -1229,6 +1229,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
       console.log('=== DÉBUT ANALYSE IMAGE ===');
       console.log('Modèle utilisé: MedGemma (exclusivement)');
       console.log('Type d\'image:', imageType);
+      console.log('Type de prompt:', promptType);
       
       // En production, toujours utiliser Firebase Functions qui gère MedGemma
       if (this.useFirebaseFunctions) {
@@ -1237,7 +1238,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         console.log('Endpoint MedGemma dans Firebase: https://khynx9ujxzvwk5rb.us-east4.gcp.endpoints.huggingface.cloud');
         
         const { analyzeImageWithMedGemmaViaFunction } = await import('@/lib/firebase-functions');
-        const response = await analyzeImageWithMedGemmaViaFunction(imageBase64, imageType);
+        const response = await analyzeImageWithMedGemmaViaFunction(imageBase64, imageType, promptType);
         
         console.log('=== RÉPONSE REÇUE DE MEDGEMMA VIA FIREBASE ===');
         console.log('Longueur de la réponse:', response.length);
@@ -1404,7 +1405,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         for (let i = 0; i < images.length; i++) {
           try {
             progressCallback?.(`Analyse de l'image ${i + 1}/${images.length}...`);
-            const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type);
+            const imageAnalysis = await this.analyzeImageWithO3(images[i].base64, images[i].type, (images[i] as any).promptType || 'general');
             imageAnalysesArray.push(imageAnalysis);
             imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${images[i].type}):\n${imageAnalysis}`;
           } catch (imageError: any) {
@@ -1622,7 +1623,7 @@ IMPORTANT: Fournis un rapport COMPLET et DÉTAILLÉ. Ne coupe PAS le contenu.`;
         for (let i = 0; i < fullContext.images.length; i++) {
           try {
             progressCallback?.(`Analyse de l'image ${i + 1}/${fullContext.images.length}...`);
-            const imageAnalysis = await this.analyzeImageWithO3(fullContext.images[i].base64, fullContext.images[i].type);
+            const imageAnalysis = await this.analyzeImageWithO3(fullContext.images[i].base64, fullContext.images[i].type, (fullContext.images[i] as any).promptType || 'general');
             imageAnalysesArray.push(imageAnalysis);
             imageAnalyses += `\n\nANALYSE IMAGE ${i + 1} (${fullContext.images[i].type}):\n${imageAnalysis}`;
           } catch (imageError: any) {
@@ -1720,7 +1721,7 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
         progressCallback?.('Analyse des nouvelles images...');
         for (let i = 0; i < currentData.images.length; i++) {
           try {
-            const imageAnalysis = await this.analyzeImageWithO3(currentData.images[i].base64, currentData.images[i].type);
+            const imageAnalysis = await this.analyzeImageWithO3(currentData.images[i].base64, currentData.images[i].type, (currentData.images[i] as any).promptType || 'general');
             newImageAnalyses += `\n\nNOUVELLE IMAGE ${i + 1} (${currentData.images[i].type}):\n${imageAnalysis}`;
           } catch (imageError: any) {
             console.error(`Erreur analyse image ${i + 1}:`, imageError.message);
