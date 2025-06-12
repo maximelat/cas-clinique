@@ -795,8 +795,8 @@ function DemoPageContent() {
       try {
         // Ouvrir tous les accordéons temporairement
         const allAccordionValues = analysisData?.isDemo 
-          ? Object.keys(demoSections).map((_, index) => String(index))
-          : (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((_, index) => String(index))
+          ? Object.keys(demoSections).map((_: string, index: number) => String(index))
+          : (currentSections.length > 0 ? currentSections : analysisData?.sections || []).map((_: any, index: number) => String(index))
         
         // Ajouter l'accordéon des références
         allAccordionValues.push('references')
