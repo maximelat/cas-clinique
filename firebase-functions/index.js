@@ -57,11 +57,11 @@ exports.analyzeWithO3 = functions.https.onCall(async (data, context) => {
           const textContent = messageOutput.content.find(c => c.type === 'output_text');
           if (textContent && textContent.text) {
             text = textContent.text;
+          }
         }
       }
-    }
-    
-    if (!text) {
+      
+      if (!text) {
       text = response.data.output_text || response.data.content || response.data.text || '';
     }
               
@@ -151,7 +151,7 @@ exports.analyzeImageWithMedGemma = functions.https.onCall(async (data, context) 
                   type: 'image_url',
                   image_url: {
                   url: `data:image/${imageFormat};base64,${imageBase64}`
-                }
+                  }
               },
               {
                 type: 'text',
