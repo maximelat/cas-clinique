@@ -1746,8 +1746,8 @@ INSTRUCTIONS POUR LA RECHERCHE APPROFONDIE:
       
       updateContext += `\n\nINSTRUCTIONS: Mets à jour l'analyse en intégrant les modifications et nouvelles informations. Garde le même format de sections.`;
 
-      const updatedAnalysis = await this.analyzeWithO3(updateContext, '');
-      const sections = this.parseSections(updatedAnalysis);
+      const updatedAnalysisResult = await this.analyzeWithO3(updateContext, '');
+      const sections = this.parseSections(updatedAnalysisResult.analysis);
       
              return {
          sections,
