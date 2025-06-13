@@ -719,7 +719,8 @@ exports.analyzeLongAudioWithGemini = functions
   .https.onCall(async (data, context) => {
     try {
       const { audioBase64, audioType = 'audio/webm', analysisType = 'transcription' } = data;
-      const mimeType = (audioType || 'audio/webm').split(';')[0];
+      const audioParts = (audioType || 'audio/webm').split(';');
+      const mimeType = audioParts.length >= 2 ? `${audioParts[0]};${audioParts[1]}` : audioParts[0];
       
       if (!audioBase64) {
         throw new functions.https.HttpsError('invalid-argument', 'Audio base64 requis');
