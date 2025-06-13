@@ -1346,6 +1346,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         const mimeParts = (audioBlob.type || 'audio/webm').split(';');
         const mimeType = mimeParts.length >= 2 ? `${mimeParts[0]};${mimeParts[1]}` : mimeParts[0];
 
+
         const response = await axios.post(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
           {
