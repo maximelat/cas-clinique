@@ -719,6 +719,7 @@ exports.analyzeLongAudioWithGemini = functions
   .https.onCall(async (data, context) => {
     try {
       const { audioBase64, audioType = 'audio/webm', analysisType = 'transcription' } = data;
+      const mimeType = (audioType || 'audio/webm').split(';')[0];
       
       if (!audioBase64) {
         throw new functions.https.HttpsError('invalid-argument', 'Audio base64 requis');
@@ -732,7 +733,7 @@ exports.analyzeLongAudioWithGemini = functions
       }
 
       console.log('=== ANALYSE AUDIO LONGUE AVEC GEMINI ===');
-      console.log(`Type audio: ${audioType}`);
+      console.log(`Type audio: ${mimeType}`);
       console.log(`Type d'analyse: ${analysisType}`);
       
       // Extraire les données base64 (enlever le préfixe data:audio/...;base64,)
@@ -851,7 +852,7 @@ Format : Transcription complète suivie de l'analyse structurée pour le médeci
               },
               {
                 inline_data: {
-                  mime_type: audioType,
+                  mime_type: mimeType,
                   data: base64Data
                 }
               }
