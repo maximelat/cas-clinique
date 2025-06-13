@@ -1309,7 +1309,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         const analyzeLongAudioWithGemini = httpsCallable(functions, 'analyzeLongAudioWithGemini');
         const result = await analyzeLongAudioWithGemini({
           audioBase64,
-          audioType: audioBlob.type || 'audio/webm',
+          audioType: (audioBlob.type || 'audio/webm').split(';')[0],
           analysisType
         });
         
@@ -1341,15 +1341,18 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
             break;
         }
         
+        const mimeType = (audioBlob.type || 'audio/webm').split(';')[0];
+
         const response = await axios.post(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
           {
             contents: [{
+              role: 'user',
               parts: [
                 { text: prompt },
                 {
                   inline_data: {
-                    mime_type: audioBlob.type || 'audio/webm',
+                    mime_type: mimeType,
                     data: base64Data
                   }
                 }
