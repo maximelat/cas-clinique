@@ -720,11 +720,8 @@ exports.analyzeLongAudioWithGemini = functions
     try {
       const { audioBase64, audioType = 'audio/webm', analysisType = 'transcription' } = data;
 
-      // ➜ Conserve le codec éventuel après le « ; »
-      const audioParts = (audioType || 'audio/webm').split(';');
-      const mimeType   = audioParts.length >= 2
-        ? `${audioParts[0]};${audioParts[1]}`
-        : audioParts[0];
+      // ➜ Gemini ne supporte pas le paramètre codecs, on garde uniquement le type de base
+      const mimeType = (audioType || 'audio/webm').split(';')[0];
       
       if (!audioBase64) {
         throw new functions.https.HttpsError('invalid-argument', 'Audio base64 requis');
