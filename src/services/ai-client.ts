@@ -1345,6 +1345,7 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
           {
             contents: [{
+              role: 'user',
               parts: [
                 { text: prompt },
                 {
