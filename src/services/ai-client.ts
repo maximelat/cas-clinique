@@ -1307,9 +1307,11 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         
         const functions = getFunctions(app);
         const analyzeLongAudioWithGemini = httpsCallable(functions, 'analyzeLongAudioWithGemini');
+        const audioParts = (audioBlob.type || 'audio/webm').split(';');
+        const sanitizedType = audioParts.length >= 2 ? `${audioParts[0]};${audioParts[1]}` : audioParts[0];
         const result = await analyzeLongAudioWithGemini({
           audioBase64,
-          audioType: audioBlob.type || 'audio/webm',
+          audioType: sanitizedType,
           analysisType
         });
         
@@ -1341,15 +1343,19 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
             break;
         }
         
+        const mimeParts = (audioBlob.type || 'audio/webm').split(';');
+        const mimeType = mimeParts.length >= 2 ? `${mimeParts[0]};${mimeParts[1]}` : mimeParts[0];
+
         const response = await axios.post(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
           {
             contents: [{
+              role: 'user',
               parts: [
                 { text: prompt },
                 {
                   inline_data: {
-                    mime_type: audioBlob.type || 'audio/webm',
+                    mime_type: mimeType,
                     data: base64Data
                   }
                 }

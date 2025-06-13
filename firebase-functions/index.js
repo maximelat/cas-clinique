@@ -719,6 +719,8 @@ exports.analyzeLongAudioWithGemini = functions
   .https.onCall(async (data, context) => {
     try {
       const { audioBase64, audioType = 'audio/webm', analysisType = 'transcription' } = data;
+      const audioParts = (audioType || 'audio/webm').split(';');
+      const mimeType = audioParts.length >= 2 ? `${audioParts[0]};${audioParts[1]}` : audioParts[0];
       
       if (!audioBase64) {
         throw new functions.https.HttpsError('invalid-argument', 'Audio base64 requis');
@@ -732,7 +734,7 @@ exports.analyzeLongAudioWithGemini = functions
       }
 
       console.log('=== ANALYSE AUDIO LONGUE AVEC GEMINI ===');
-      console.log(`Type audio: ${audioType}`);
+      console.log(`Type audio: ${mimeType}`);
       console.log(`Type d'analyse: ${analysisType}`);
       
       // Extraire les données base64 (enlever le préfixe data:audio/...;base64,)
@@ -842,15 +844,16 @@ Format : Transcription complète suivie de l'analyse structurée pour le médeci
       // Appeler l'API Gemini
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
-        {
+        { 
           contents: [{
+            role: 'user',
             parts: [
               {
                 text: prompt
               },
               {
                 inline_data: {
-                  mime_type: audioType,
+                  mime_type: mimeType,
                   data: base64Data
                 }
               }
