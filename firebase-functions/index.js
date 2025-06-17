@@ -718,10 +718,14 @@ exports.analyzeLongAudioWithGemini = functions
   })
   .https.onCall(async (data, context) => {
     try {
-      const { audioBase64, audioType = 'audio/webm', analysisType = 'transcription' } = data;
+      const { audioBase64, audioType, analysisType = 'transcription' } = data;
 
-      // ➜ Gemini ne supporte pas le paramètre codecs, on garde uniquement le type de base
-      const mimeType = (audioType || 'audio/webm').split(';')[0];
+      // Déterminer le type MIME à utiliser
+      let mimeType = audioType || '';
+      if (!mimeType) {
+        const match = /^data:([^;]+);/.exec(audioBase64);
+        mimeType = match ? match[1] : 'audio/webm';
+      }
       
       if (!audioBase64) {
         throw new functions.https.HttpsError('invalid-argument', 'Audio base64 requis');
@@ -739,8 +743,8 @@ exports.analyzeLongAudioWithGemini = functions
       console.log(`Type d'analyse: ${analysisType}`);
       
       // Extraire les données base64 (enlever le préfixe data:audio/...;base64,)
-      const base64Data = audioBase64.includes(',') 
-        ? audioBase64.split(',')[1] 
+      const base64Data = audioBase64.includes(',')
+        ? audioBase64.split(',')[1]
         : audioBase64;
       
       // Calculer la taille approximative
@@ -748,14 +752,11 @@ exports.analyzeLongAudioWithGemini = functions
       const audioSizeMB = (audioSizeBytes / (1024 * 1024)).toFixed(2);
       console.log(`Taille audio: ${audioSizeMB} MB`);
       
-      // Vérifier la taille (max 20MB pour inline)
-      if (audioSizeBytes > 20 * 1024 * 1024) {
-        console.log('Audio trop volumineux, utilisation de l\'API Files');
-        
-        // TODO: Implémenter l'upload via Files API si nécessaire
+      // Vérifier la taille (max 10MB pour inline selon la doc Gemini)
+      if (audioSizeBytes > 10 * 1024 * 1024) {
         throw new functions.https.HttpsError(
-          'invalid-argument', 
-          'Audio trop volumineux (>20MB). Veuillez utiliser un enregistrement plus court.'
+          'invalid-argument',
+          'Audio trop volumineux (>10MB). Veuillez utiliser un enregistrement plus court.'
         );
       }
       
@@ -897,11 +898,12 @@ Format : Transcription complète suivie de l'analyse structurée pour le médeci
       
     } catch (error) {
       console.error('Erreur Gemini:', error.response?.data || error.message);
-      
+
       if (error.response?.status === 400) {
+        const message = error.response?.data?.error?.message || 'Format audio non supporté ou données corrompues';
         throw new functions.https.HttpsError(
-          'invalid-argument', 
-          'Format audio non supporté ou données corrompues'
+          'invalid-argument',
+          message
         );
       }
       

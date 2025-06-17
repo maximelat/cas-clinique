@@ -1307,11 +1307,11 @@ IMPORTANT: Retourne UNIQUEMENT le JSON, sans texte avant ou après.`;
         
         const functions = getFunctions(app);
         const analyzeLongAudioWithGemini = httpsCallable(functions, 'analyzeLongAudioWithGemini');
-        // Gemini n'accepte pas les paramètres codecs, on retire tout après le ';'
-        const sanitizedType = (audioBlob.type || 'audio/webm').split(';')[0];
+        // Conserver le type MIME complet pour une compatibilité maximale
+        const mimeType = audioBlob.type || 'audio/webm';
         const result = await analyzeLongAudioWithGemini({
           audioBase64,
-          audioType: sanitizedType,
+          audioType: mimeType,
           analysisType
         });
         
